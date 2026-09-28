@@ -222,3 +222,6 @@ pre.wrap { white-space: pre-wrap; }
 .note.warn { background: var(--portal-bg-soft); }
 .outcome:not(:empty) { margin-top: var(--portal-rhythm); }
 ul.report > li { margin-bottom: 0.5rem; }
+.badge.level-ok { border-color: var(--portal-border); }
+.badge.level-look { border-color: var(--portal-accent); color: var(--portal-accent); }
+.badge.level-warn { border-color: var(--portal-danger); color: var(--portal-danger); }

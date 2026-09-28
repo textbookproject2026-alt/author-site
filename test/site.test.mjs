@@ -181,7 +181,9 @@ test("import: parts of at most 2.5 MB, receipts in order, converted, read, ticke
 
   await page.getByText("- **[[chapters/chapter-02|Chapter 2: Soils]]**").waitFor();
   await page.getByText("One picture is a chart").waitFor();
-  assert.equal(await page.getByText("Headings came across").count(), 0, "only things worth checking are listed");
+  await page.getByText("Headings came across").waitFor();
+  assert.equal(await page.locator("li.level-warn .badge").textContent(), "warn");
+  await page.getByText("became a chapter of 6 words, 1 picture.").waitFor();
   await page.locator(".preview img").waitFor();
   assert.match(await page.locator(".preview img").getAttribute("src"), /^blob:/, "the staged picture, not the drafts'");
 

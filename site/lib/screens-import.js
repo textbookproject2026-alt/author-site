@@ -152,7 +152,17 @@ async function review(book, folders, stage, id, docxName, s) {
   const shown = h("div", {}, busy("Formatting the chapter…"));
   renderChapter(chapter.text, c.path, pictureUrl).then((node) => shown.replaceChildren(node));
 
-  const report = (result.report ?? []).filter((n) => n.level !== "ok");
+  const report = result.report ?? [];
+  const counts = result.counts ?? {};
+  const tables = (counts.pipe_tables ?? 0) + (counts.html_tables ?? 0);
+  const summary = [
+    counts.words ? plural(counts.words, "word") : null,
+    counts.headings ? plural(counts.headings, "heading") : null,
+    tables ? plural(tables, "table") : null,
+    counts.footnotes ? plural(counts.footnotes, "footnote") : null,
+    counts.pictures ? plural(counts.pictures, "picture") : null,
+  ].filter(Boolean);
+  const LEVEL = { ok: "ok", look: "look", warn: "warn" };
   const pictures = result.writes.filter((w) => w.kind === "picture");
 
   sendBtn.addEventListener("click", async () => {
@@ -196,10 +206,14 @@ async function review(book, folders, stage, id, docxName, s) {
     result.contents_line ? h("p", {}, "A line is added to the front page, under “Contents”: ", h("code", { text: result.contents_line })) : null,
     (result.notes ?? []).map((n) => h("p", { class: "muted", text: n })),
     pictures.length ? h("p", { class: "muted small", text: `${plural(pictures.length, "picture")} ${pictures.length === 1 ? "goes" : "go"} into ${c.media_dir}/.` }) : null,
-    report.length ? [
-      h("h3", { text: "Worth checking" }),
-      h("ul", { class: "report" }, report.map((n) => h("li", {}, h("strong", { text: n.headline }), n.body ? h("div", { text: n.body }) : null, n.check ? h("div", { class: "muted small", text: n.check }) : null))),
-    ] : h("p", { class: "muted", text: "Nothing in this document needs checking." }),
+    summary.length ? h("p", {}, h("code", { text: docxName }), ` became a chapter of ${summary.join(", ")}.`) : null,
+    h("h3", { text: "What to check" }),
+    report.length
+      ? h("ul", { class: "report" }, report.map((n) => h("li", { class: `level-${LEVEL[n.level] ?? "look"}` },
+        h("span", { class: `badge level-${LEVEL[n.level] ?? "look"}`, text: LEVEL[n.level] ?? "look" }), " ",
+        h("strong", { text: n.headline }), n.body ? h("div", { text: n.body }) : null,
+        n.check ? h("div", { class: "muted small" }, h("strong", { text: "What to check: " }), n.check) : null)))
+      : h("p", { class: "muted", text: "Nothing in this document needs checking." }),
     h("h3", { text: "The chapter, as it will be" }),
     shown,
     !result.writes.length && !result.deletes.length ? note([h("p", { text: "The drafts area already has exactly this, so there is nothing to send." })]) : [
