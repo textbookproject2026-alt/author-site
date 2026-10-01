@@ -92,10 +92,11 @@ Playwright route, and fail on any console error or CSP violation.
 
 ## Deploy
 
-Cloudflare Pages project **author-site** (account brandonproject2026), connected to
+Cloudflare Pages project **c4n-author-site** (account brandonproject2026; the name must be
+exactly that, because `author-site.pages.dev` belongs to someone else), connected to
 this repository: production branch `main`, build command
 **`node scripts/fetch-converter.mjs`**, output directory **`site`**. Pushing to `main` deploys; a pull request gets a preview at
-`<branch>.author-site.pages.dev`, where sign-in works too (the function accepts the
+`<branch>.c4n-author-site.pages.dev`, where sign-in works too (the function accepts the
 project's previews). Custom domain: `author.confused4now.org`.
 
 No analytics.
