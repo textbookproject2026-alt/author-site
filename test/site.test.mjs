@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { chromium } from "playwright-core";
 import { startServer } from "./server.mjs";
-import { createStub, importDone, sentAnswer, HEAD, MOVED } from "./stub.mjs";
+import { createStub, importDone, sentAnswer, API, HEAD, MOVED } from "./stub.mjs";
 
 let server, origin, browser;
 before(async () => {
@@ -427,6 +427,61 @@ test("publishing: not clean means no tick box and no button that works", async (
 });
 
 // --- phones -------------------------------------------------------------------------------------------
+
+// --- people ------------------------------------------------------------------------------------
+
+test("people: the book's authors; invite by username; pending until live, and one change at a time", async () => {
+  await signIn();
+  await page.getByRole("link", { name: "A Book of Things" }).click();
+  await page.getByRole("link", { name: "People" }).click();
+  await page.getByRole("heading", { name: "Who can work on this book here" }).waitFor();
+  const rows = page.locator("ul.list > li");
+  assert.deepEqual(await rows.allInnerTexts().then((t) => t.map((x) => x.split("\n")[0])), ["@author-one you", "@co-author", "@textbookproject2026-alt looks after the platform"]);
+  // Never the platform owner; anyone else, yourself included.
+  assert.equal(await rows.nth(2).getByRole("button", { name: "Remove", exact: true }).count(), 0);
+  assert.equal(await rows.nth(0).getByRole("button", { name: "Remove", exact: true }).count(), 1);
+
+  await page.locator("#invite-login").fill("@co-author");
+  await page.getByRole("button", { name: "Invite" }).click();
+  await page.getByText("@co-author can already work on this book.").waitFor();
+  assert.equal(stub.s.requests.filter((r) => r.endpoint === "author-people-change").length, 0);
+
+  stub.s.peopleAnswers = [[404, { error: "no such account", userMessage: "There's no GitHub account called “nobdy”. Check the spelling." }]];
+  await page.locator("#invite-login").fill("nobdy");
+  await page.getByRole("button", { name: "Invite" }).click();
+  await page.getByText("There's no GitHub account called “nobdy”.", { exact: false }).waitFor();
+
+  await page.locator("#invite-login").fill("NewPerson");
+  await page.getByRole("button", { name: "Invite" }).click();
+  await page.getByText("@NewPerson is invited.", { exact: false }).waitFor();
+  assert.deepEqual(lastCall("author-people-change").body, { book: "a-book", action: "add", login: "NewPerson" });
+  await page.getByText("waiting for the registry's checks", { exact: false }).waitFor();
+  assert.equal(await page.getByRole("link", { name: "See it on GitHub" }).getAttribute("href"), "https://github.com/textbookproject2026-alt/textbook-registry/pull/61");
+  await page.getByText("One change at a time", { exact: false }).waitFor();
+  assert.equal(await page.locator("#invite-login").count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Remove", exact: true }).count(), 0, "nothing else while one is open");
+});
+
+test("people: remove asks first; the last author can't be removed; not switched on says so", async () => {
+  await signIn();
+  await page.goto(`${origin}/#/a-book/people`);
+  await page.locator("ul.list > li").nth(1).getByRole("button", { name: "Remove", exact: true }).click();
+  await page.getByText("Remove @co-author? They lose access once the change has gone through.").waitFor();
+  await page.getByRole("button", { name: "Yes, remove" }).click();
+  await page.getByText("@co-author is being removed.", { exact: false }).waitFor();
+  assert.deepEqual(lastCall("author-people-change").body, { book: "a-book", action: "remove", login: "co-author" });
+
+  stub.s.people = { authors: ["author-one"], owner: "textbookproject2026-alt", registry: "r".repeat(40), pending: [] };
+  await page.goto(`${origin}/#/a-book/waiting`);
+  await page.goto(`${origin}/#/a-book/people`);
+  await page.getByRole("heading", { name: "Invite someone" }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Remove", exact: true }).count(), 0);
+
+  await context.route(`${API}author-people?**`, (route) => route.fulfill({ status: 404, contentType: "application/json", headers: { "access-control-allow-origin": origin }, body: "{}" }));
+  await page.goto(`${origin}/#/a-book/waiting`);
+  await page.goto(`${origin}/#/a-book/people`);
+  await page.getByText("isn't switched on yet", { exact: false }).waitFor();
+});
 
 test("at 375px nothing scrolls sideways", async () => {
   await page.setViewportSize({ width: 375, height: 800 });

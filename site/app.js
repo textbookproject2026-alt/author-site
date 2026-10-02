@@ -13,6 +13,7 @@
 //   #/<book>/suggestion/<n>     one reader suggestion
 //   #/<book>/change/<n>         one draft change
 //   #/<book>/publish            send the drafts to the live book
+//   #/<book>/people             who can work on it; invite, remove
 //   #/settings                  the author's own DeepSeek key, in this browser
 
 import { h, clear, busy, errorNote } from "./lib/dom.js";
@@ -22,6 +23,7 @@ import { importScreen } from "./lib/screens-import.js";
 import { tidyScreen } from "./lib/screens-tidy.js";
 import { editScreen } from "./lib/screens-edit.js";
 import { settingsScreen } from "./lib/screens-settings.js";
+import { peopleScreen } from "./lib/screens-people.js";
 import { waitingScreen, suggestionScreen, changeScreen, publishScreen } from "./lib/screens-waiting.js";
 
 const main = document.getElementById("main");
@@ -108,6 +110,7 @@ const ROUTES = [
   [/^([a-z0-9-]+)\/suggestion\/(\d+)$/, (book, n) => suggestionScreen(book, Number(n))],
   [/^([a-z0-9-]+)\/change\/(\d+)$/, (book, n) => changeScreen(book, Number(n))],
   [/^([a-z0-9-]+)\/publish$/, (book) => publishScreen(book)],
+  [/^([a-z0-9-]+)\/people$/, (book) => peopleScreen(book)],
 ];
 
 let seq = 0;

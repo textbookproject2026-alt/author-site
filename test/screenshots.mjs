@@ -60,6 +60,8 @@ for (const [label, viewport] of [["desktop", { width: 1100, height: 900 }], ["ph
     await page.goto(`${origin}/#/a-book/publish`); await page.getByRole("button", { name: "Publish to the live book" }).waitFor(); await shot("10-publish");
     await page.goto(`${origin}/#/settings`); await page.locator("#key-input").fill("sk-abcdefgh9876"); await page.getByRole("button", { name: "Save key" }).click(); await page.getByText("The key works.").waitFor(); await shot("11-settings");
     await page.goto(`${origin}/#/a-book/tidy/${encodeURIComponent("chapters/chapter-01.md")}`); await page.getByText("A few more choices").click(); await shot("12-tidy-options");
+    await page.goto(`${origin}/#/a-book/people`); await page.locator("ul.list > li").nth(1).getByRole("button", { name: "Remove", exact: true }).click(); await shot("13-people");
+    await page.locator("#invite-login").fill("NewPerson"); await page.getByRole("button", { name: "Invite" }).click(); await page.getByText("is invited").waitFor(); await shot("14-people-pending");
     await context.close();
   }
 }
