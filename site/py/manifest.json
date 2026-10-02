@@ -1,0 +1,20 @@
+{
+  "repo": "textbookproject2026-alt/authoring-assistant",
+  "ref": "local:../authoring-assistant",
+  "files": [
+    "app/__init__.py",
+    "app/mdmap.py",
+    "app/edits.py",
+    "app/references.py",
+    "app/terms.py",
+    "app/glossary.py",
+    "app/session.py",
+    "app/console.py",
+    "app/drafts.py",
+    "app/convert.py",
+    "app/github.py",
+    "app/registry.py",
+    "app/config.py"
+  ],
+  "pyodide": "314.0.7"
+}
