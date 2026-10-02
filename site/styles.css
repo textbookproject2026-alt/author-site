@@ -225,3 +225,10 @@ ul.report > li { margin-bottom: 0.5rem; }
 .badge.level-ok { border-color: var(--portal-border); }
 .badge.level-look { border-color: var(--portal-accent); color: var(--portal-accent); }
 .badge.level-warn { border-color: var(--portal-danger); color: var(--portal-danger); }
+
+/* --- the questions ------------------------------------------------------------------ */
+.sentence { margin: 0; font-family: var(--portal-font-text); line-height: 1.7; }
+.sentence mark { padding: 0 0.1rem; border-radius: 3px; background: var(--portal-mark); color: inherit; }
+.sentence mark.new { background: var(--portal-add-strong); }
+.progress.grow { flex: 1 1 8rem; }
+details summary { cursor: pointer; font-weight: 600; color: var(--portal-accent); margin: 0.5rem 0; }

@@ -86,6 +86,7 @@ export async function chapterScreen(slug, path) {
     h("p", { class: "muted small" }, h("code", { text: path }),
       file.last ? [" · last changed by ", h("strong", { text: file.last.who }), ` ${when(file.last.when)}`, file.last.message ? ` (“${file.last.message}”)` : ""] : null),
     h("div", { class: "row spaced" },
+      /\.md$/i.test(path) && path.startsWith("chapters/") ? h("a", { class: "btn primary", href: `#/${slug}/tidy/${encodeURIComponent(path)}`, text: "Citations, concept links and glossary" }) : null,
       preview ? h("a", { class: "btn", href: `${preview}${slugPath}`, target: "_blank", rel: "noopener", text: "In the drafts preview" }) : null,
       book.domain ? h("a", { class: "btn", href: `https://${book.domain}/${slugPath}`, target: "_blank", rel: "noopener", text: "On the live site (to edit it)" }) : null),
     shown,

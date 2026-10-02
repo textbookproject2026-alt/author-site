@@ -9,39 +9,14 @@
 
 import { test, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
-import { readFileSync, existsSync, statSync } from "node:fs";
-import { extname, join, normalize } from "node:path";
 import { chromium } from "playwright-core";
+import { startServer } from "./server.mjs";
 import { createStub, importDone, sentAnswer, HEAD, MOVED } from "./stub.mjs";
-
-const SITE = new URL("../site/", import.meta.url).pathname;
-const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
-
-/** site/_headers, as Pages applies it: the /* block's headers on every response. */
-function pagesHeaders() {
-  const text = readFileSync(join(SITE, "_headers"), "utf8");
-  const block = text.split(/\n(?=\S)/).find((b) => b.startsWith("/*\n"));
-  return Object.fromEntries(block.split("\n").slice(1).map((l) => l.trim()).filter((l) => l && !l.startsWith("#"))
-    .map((l) => [l.slice(0, l.indexOf(":")), l.slice(l.indexOf(":") + 1).trim()]));
-}
 
 let server, origin, browser;
 before(async () => {
-  const headers = pagesHeaders();
-  server = createServer((req, res) => {
-    let path = normalize(decodeURIComponent(new URL(req.url, "http://x").pathname)).replace(/^\/+/, "");
-    if (!path || path.endsWith("/")) path += "index.html";
-    const file = join(SITE, path);
-    if (!file.startsWith(SITE) || !existsSync(file) || !statSync(file).isFile() || path === "_headers") {
-      res.writeHead(404);
-      return res.end();
-    }
-    res.writeHead(200, { "Content-Type": TYPES[extname(file)] ?? "application/octet-stream", ...headers });
-    res.end(readFileSync(file));
-  });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  origin = `http://127.0.0.1:${server.address().port}`;
+  server = await startServer();
+  origin = server.origin;
   browser = await chromium.launch({ headless: true, ...(process.env.PW_CHROMIUM_CHANNEL ? { channel: process.env.PW_CHROMIUM_CHANNEL } : {}) });
 });
 after(async () => {

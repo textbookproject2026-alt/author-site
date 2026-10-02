@@ -23,8 +23,14 @@ site/                    what Cloudflare Pages serves (the output directory)
   lib/diff.js            differences (copied from the in-site editor)
   lib/public.js          reads that need no sign-in: registry, jobs, drafts preview
   lib/upload.js          a Word file in 2.5 MB parts, as the portal's form sends one
+  lib/python.js          Pyodide and the converter's Python, loaded only for the questions
+  lib/screens-tidy.js    the citation, concept-link and glossary questions
+  py/                    GENERATED at build: the converter's Python (converter.json)
+converter.json           which authoring-assistant commit, and which of its files
+scripts/fetch-converter.mjs  the Pages build step: converter.json's files into site/py/
   _headers               Cloudflare Pages control file: the CSP
 test/site.test.mjs       headless Chromium against test/stub.mjs
+test/questions.test.mjs  the questions in real Pyodide, byte for byte against desktop Python
 test/screenshots.mjs     every screen, light and dark, desktop and phone
 ```
 
@@ -48,8 +54,22 @@ is in the book's `authors`. They act as the GitHub App, and every write names th
 author. Nobody's GitHub token is kept, here or there.
 
 To change a chapter's wording, an author uses **Edit this page** on the book's own
-site; it arrives under *Waiting for you* as a draft change. (The link and glossary
-questions arrive on this site next, running the converter's Python in the browser.)
+site; it arrives under *Waiting for you* as a draft change.
+
+## The questions run the converter's own Python
+
+The citation, concept-link and glossary questions, and a reader suggestion's exact
+replacement, are the Authoring Assistant's Python (`session.py`'s `DraftsSession`,
+`references`, `terms`, `glossary`, `mdmap`, `edits`, `console`), run in the browser by
+Pyodide (pinned, from jsDelivr, loaded only when an author opens the questions). One
+implementation: book-requests' Word import runs the same repository, and its Python
+tests stay the source of truth. The session works on a snapshot of the drafts, read
+from GitHub's public copy and checked against the drafts' own blob ids, so it needs
+no files. Four modules are replaced by stand-ins in `lib/python.js`, because they
+belong to the Mac or to DeepSeek: `picker`, `keychain`, `llm` and `formatting`.
+
+`converter.json` pins the commit; the Pages build (`node scripts/fetch-converter.mjs`)
+copies those files into `site/py/`. That needs authoring-assistant to be public.
 
 ## Theme
 
@@ -62,7 +82,8 @@ is kept in `localStorage` under `theme` and applied before first paint.
 ```bash
 npm ci
 npx playwright-core install chromium     # once; or PW_CHROMIUM_CHANNEL=chrome for the installed Chrome
-npm test
+CONVERTER_DIR=../authoring-assistant node scripts/fetch-converter.mjs   # site/py, for the questions
+CONVERTER_DIR=../authoring-assistant npm test
 PW_CHROMIUM_CHANNEL=chrome node test/screenshots.mjs /tmp/shots
 ```
 
@@ -73,8 +94,8 @@ Playwright route, and fail on any console error or CSP violation.
 
 Cloudflare Pages project **c4n-author-site** (account brandonproject2026; the name must be
 exactly that, because `author-site.pages.dev` belongs to someone else), connected to
-this repository: production branch `main`, **no build command**, output directory
-**`site`**. Pushing to `main` deploys; a pull request gets a preview at
+this repository: production branch `main`, build command
+**`node scripts/fetch-converter.mjs`**, output directory **`site`**. Pushing to `main` deploys; a pull request gets a preview at
 `<branch>.c4n-author-site.pages.dev`, where sign-in works too (the function accepts the
 project's previews). Custom domain: `author.confused4now.org`.
 

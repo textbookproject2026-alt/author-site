@@ -6,6 +6,10 @@
 // The author endpoints answer in the shapes suggest-edit-function's tests pin. Every
 // request is recorded, so a test can assert what the page sent.
 
+import { createHash } from "node:crypto";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+
 export const API = "https://suggest-edit-function.vercel.app/api/";
 export const REPO = "someone/a-book";
 export const HEAD = "a".repeat(40);
@@ -86,7 +90,7 @@ export function createStub({ siteOrigin }) {
       if (what === "tree") return json(route, 200, s.tree);
       if (what === "file") {
         const path = url.searchParams.get("path");
-        const text = path === "chapters/chapter-01.md" ? CH1 : `# ${path}\n`;
+        const text = s.bookFiles.has(path) ? s.bookFiles.get(path).toString("utf8") : path === "chapters/chapter-01.md" ? CH1 : `# ${path}\n`;
         return json(route, 200, { path, sha: "1".repeat(40), text, last: { who: "author-one", when: new Date().toISOString(), message: "Tidy", url: "" } });
       }
       if (what === "suggestions") return json(route, 200, { suggestions: s.suggestions });
@@ -144,9 +148,33 @@ export function createStub({ siteOrigin }) {
     return route.fulfill({ status: 404, headers: cors, body: "{}" });
   }
 
+  /** Serve a real book (a folder) as the drafts: tree with git blob ids, files by path. */
+  function useBook(dir) {
+    const files = [];
+    const walk = (at) => {
+      for (const name of readdirSync(join(dir, at))) {
+        const rel = at ? `${at}/${name}` : name;
+        if (statSync(join(dir, rel)).isDirectory()) walk(rel);
+        else {
+          const bytes = readFileSync(join(dir, rel));
+          s.bookFiles.set(rel, bytes);
+          files.push({ path: rel, sha: gitBlob(bytes), size: bytes.length });
+        }
+      }
+    };
+    walk("");
+    s.tree = { head: HEAD, files };
+  }
+  s.bookFiles = new Map();
+
   async function raw(route) {
     const url = new URL(route.request().url());
     const cors = { "access-control-allow-origin": "*" };
+    const prefix = `/${REPO}/${HEAD}/`;
+    if (url.pathname.startsWith(prefix)) {
+      const path = decodeURIComponent(url.pathname.slice(prefix.length));
+      if (s.bookFiles.has(path)) return route.fulfill({ status: 200, contentType: "text/plain", headers: cors, body: s.bookFiles.get(path) });
+    }
     if (url.pathname.endsWith("/registry.json")) return route.fulfill({ status: 200, contentType: "application/json", headers: cors, body: JSON.stringify(REGISTRY) });
     if (url.pathname.endsWith(".png")) return route.fulfill({ status: 200, contentType: "image/png", headers: cors, body: PNG });
     return route.fulfill({ status: 404, headers: cors, body: "" });
@@ -164,8 +192,10 @@ export function createStub({ siteOrigin }) {
     await context.route("https://avatars.githubusercontent.com/**", (route) => route.fulfill({ status: 200, contentType: "image/png", body: PNG }));
   }
 
-  return { s, install, CH2 };
+  return { s, install, useBook, CH2 };
 }
+
+export const gitBlob = (bytes) => createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
 
 export function sentAnswer() {
   return { sha: SENT, url: `https://github.com/${REPO}/commit/${SENT}`, written: ["chapters/chapter-02.md"], deleted: [], steps: ["The change is in the drafts area, as one change made by you."] };
