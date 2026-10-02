@@ -25,6 +25,7 @@ site/                    what Cloudflare Pages serves (the output directory)
   lib/upload.js          a Word file in 2.5 MB parts, as the portal's form sends one
   lib/python.js          Pyodide and the converter's Python, loaded only for the questions
   lib/screens-tidy.js    the citation, concept-link and glossary questions
+  lib/screens-edit.js    the editor (edit-on-github editor.ts's layout, as a screen)
   py/                    GENERATED at build: the converter's Python (converter.json)
 converter.json           which authoring-assistant commit, and which of its files
 scripts/fetch-converter.mjs  the Pages build step: converter.json's files into site/py/
@@ -41,6 +42,7 @@ test/screenshots.mjs     every screen, light and dark, desktop and phone
 | signs in with GitHub | sign-in | `github-auth` (the author site is a `github-auth` page in the registry's `platform.pages`) |
 | sees their books | `#/` | `author-read?what=books`: the books whose registry `authors` include them |
 | reads a chapter, downloads a copy | `#/<book>`, `#/<book>/chapter/<path>` | `author-read` tree and file; the drafts zip from GitHub |
+| edits a page: Edit, Preview, Changes | `#/<book>/edit/<path>` | `author-read` file; `author-send`, on the drafts commit it was read at |
 | brings in a Word document | `#/<book>/import` | `author-import` (parts, start, status, again); book-requests' private `import-chapter` converts; `author-send` sends |
 | answers readers' suggestions | `#/<book>/suggestion/<n>` | `author-act` suggestion-accept, -decline, -made |
 | accepts or declines draft changes | `#/<book>/change/<n>` | `author-act` change-accept, -decline |

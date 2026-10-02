@@ -2,7 +2,7 @@
 
 import { h, busy, note, when } from "./dom.js";
 import { read } from "./api.js";
-import { bookBySlug, bookHeader, myBooks, pageSlug } from "./books.js";
+import { bookBySlug, bookHeader, rawUrl, myBooks, pageSlug } from "./books.js";
 import { renderChapter } from "./preview.js";
 import { discussionUrl, draftsPreview, historyUrl, registryBook } from "./public.js";
 
@@ -72,11 +72,10 @@ export async function chapterScreen(slug, path) {
   const [tree, reg] = await Promise.all([read("tree", { book: slug }), registryBook(slug)]);
   const file = await read("file", { book: slug, path, ref: tree.head });
   const name = path.split("/").pop().replace(/\.md$/i, "");
-  const raw = (p) => `https://raw.githubusercontent.com/${book.repo}/${tree.head}/${p.split("/").map(encodeURIComponent).join("/")}`;
   const known = new Set(tree.files.map((f) => f.path));
   const shown = h("div", {}, busy("Formatting the chapter…"));
   if (typeof file.text === "string") {
-    renderChapter(file.text, path, async (p) => (known.has(p) ? raw(p) : null)).then((node) => shown.replaceChildren(node));
+    renderChapter(file.text, path, async (p) => (known.has(p) ? rawUrl(book.repo, tree.head, p) : null)).then((node) => shown.replaceChildren(node));
   } else shown.replaceChildren(h("p", { class: "muted", text: "This file isn't text, so it can't be shown here." }));
   const preview = draftsPreview(reg);
   const slugPath = pageSlug(path === "index.md" ? "" : path);
@@ -86,7 +85,8 @@ export async function chapterScreen(slug, path) {
     h("p", { class: "muted small" }, h("code", { text: path }),
       file.last ? [" · last changed by ", h("strong", { text: file.last.who }), ` ${when(file.last.when)}`, file.last.message ? ` (“${file.last.message}”)` : ""] : null),
     h("div", { class: "row spaced" },
-      /\.md$/i.test(path) && path.startsWith("chapters/") ? h("a", { class: "btn primary", href: `#/${slug}/tidy/${encodeURIComponent(path)}`, text: "Citations, concept links and glossary" }) : null,
+      typeof file.text === "string" ? h("a", { class: "btn primary", href: `#/${slug}/edit/${encodeURIComponent(path)}`, text: "Edit" }) : null,
+      /\.md$/i.test(path) && path.startsWith("chapters/") ? h("a", { class: "btn", href: `#/${slug}/tidy/${encodeURIComponent(path)}`, text: "Citations, concept links and glossary" }) : null,
       preview ? h("a", { class: "btn", href: `${preview}${slugPath}`, target: "_blank", rel: "noopener", text: "In the drafts preview" }) : null,
       book.domain ? h("a", { class: "btn", href: `https://${book.domain}/${slugPath}`, target: "_blank", rel: "noopener", text: "On the live site" }) : null),
     shown,

@@ -6,6 +6,7 @@
 //   #/                          your books
 //   #/<book>                    its chapters
 //   #/<book>/chapter/<path>     one chapter
+//   #/<book>/edit/<path>        edit it
 //   #/<book>/tidy/<path>        its citations, concept links and glossary questions
 //   #/<book>/import             bring in a Word document
 //   #/<book>/waiting            suggestions, draft changes, going live, jobs
@@ -18,6 +19,7 @@ import { identity, onChange, signIn, signOut } from "./lib/auth.js";
 import { booksScreen, chaptersScreen, chapterScreen } from "./lib/screens-books.js";
 import { importScreen } from "./lib/screens-import.js";
 import { tidyScreen } from "./lib/screens-tidy.js";
+import { editScreen } from "./lib/screens-edit.js";
 import { waitingScreen, suggestionScreen, changeScreen, publishScreen } from "./lib/screens-waiting.js";
 
 const main = document.getElementById("main");
@@ -95,6 +97,7 @@ const ROUTES = [
   [/^$/, () => booksScreen()],
   [/^([a-z0-9-]+)$/, (book) => chaptersScreen(book)],
   [/^([a-z0-9-]+)\/chapter\/(.+)$/, (book, path) => chapterScreen(book, decodeURIComponent(path))],
+  [/^([a-z0-9-]+)\/edit\/(.+)$/, (book, path) => editScreen(book, decodeURIComponent(path))],
   [/^([a-z0-9-]+)\/tidy\/(.+)$/, (book, path) => tidyScreen(book, decodeURIComponent(path))],
   [/^([a-z0-9-]+)\/import$/, (book) => importScreen(book)],
   [/^([a-z0-9-]+)\/waiting$/, (book) => waitingScreen(book)],

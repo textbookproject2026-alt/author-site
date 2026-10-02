@@ -45,3 +45,6 @@ export function bookHeader(book, current, title = book.title) {
 
 /** Where a page of the book is on a Quartz site (its slug: the path, .md dropped, spaces as dashes). */
 export const pageSlug = (path) => path.replace(/\.md$/i, "").split("/").map((s) => encodeURIComponent(s.replace(/ /g, "-"))).join("/");
+
+/** A file of the book on GitHub's public copy, at a commit. */
+export const rawUrl = (repo, ref, path) => `https://raw.githubusercontent.com/${repo}/${ref}/${path.split("/").map(encodeURIComponent).join("/")}`;

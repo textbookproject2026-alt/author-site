@@ -43,6 +43,9 @@ for (const [label, viewport] of [["desktop", { width: 1100, height: 900 }], ["ph
     await shot("1-books");
     await page.goto(`${origin}/#/a-book`); await page.getByRole("heading", { name: "Chapters" }).waitFor(); await shot("2-chapters");
     await page.goto(`${origin}/#/a-book/chapter/${encodeURIComponent("chapters/chapter-01.md")}`); await page.locator(".preview p").first().waitFor(); await shot("3-chapter");
+    await page.getByRole("link", { name: "Edit", exact: true }).click(); await page.locator("#editor-text").fill("# Chapter 1\n\nSome better text about things.\n"); await shot("3b-edit");
+    await page.getByRole("tab", { name: "Changes" }).click(); await shot("3c-edit-changes");
+    await page.getByRole("button", { name: "Cancel" }).click(); await page.getByRole("button", { name: "Discard" }).click();
     stub.s.importState = [importDone({ isNew: false })];
     await page.goto(`${origin}/#/a-book/import`); await page.locator("#docx").waitFor(); await shot("4-import");
     await page.locator("#docx").setInputFiles({ name: "Chapter 2.docx", mimeType: "application/octet-stream", buffer: Buffer.from("PK\x03\x04xx") });
