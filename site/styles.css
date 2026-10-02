@@ -232,3 +232,20 @@ ul.report > li { margin-bottom: 0.5rem; }
 .sentence mark.new { background: var(--portal-add-strong); }
 .progress.grow { flex: 1 1 8rem; }
 details summary { cursor: pointer; font-weight: 600; color: var(--portal-accent); margin: 0.5rem 0; }
+
+/* The editor: edit-on-github editor.ts's box (tabs, then the text), in the site's tokens. */
+.editor { margin: 0 0 var(--portal-rhythm); border: 1px solid var(--portal-border); border-radius: 10px; overflow: hidden; background: var(--portal-bg-soft); }
+.editor-bar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 0.5rem;
+  padding: 0.4rem 0.5rem 0; border-bottom: 1px solid var(--portal-border); background: var(--portal-bg); }
+.editor-bar > .row { padding-bottom: 0.4rem; margin-left: auto; }
+.editor [role="tablist"] { display: flex; gap: 0.15rem; overflow-x: auto; }
+.editor [role="tab"] { font: inherit; cursor: pointer; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; margin-bottom: -1px;
+  padding: 0.4rem 0.9rem; background: none; color: var(--portal-muted); }
+.editor [role="tab"][aria-selected="true"] { border-color: var(--portal-border); background: var(--portal-bg-soft); color: var(--portal-ink); font-weight: 600; }
+textarea.editor-text { display: block; width: 100%; min-height: 65vh; margin: 0; padding: 0.9rem 1rem; border: 0; resize: vertical;
+  background: var(--portal-bg-soft); color: var(--portal-ink); font-family: var(--portal-font-mono); font-size: 0.875rem; line-height: 1.65; tab-size: 2; }
+textarea.editor-text.short { min-height: 12rem; border: 1px solid var(--portal-border); border-radius: 6px; }
+textarea.editor-text:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--portal-accent); }
+.editor-panel { padding: 1rem; }
+.editor-panel .preview { border: 0; padding: 0; }
+.editor-panel .diff { border: 0; }

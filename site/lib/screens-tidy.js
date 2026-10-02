@@ -6,7 +6,7 @@
 
 import { h, clear, busy, note, errorNote, plural } from "./dom.js";
 import { read, send } from "./api.js";
-import { bookBySlug, bookHeader } from "./books.js";
+import { bookBySlug, bookHeader, rawUrl } from "./books.js";
 import { analyse, changes } from "./python.js";
 import { conflictView, sentView } from "./screens-shared.js";
 
@@ -33,7 +33,7 @@ async function snapshot(book) {
   const wanted = tree.files.filter((f) => /\.md$/i.test(f.path) && (f.path.startsWith("chapters/") || /(^|\/)glossary\.md$/.test(f.path)));
   const blobs = {};
   await Promise.all(wanted.map(async (f) => {
-    const url = `https://raw.githubusercontent.com/${book.repo}/${tree.head}/${f.path.split("/").map(encodeURIComponent).join("/")}`;
+    const url = rawUrl(book.repo, tree.head, f.path);
     const res = await fetch(url, { cache: "force-cache" });
     if (!res.ok) throw Object.assign(new Error("raw"), { userMessage: "A page of the book couldn't be read from GitHub just now. Please try again." });
     const bytes = new Uint8Array(await res.arrayBuffer());

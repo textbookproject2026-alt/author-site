@@ -146,6 +146,7 @@ export async function suggestionScreen(slug, number) {
         clear(out, ...done(await act(slug, "suggestion-decline", { number }), back));
         actions.remove();
       }),
+      s.path ? h("a", { class: "btn", href: `#/${slug}/edit/${encodeURIComponent(s.path)}`, text: `Edit ${s.page}` }) : null,
       h("a", { class: "btn link", href: s.url, target: "_blank", rel: "noopener", text: "Open on GitHub" }));
   } else {
     actions = h("div", { class: "actions" },
@@ -166,6 +167,7 @@ export async function suggestionScreen(slug, number) {
           h("p", { text: "Is that the change the reader asked for? The reader is sent a link to it, and the suggestion is closed." }),
           h("div", { class: "actions" }, confirm)));
       }),
+      s.path ? h("a", { class: "btn", href: `#/${slug}/edit/${encodeURIComponent(s.path)}`, text: `Edit ${s.page}` }) : null,
       h("a", { class: "btn link", href: s.url, target: "_blank", rel: "noopener", text: "Open on GitHub" }));
   }
 
@@ -178,7 +180,7 @@ export async function suggestionScreen(slug, number) {
     h("blockquote", { class: "said", text: s.suggestion || "(nothing written)" }),
     s.reasoning ? [h("h3", { text: "Why" }), h("blockquote", { class: "said", text: s.reasoning })] : null,
     s.accepted
-      ? note([h("p", { text: "You've taken this on, and the reader has been thanked. Once the change is in the drafts area, press “I've made the change”." })])
+      ? note([h("p", { text: "You've taken this on, and the reader has been thanked. Once the change is in the drafts area (made with Edit on the page, say), press “I've made the change”." })])
       : note([h("p", { text: "Accepting means you're taking it on: the reader is thanked and told you'll make the change, and the suggestion stays here, marked Accepted, until you have. Declining sends a courteous reply saying the text is staying as it is." })]),
     exact,
     actions,

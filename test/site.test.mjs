@@ -158,6 +158,87 @@ test("signed in as the real book answered: every page under chapters/ offers the
   assert.equal(await page.getByText("Edit this page").count(), 0, "the author site edits chapters itself");
 });
 
+// --- the editor ----------------------------------------------------------------------------------
+
+const CH1_PATH = "chapters/chapter-01.md";
+const conflictAnswer = (paths) => [409, { error: "conflict", conflict: { head: MOVED,
+  commits: [{ who: "reader", when: new Date().toISOString(), message: "A browser edit", url: "https://github.com/x" }],
+  files: paths.map((path) => ({ path, status: "modified", patch: "@@ -1,1 +1,1 @@\n-a\n+b\n" })) } }];
+
+async function openEditor() {
+  await page.goto(`${origin}/#/a-book/chapter/${encodeURIComponent(CH1_PATH)}`);
+  await page.getByRole("link", { name: "Edit", exact: true }).click();
+  await page.getByRole("tab", { name: "Edit" }).waitFor();
+  return page.locator("#editor-text");
+}
+
+test("editor: Edit, Preview, Changes; Send writes the whole page on the commit it was read at, as the author", async () => {
+  await signIn();
+  const box = await openEditor();
+  const send = page.getByRole("button", { name: "Send to drafts" });
+  assert.equal(await send.isDisabled(), true, "nothing to send until something changes");
+  await box.fill("# Chapter 1\n\nSome better text about ![a figure](../assets/chapter-01/image1.png) things.\n");
+  await page.getByRole("tab", { name: "Edit" }).press("ArrowRight");
+  assert.equal(await page.getByRole("tab", { name: "Preview" }).getAttribute("aria-selected"), "true");
+  await page.locator("#ed-panel-1 .preview img").waitFor();
+  assert.equal(await page.locator("#ed-panel-1 .preview img").getAttribute("src"), `https://raw.githubusercontent.com/someone/a-book/${HEAD}/assets/chapter-01/image1.png`);
+  await page.getByRole("tab", { name: "Changes" }).click();
+  assert.equal(await page.locator("#ed-panel-2 ins").first().textContent(), "better");
+  await page.locator("#edit-message").fill("Say it better");
+  await send.click();
+  await page.getByRole("heading", { name: "Sent to the drafts area" }).waitFor();
+  assert.deepEqual(lastCall("author-send").body, { book: "a-book", base: HEAD, message: "Say it better",
+    files: [{ path: CH1_PATH, text: "# Chapter 1\n\nSome better text about ![a figure](../assets/chapter-01/image1.png) things.\n" }] });
+  assert.equal(await page.evaluate(() => Object.keys(sessionStorage).filter((k) => k.startsWith("tb-edit:")).length), 0, "nothing kept once sent");
+});
+
+test("editor: the drafts moved but not this page — offered again on the new commit; this page moved — nothing resent, the text kept", async () => {
+  await signIn();
+  let box = await openEditor();
+  await box.fill("Mine.\n");
+  stub.s.sendAnswers = [conflictAnswer(["chapters/chapter-02.md"]), [201, sentAnswer()]];
+  await page.getByRole("button", { name: "Send to drafts" }).click();
+  await page.getByText("Nothing was sent.").waitFor();
+  await page.getByText("chapter-01.md isn't among the changes").waitFor();
+  await page.getByRole("button", { name: "Send it on the drafts as they are now" }).click();
+  await page.getByRole("heading", { name: "Sent to the drafts area" }).waitFor();
+  const sends = stub.s.requests.filter((r) => r.endpoint === "author-send");
+  assert.deepEqual(sends.map((r) => r.body.base), [HEAD, MOVED]);
+  assert.equal(sends[1].body.files[0].text, "Mine.\n");
+
+  box = await openEditor();
+  await box.fill("Mine again.\n");
+  stub.s.sendAnswers = [conflictAnswer([CH1_PATH])];
+  await page.getByRole("button", { name: "Send to drafts" }).click();
+  await page.getByText("chapter-01.md itself was changed meanwhile").waitFor();
+  assert.equal(await page.getByRole("button", { name: "Send it on the drafts as they are now" }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Send to drafts" }).isDisabled(), true);
+  assert.equal(await box.inputValue(), "Mine again.\n");
+});
+
+test("editor: unsent text survives leaving the screen; Cancel asks first; a CRLF page goes back with CRLF", async () => {
+  await signIn();
+  let box = await openEditor();
+  await box.fill("Half done.\n");
+  await page.getByRole("link", { name: "Waiting for you" }).click();
+  await page.getByText("Weekly snapshot").waitFor();
+  box = await openEditor();
+  await page.getByText("Your unsent changes from earlier are back.").waitFor();
+  assert.equal(await box.inputValue(), "Half done.\n");
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Discard" }).click();
+  await page.getByRole("link", { name: "Edit", exact: true }).waitFor();
+  box = await openEditor();
+  assert.equal(await box.inputValue(), "# Chapter 1\n\nSome text about ![a figure](../assets/chapter-01/image1.png) things.\n");
+
+  stub.s.bookFiles.set(CH1_PATH, Buffer.from("# Windows\r\n\r\nLine one.\r\n"));
+  box = await openEditor();
+  await box.fill("# Windows\n\nLine two.\n");
+  await page.getByRole("button", { name: "Send to drafts" }).click();
+  await page.getByRole("heading", { name: "Sent to the drafts area" }).waitFor();
+  assert.equal(lastCall("author-send").body.files[0].text, "# Windows\r\n\r\nLine two.\r\n");
+});
+
 // --- Word import -------------------------------------------------------------------------------
 
 const DOCX = Buffer.concat([Buffer.from("PK\x03\x04", "binary"), Buffer.alloc(3 * 1024 * 1024, 1)]);
@@ -284,6 +365,7 @@ test("a suggestion: accept by hand, decline; an accepted one: I've made the chan
   await page.goto(`${origin}/#/a-book/suggestion/8`);
   await page.getByRole("button", { name: "I've made the change" }).click();
   await page.getByRole("link", { name: "Reword" }).waitFor();
+  assert.equal(await page.getByRole("link", { name: "Edit chapter-01" }).getAttribute("href"), `#/a-book/edit/${encodeURIComponent("chapters/chapter-01.md")}`);
   await page.getByRole("button", { name: "Yes: thank the reader with a link to it" }).click();
   await page.getByText("Did suggestion-made.").waitFor();
   assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "suggestion-made", number: 8, sha: "c".repeat(40) });

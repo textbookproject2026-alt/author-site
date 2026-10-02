@@ -8,7 +8,7 @@
 
 import { h, clear, busy, note, errorNote, when, plural } from "./dom.js";
 import { read, send, importStart, importAgain, importStatus } from "./api.js";
-import { bookBySlug, bookHeader } from "./books.js";
+import { bookBySlug, bookHeader, rawUrl } from "./books.js";
 import { renderChapter } from "./preview.js";
 import { fileProblem, uploadParts } from "./upload.js";
 import { conflictView, sentView } from "./screens-shared.js";
@@ -121,7 +121,7 @@ async function review(book, folders, stage, id, docxName, s) {
   const { result, chapter } = s;
   const c = result.chapter;
   const staged = new Set(result.writes.filter((w) => w.kind === "picture").map((w) => w.path));
-  const raw = (p) => `https://raw.githubusercontent.com/${book.repo}/${result.base}/${p.split("/").map(encodeURIComponent).join("/")}`;
+  const raw = (p) => rawUrl(book.repo, result.base, p);
   const pictureUrl = async (p) => {
     if (staged.has(p)) {
       const key = `${id}:${s.attempt}:${p}`;
