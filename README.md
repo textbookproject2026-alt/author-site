@@ -55,11 +55,19 @@ test/screenshots.mjs     every screen, light and dark, desktop and phone
 | reads the drafts' history, of the book or one page; one change's difference and the page as it was; restores an old version as a new change | `#/<book>/history[/<path>]`, `#/<book>/revision/<sha>[/<path>]` | `author-history` (as the App, not GitHub's unauthenticated API); Restore sends through `author-send` like any edit |
 | keeps a DeepSeek key for the optional checks | `#/settings` | none: the key stays in the browser and goes only to DeepSeek |
 
-The endpoints are suggest-edit-function's `api/author-*.js` (its README, "The author
-site"). They check, on every request, that the page is a registry platform page with
+The endpoints are suggest-edit-function's `/api/author-*` URLs (one routed function;
+its README, "The author site"). They check, on every request, that the page is a registry platform page with
 `author-api`, that the identity token was issued to this origin, and that the login
 is in the book's `authors`. They act as the GitHub App, and every write names the
 author. Nobody's GitHub token is kept, here or there.
+
+
+**History's two known limits** (accepted):
+- A page's History follows its current path only; changes from before a rename are
+  in the book's History.
+- Live or waiting comes from comparing live with drafts, which GitHub caps at 250
+  commits: if drafts are further ahead than that, the oldest waiting commits show as
+  Live until the next publish.
 
 
 ## The questions run the converter's own Python
