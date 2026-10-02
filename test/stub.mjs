@@ -67,6 +67,8 @@ export function createStub({ siteOrigin }) {
     publish: { open: true, waiting: false, number: 30, url: "https://github.com/someone/a-book/pull/30", pages: ["chapter-01"], page_count: 1, change_count: 2, who: ["author-one", "reader"], state: "clean", state_words: "This can go to readers now. Nothing else is waiting on it.", can_publish: true },
     status401: false,
     deepseekStatus: 200,
+    people: { authors: ["author-one", "co-author", "textbookproject2026-alt"], owner: "textbookproject2026-alt", registry: "r".repeat(40), pending: [] },
+    peopleAnswers: [], // successive answers for author-people-change: [status, body]
   };
 
   const json = (route, status, body, headers = {}) => route.fulfill({
@@ -121,6 +123,12 @@ export function createStub({ siteOrigin }) {
     }
     if (endpoint === "author-send") {
       const [status, answer] = s.sendAnswers.length > 1 ? s.sendAnswers.shift() : s.sendAnswers[0] ?? [201, sentAnswer()];
+      return json(route, status, answer);
+    }
+    if (endpoint === "author-people") return json(route, 200, s.people);
+    if (endpoint === "author-people-change") {
+      const [status, answer] = s.peopleAnswers.shift() ?? [201, { number: 61, url: "https://github.com/textbookproject2026-alt/textbook-registry/pull/61", action: body.action, login: body.login, by: s.signedIn.login, state: "open", when: new Date().toISOString() }];
+      if (status === 201) s.people = { ...s.people, pending: [answer] };
       return json(route, status, answer);
     }
     if (endpoint === "author-act") {
