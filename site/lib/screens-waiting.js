@@ -178,7 +178,7 @@ export async function suggestionScreen(slug, number) {
     h("blockquote", { class: "said", text: s.suggestion || "(nothing written)" }),
     s.reasoning ? [h("h3", { text: "Why" }), h("blockquote", { class: "said", text: s.reasoning })] : null,
     s.accepted
-      ? note([h("p", { text: "You've taken this on, and the reader has been thanked. Once the change is in the drafts area (from Edit this page, say, once you've accepted it here), press “I've made the change”." })])
+      ? note([h("p", { text: "You've taken this on, and the reader has been thanked. Once the change is in the drafts area, press “I've made the change”." })])
       : note([h("p", { text: "Accepting means you're taking it on: the reader is thanked and told you'll make the change, and the suggestion stays here, marked Accepted, until you have. Declining sends a courteous reply saying the text is staying as it is." })]),
     exact,
     actions,

@@ -53,8 +53,6 @@ site"). They check, on every request, that the page is a registry platform page 
 is in the book's `authors`. They act as the GitHub App, and every write names the
 author. Nobody's GitHub token is kept, here or there.
 
-To change a chapter's wording, an author uses **Edit this page** on the book's own
-site; it arrives under *Waiting for you* as a draft change.
 
 ## The questions run the converter's own Python
 
@@ -98,5 +96,13 @@ this repository: production branch `main`, build command
 **`node scripts/fetch-converter.mjs`**, output directory **`site`**. Pushing to `main` deploys; a pull request gets a preview at
 `<branch>.c4n-author-site.pages.dev`, where sign-in works too (the function accepts the
 project's previews). Custom domain: `author.confused4now.org`.
+
+The modules must reach browsers with `_headers`' `Cache-Control: no-cache`, because the
+site has no build step to put versions in their names. The confused4now.org zone's
+**Browser Cache TTL** (4 hours) overrides that for `.js` and `.css` on the custom
+domain, so after a deploy a browser kept running the old modules, hard reload or not
+(2 Oct 2026: PR #2's questions button missing for hours). The zone has a Cache Rule for
+`author.confused4now.org`, Browser TTL **Respect origin**; CI's `production-headers`
+job fails on main if that stops holding.
 
 No analytics.

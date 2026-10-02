@@ -175,7 +175,7 @@ export function createStub({ siteOrigin }) {
       const path = decodeURIComponent(url.pathname.slice(prefix.length));
       if (s.bookFiles.has(path)) return route.fulfill({ status: 200, contentType: "text/plain", headers: cors, body: s.bookFiles.get(path) });
     }
-    if (url.pathname.endsWith("/registry.json")) return route.fulfill({ status: 200, contentType: "application/json", headers: cors, body: JSON.stringify(REGISTRY) });
+    if (url.pathname.endsWith("/registry.json")) return route.fulfill({ status: 200, contentType: "application/json", headers: cors, body: JSON.stringify(s.registry ?? REGISTRY) });
     if (url.pathname.endsWith(".png")) return route.fulfill({ status: 200, contentType: "image/png", headers: cors, body: PNG });
     return route.fulfill({ status: 404, headers: cors, body: "" });
   }

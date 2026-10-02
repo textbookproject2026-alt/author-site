@@ -9,6 +9,7 @@
 
 import { test, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { chromium } from "playwright-core";
 import { startServer } from "./server.mjs";
 import { createStub, importDone, sentAnswer, HEAD, MOVED } from "./stub.mjs";
@@ -127,8 +128,34 @@ test("chapters: listed in order with the concept folder, Download a copy is the 
   assert.equal(await page.locator(".preview img").getAttribute("src"), `https://raw.githubusercontent.com/someone/a-book/${HEAD}/assets/chapter-01/image1.png`);
   assert.equal(await page.locator(".preview script").count(), 0);
   assert.equal(await page.locator('.preview a[href^="javascript"]').count(), 0);
-  assert.equal(await page.getByRole("link", { name: "On the live site (to edit it)" }).getAttribute("href"), "https://a-book.example.org/chapters/chapter-01");
+  assert.equal(await page.getByRole("link", { name: "On the live site", exact: true }).getAttribute("href"), "https://a-book.example.org/chapters/chapter-01");
   assert.equal(await page.getByRole("link", { name: "In the drafts preview" }).getAttribute("href"), "https://drafts.a-book.pages.dev/chapters/chapter-01");
+});
+
+test("signed in as the real book answered: every page under chapters/ offers the questions, the others don't", async () => {
+  // author-read's real answers for the book where the button was missing (a browser
+  // still running PR #1's cached modules; see README, Deploy).
+  const real = JSON.parse(readFileSync(new URL("./fixtures/signed-in.json", import.meta.url)));
+  stub.s.books = real.books.books;
+  stub.s.signedIn.login = real.books.login;
+  stub.s.tree = real.tree;
+  stub.s.registry = { schema_version: 1, books: [real.registry] };
+  await signIn();
+  const slug = real.books.books[0].slug;
+  await page.getByRole("link", { name: "From Ontology to Method" }).click();
+  await page.getByRole("heading", { name: "Definitions" }).waitFor();
+  for (const [name, path] of [["chapter-01", "chapters/chapter-01.md"], ["Example concept", "chapters/Definitions/Example concept.md"]]) {
+    await page.goto(`${origin}/#/${slug}`);
+    await page.getByRole("link", { name, exact: true }).click();
+    const tidy = page.getByRole("link", { name: "Citations, concept links and glossary" });
+    await tidy.waitFor();
+    assert.equal(await tidy.getAttribute("href"), `#/${slug}/tidy/${encodeURIComponent(path)}`);
+    await page.getByRole("link", { name: "In the drafts preview" }).waitFor();
+  }
+  await page.goto(`${origin}/#/${slug}/chapter/index.md`);
+  await page.getByRole("link", { name: "On the live site", exact: true }).waitFor();
+  assert.equal(await page.getByRole("link", { name: "Citations, concept links and glossary" }).count(), 0);
+  assert.equal(await page.getByText("Edit this page").count(), 0, "the author site edits chapters itself");
 });
 
 // --- Word import -------------------------------------------------------------------------------
@@ -171,6 +198,7 @@ test("import: parts of at most 2.5 MB, receipts in order, converted, read, ticke
   assert.deepEqual([sent.book, sent.base, sent.import, sent.replace], ["a-book", HEAD, "0123456789abcdef0123", undefined]);
   assert.equal(sent.files, undefined, "the import's files are never sent through the browser");
   assert.equal(await page.getByRole("link", { name: "See the change on GitHub" }).getAttribute("href"), sentAnswer().url);
+  assert.equal(await page.getByRole("link", { name: "Go through this chapter now" }).getAttribute("href"), `#/a-book/tidy/${encodeURIComponent("chapters/chapter-02.md")}`);
 });
 
 test("import: replacing a chapter needs the second tick, and says who changed it and which pictures go", async () => {

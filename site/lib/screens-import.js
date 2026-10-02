@@ -171,7 +171,8 @@ async function review(book, folders, stage, id, docxName, s) {
     try {
       const sent = await send({ book: book.slug, base: result.base, import: id, replace: !c.new || undefined, message: `Bring in ${c.path.split("/").pop()} from Word (“${docxName}”)` });
       clear(stage, ...sentView(book, sent, c.new ? "The chapter is in the drafts area" : "The chapter was replaced in the drafts area",
-        [c.new && result.contents_line ? "Its line is on the front page, under “Contents”." : null]));
+        [c.new && result.contents_line ? "Its line is on the front page, under “Contents”." : null],
+        h("a", { class: "btn primary", href: `#/${book.slug}/tidy/${encodeURIComponent(c.path)}`, text: "Go through this chapter now" })));
     } catch (err) {
       if (err.status === 409 && (err.body?.error === "conflict" || err.body?.error === "import base")) {
         const again = h("button", { type: "button", class: "btn primary", text: "Convert it again" });
