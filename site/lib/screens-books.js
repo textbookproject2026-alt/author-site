@@ -4,7 +4,7 @@ import { h, busy, note, when } from "./dom.js";
 import { read } from "./api.js";
 import { bookBySlug, bookHeader, rawUrl, myBooks, pageSlug } from "./books.js";
 import { renderChapter } from "./preview.js";
-import { discussionUrl, draftsPreview, historyUrl, registryBook } from "./public.js";
+import { discussionUrl, draftsPreview, registryBook } from "./public.js";
 
 export async function booksScreen() {
   const { login, books } = await myBooks();
@@ -51,7 +51,7 @@ export async function chaptersScreen(slug) {
     h("div", { class: "row" },
       h("a", { class: "btn", href: book.zip, download: "", text: "Download a copy" }),
       preview ? h("a", { class: "btn", href: preview, target: "_blank", rel: "noopener", text: "See the drafts preview" }) : null,
-      h("a", { class: "btn link", href: historyUrl({ content: { repo: book.repo, live_branch: book.live_branch } }), target: "_blank", rel: "noopener", text: "History" }),
+      h("a", { class: "btn link", href: `#/${slug}/history`, text: "History" }),
       discussionUrl(reg) ? h("a", { class: "btn link", href: discussionUrl(reg), target: "_blank", rel: "noopener", text: "Reader discussion" }) : null),
     h("p", { class: "muted small", text: "Download a copy is every file of the book as the drafts area holds it, in one .zip, from GitHub." }),
     h("h2", { text: "Chapters" }),
@@ -86,6 +86,7 @@ export async function chapterScreen(slug, path) {
       file.last ? [" · last changed by ", h("strong", { text: file.last.who }), ` ${when(file.last.when)}`, file.last.message ? ` (“${file.last.message}”)` : ""] : null),
     h("div", { class: "row spaced" },
       typeof file.text === "string" ? h("a", { class: "btn primary", href: `#/${slug}/edit/${encodeURIComponent(path)}`, text: "Edit" }) : null,
+      h("a", { class: "btn", href: `#/${slug}/history/${encodeURIComponent(path)}`, text: "History" }),
       /\.md$/i.test(path) && path.startsWith("chapters/") ? h("a", { class: "btn", href: `#/${slug}/tidy/${encodeURIComponent(path)}`, text: "Citations, concept links and glossary" }) : null,
       preview ? h("a", { class: "btn", href: `${preview}${slugPath}`, target: "_blank", rel: "noopener", text: "In the drafts preview" }) : null,
       book.domain ? h("a", { class: "btn", href: `https://${book.domain}/${slugPath}`, target: "_blank", rel: "noopener", text: "On the live site" }) : null),

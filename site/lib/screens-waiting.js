@@ -7,7 +7,7 @@ import { h, clear, busy, note, errorNote, when, plural } from "./dom.js";
 import { read, act, send } from "./api.js";
 import { bookBySlug, bookHeader, pageSlug } from "./books.js";
 import { sentView } from "./screens-shared.js";
-import { PREVIEW_WORDS, discussionUrl, historyUrl, jobs, previewState, registryBook } from "./public.js";
+import { PREVIEW_WORDS, discussionUrl, jobs, previewState, registryBook } from "./public.js";
 
 /** A button that runs `fn`, showing progress and then what happened in `out`. */
 function doButton(text, cls, out, fn) {
@@ -116,7 +116,7 @@ export async function waitingScreen(slug) {
     h("h2", { text: "Discussion and history" }),
     h("p", {},
       discussionUrl(reg) ? [h("a", { href: discussionUrl(reg), target: "_blank", rel: "noopener", text: "Reader discussion" }), " — every comment left in the margins of the book. "] : null,
-      h("a", { href: historyUrl({ content: { repo: book.repo, live_branch: book.live_branch } }), target: "_blank", rel: "noopener", text: "History" }), " — what changed, when, and by whom."),
+      h("a", { href: `#/${slug}/history`, text: "History" }), " — what changed, when, and by whom."),
   ];
 }
 

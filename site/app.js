@@ -14,6 +14,8 @@
 //   #/<book>/change/<n>         one draft change
 //   #/<book>/publish            send the drafts to the live book
 //   #/<book>/people             who can work on it; invite, remove
+//   #/<book>/history[/<path>]   the drafts' history, of the book or one page
+//   #/<book>/revision/<sha>[/<path>]  one change; one page at it, and Restore
 //   #/settings                  the author's own DeepSeek key, in this browser
 
 import { h, clear, busy, errorNote } from "./lib/dom.js";
@@ -24,6 +26,7 @@ import { tidyScreen } from "./lib/screens-tidy.js";
 import { editScreen } from "./lib/screens-edit.js";
 import { settingsScreen } from "./lib/screens-settings.js";
 import { peopleScreen } from "./lib/screens-people.js";
+import { historyScreen, revisionScreen } from "./lib/screens-history.js";
 import { waitingScreen, suggestionScreen, changeScreen, publishScreen } from "./lib/screens-waiting.js";
 
 const main = document.getElementById("main");
@@ -111,6 +114,8 @@ const ROUTES = [
   [/^([a-z0-9-]+)\/change\/(\d+)$/, (book, n) => changeScreen(book, Number(n))],
   [/^([a-z0-9-]+)\/publish$/, (book) => publishScreen(book)],
   [/^([a-z0-9-]+)\/people$/, (book) => peopleScreen(book)],
+  [/^([a-z0-9-]+)\/history(?:\/(.+))?$/, (book, path) => historyScreen(book, path ? decodeURIComponent(path) : "")],
+  [/^([a-z0-9-]+)\/revision\/([0-9a-f]{40})(?:\/(.+))?$/, (book, sha, path) => revisionScreen(book, sha, path ? decodeURIComponent(path) : "")],
 ];
 
 let seq = 0;

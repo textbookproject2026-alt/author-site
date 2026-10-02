@@ -58,3 +58,4 @@ export const importAgain = (book, id) => call("author-import", { method: "POST",
 export const importStatus = (book, id, file) => call("author-import", { query: { book, id, file } });
 export const people = (book) => call("author-people", { query: { book } });
 export const changePeople = (book, action, login) => call("author-people-change", { method: "POST", body: { book, action, login } });
+export const history = (book, query = {}) => call("author-history", { query: { book, ...query } });

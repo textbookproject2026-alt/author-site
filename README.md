@@ -52,6 +52,7 @@ test/screenshots.mjs     every screen, light and dark, desktop and phone
 | sends the drafts to readers | `#/<book>/publish` | `author-act` publish-prepare, publish |
 | sees the jobs and the drafts preview | `#/<book>/waiting` | none: public reads from the browser |
 | invites or removes the book's authors | `#/<book>/people` | `author-people`, `author-people-change`: a registry pull request with auto-merge; pending until the function runs it |
+| reads the drafts' history, of the book or one page; one change's difference and the page as it was; restores an old version as a new change | `#/<book>/history[/<path>]`, `#/<book>/revision/<sha>[/<path>]` | `author-history` (as the App, not GitHub's unauthenticated API); Restore sends through `author-send` like any edit |
 | keeps a DeepSeek key for the optional checks | `#/settings` | none: the key stays in the browser and goes only to DeepSeek |
 
 The endpoints are suggest-edit-function's `api/author-*.js` (its README, "The author

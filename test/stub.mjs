@@ -69,6 +69,11 @@ export function createStub({ siteOrigin }) {
     deepseekStatus: 200,
     people: { authors: ["author-one", "co-author", "textbookproject2026-alt"], owner: "textbookproject2026-alt", registry: "r".repeat(40), pending: [] },
     peopleAnswers: [], // successive answers for author-people-change: [status, body]
+    // author-history: 31 commits on drafts, the newest 2 still waiting; page 2 is the oldest.
+    history: Array.from({ length: 31 }, (_, i) => ({
+      sha: (i + 1).toString(16).padStart(40, "e"), who: i === 0 ? "author-one" : "co-author",
+      when: new Date(Date.now() - (i + 1) * 3600e3).toISOString(), message: i === 0 ? "Say it better" : `Change ${i}`, live: i >= 2,
+    })),
   };
 
   const json = (route, status, body, headers = {}) => route.fulfill({
@@ -124,6 +129,19 @@ export function createStub({ siteOrigin }) {
     if (endpoint === "author-send") {
       const [status, answer] = s.sendAnswers.length > 1 ? s.sendAnswers.shift() : s.sendAnswers[0] ?? [201, sentAnswer()];
       return json(route, status, answer);
+    }
+    if (endpoint === "author-history") {
+      const sha = url.searchParams.get("sha");
+      const path = url.searchParams.get("path");
+      if (!sha) {
+        const page = Number(url.searchParams.get("page") ?? 1);
+        const list = path ? s.history.slice(0, 3) : s.history;
+        return json(route, 200, { commits: list.slice((page - 1) * 30, page * 30), next: list.length > page * 30 });
+      }
+      const c = s.history.find((x) => x.sha === sha);
+      const out = { ...c, parent: HEAD, files: [{ path: "chapters/chapter-01.md", status: "modified", added: 1, removed: 1, patch: "@@ -3 +3 @@\n-Some text about things.\n+" + CH1.split("\n")[2] }] };
+      if (path) out.page = { path, text: CH1.replace("Some text", "Some older text"), before: CH1.replace("Some text", "Some first text") };
+      return json(route, 200, out);
     }
     if (endpoint === "author-people") return json(route, 200, s.people);
     if (endpoint === "author-people-change") {

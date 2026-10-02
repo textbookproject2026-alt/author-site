@@ -375,7 +375,7 @@ test("waiting: suggestions, draft changes, going live, the preview and the jobs,
   await page.getByText("Weekly snapshot").waitFor();
   await page.locator(".error", { hasText: "Did not finish" }).waitFor();
   assert.equal(await page.getByRole("link", { name: "Reader discussion" }).getAttribute("href"), "https://hypothes.is/search?q=url:https://a-book.example.org/*");
-  assert.equal(await page.getByRole("link", { name: "History" }).getAttribute("href"), "https://github.com/someone/a-book/commits/main");
+  assert.equal(await page.getByRole("link", { name: "History" }).getAttribute("href"), "#/a-book/history");
 });
 
 test("a suggestion: accept by hand, decline; an accepted one: I've made the change names the commit, then thanks", async () => {
@@ -483,12 +483,67 @@ test("people: remove asks first; the last author can't be removed; not switched 
   await page.getByText("isn't switched on yet", { exact: false }).waitFor();
 });
 
+// --- history -----------------------------------------------------------------------------------
+
+test("history: the book's changes in this site, paged, marked live or waiting; not GitHub", async () => {
+  await signIn();
+  await page.goto(`${origin}/#/a-book`);
+  const link = page.getByRole("link", { name: "History", exact: true });
+  assert.equal(await link.getAttribute("href"), "#/a-book/history");
+  assert.equal(await page.locator('a[href*="github.com"][href*="/commits/"]').count(), 0);
+  await link.click();
+  await page.getByRole("heading", { name: "History", exact: true }).waitFor();
+  const items = page.locator("ul.history > li");
+  assert.equal(await items.count(), 30);
+  assert.match(await items.nth(0).textContent(), /Say it better — author-one.*Waiting in drafts/);
+  assert.match(await items.nth(2).textContent(), /Change 2 — co-author.*Live/);
+  await page.getByRole("button", { name: "Show older changes" }).click();
+  await items.nth(30).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Show older changes" }).count(), 0);
+  assert.deepEqual(lastCall("author-history").query, { book: "a-book", page: "2" });
+  assert.ok(stub.s.requests.filter((r) => r.endpoint === "author-history").every((r) => r.auth === "Bearer tok-1"));
+});
+
+test("history: a chapter's, from the chapter; a revision as the Changes view and the page then; Restore sends a new change on drafts now", async () => {
+  await signIn();
+  await page.goto(`${origin}/#/a-book/chapter/${encodeURIComponent(CH1_PATH)}`);
+  await page.getByRole("link", { name: "History", exact: true }).click();
+  await page.getByRole("heading", { name: "History of chapter-01" }).waitFor();
+  assert.deepEqual(lastCall("author-history").query, { book: "a-book", path: CH1_PATH });
+  await page.locator("ul.history > li a").nth(1).click();
+  await page.getByRole("heading", { name: "What this change did to the page" }).waitFor();
+  assert.equal(await page.locator(".diff del").first().textContent(), "first");
+  assert.equal(await page.locator(".diff ins").first().textContent(), "older");
+  await page.getByText("The page as it was").click();
+  await page.locator("details .preview").getByText("Some older text").waitFor();
+  await page.getByRole("button", { name: "Restore this version" }).click();
+  await page.getByRole("tab", { name: "Edit" }).waitFor();
+  assert.match(await page.locator("#editor-text").inputValue(), /Some older text/);
+  await page.getByText("from its history").waitFor();
+  assert.match(await page.locator("#edit-message").inputValue(), /^Restore chapter-01\.md as of \d+ \w+ \d{4}$/);
+  await page.getByRole("tab", { name: "Changes" }).click();
+  assert.equal(await page.locator("#ed-panel-2 ins").first().textContent(), "older");
+  await page.getByRole("button", { name: "Send to drafts" }).click();
+  await page.getByRole("heading", { name: "Sent to the drafts area" }).waitFor();
+  const sent = lastCall("author-send").body;
+  assert.equal(sent.base, HEAD, "on the drafts as they are now, not the old revision");
+  assert.deepEqual(sent.files, [{ path: CH1_PATH, text: "# Chapter 1\n\nSome older text about ![a figure](../assets/chapter-01/image1.png) things.\n" }]);
+});
+
+test("history: one whole change lists each page it touched with its difference", async () => {
+  await signIn();
+  await page.goto(`${origin}/#/a-book/revision/${stub.s.history[0].sha}`);
+  await page.getByRole("heading", { name: "Say it better" }).waitFor();
+  assert.equal(await page.getByRole("link", { name: "chapter-01" }).getAttribute("href"), `#/a-book/revision/${stub.s.history[0].sha}/${encodeURIComponent(CH1_PATH)}`);
+  await page.locator(".diff .line.add").first().waitFor();
+});
+
 test("at 375px nothing scrolls sideways", async () => {
   await page.setViewportSize({ width: 375, height: 800 });
   await signIn();
-  for (const hash of ["#/", "#/a-book", "#/a-book/waiting", "#/a-book/change/12"]) {
+  for (const hash of ["#/", "#/a-book", "#/a-book/waiting", "#/a-book/change/12", "#/a-book/history", `#/a-book/revision/${"1".padStart(40, "e")}/${encodeURIComponent(CH1_PATH)}`]) {
     await page.goto(`${origin}/${hash}`);
-    await page.locator("h1").waitFor();
+    await page.locator("h1").first().waitFor();
     await page.waitForLoadState("networkidle");
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     assert.ok(overflow <= 0, `${hash} overflows by ${overflow}px`);
