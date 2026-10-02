@@ -13,6 +13,7 @@
 //   #/<book>/suggestion/<n>     one reader suggestion
 //   #/<book>/change/<n>         one draft change
 //   #/<book>/publish            send the drafts to the live book
+//   #/settings                  the author's own DeepSeek key, in this browser
 
 import { h, clear, busy, errorNote } from "./lib/dom.js";
 import { identity, onChange, signIn, signOut } from "./lib/auth.js";
@@ -20,6 +21,7 @@ import { booksScreen, chaptersScreen, chapterScreen } from "./lib/screens-books.
 import { importScreen } from "./lib/screens-import.js";
 import { tidyScreen } from "./lib/screens-tidy.js";
 import { editScreen } from "./lib/screens-edit.js";
+import { settingsScreen } from "./lib/screens-settings.js";
 import { waitingScreen, suggestionScreen, changeScreen, publishScreen } from "./lib/screens-waiting.js";
 
 const main = document.getElementById("main");
@@ -58,6 +60,7 @@ function showWho(id) {
   clear(who,
     id.id ? h("img", { src: `https://avatars.githubusercontent.com/u/${id.id}?s=44`, alt: "" }) : null,
     h("span", { text: `@${id.login}` }),
+    h("a", { class: "btn link", href: "#/settings", text: "Settings" }),
     h("button", { type: "button", class: "btn link", text: "Sign out", onclick: () => signOut() }));
   who.hidden = false;
 }
@@ -95,6 +98,7 @@ function signInScreen() {
 
 const ROUTES = [
   [/^$/, () => booksScreen()],
+  [/^settings$/, () => settingsScreen()],
   [/^([a-z0-9-]+)$/, (book) => chaptersScreen(book)],
   [/^([a-z0-9-]+)\/chapter\/(.+)$/, (book, path) => chapterScreen(book, decodeURIComponent(path))],
   [/^([a-z0-9-]+)\/edit\/(.+)$/, (book, path) => editScreen(book, decodeURIComponent(path))],
