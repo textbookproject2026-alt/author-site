@@ -14,7 +14,10 @@
     "app/convert.py",
     "app/github.py",
     "app/registry.py",
-    "app/config.py"
+    "app/config.py",
+    "app/llm.py",
+    "app/formatting.py",
+    "app/formatting_rules.md"
   ],
   "pyodide": "314.0.7"
 }

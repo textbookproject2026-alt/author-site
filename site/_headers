@@ -1,10 +1,11 @@
 # Cloudflare Pages control file (not a URL). A strict policy: the page's own
 # scripts only (no inline script or style), and nothing is fetched except from the
 # author endpoints, GitHub's public API and files, the books' Pages previews (the
-# drafts marker), Google Fonts, and Pyodide from jsDelivr (for the questions,
-# which run the converter's Python; WebAssembly needs 'wasm-unsafe-eval'). The identity token only ever goes to the function.
+# drafts marker), Google Fonts, Pyodide from jsDelivr (for the questions,
+# which run the converter's Python; WebAssembly needs 'wasm-unsafe-eval'), and DeepSeek's
+# API (the author's own key, from this browser, for the optional DeepSeek checks). The identity token only ever goes to the function.
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' blob: https://avatars.githubusercontent.com https://raw.githubusercontent.com https://camo.githubusercontent.com https://*.githubusercontent.com; connect-src 'self' https://cdn.jsdelivr.net https://suggest-edit-function.vercel.app https://api.github.com https://raw.githubusercontent.com https://*.pages.dev; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; manifest-src 'self'
+  Content-Security-Policy: default-src 'none'; script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' blob: https://avatars.githubusercontent.com https://raw.githubusercontent.com https://camo.githubusercontent.com https://*.githubusercontent.com; connect-src 'self' https://cdn.jsdelivr.net https://suggest-edit-function.vercel.app https://api.github.com https://raw.githubusercontent.com https://*.pages.dev https://api.deepseek.com; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; manifest-src 'self'
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(), interest-cohort=()

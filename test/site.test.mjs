@@ -104,6 +104,30 @@ test("theme: follows a dark system, the toggle switches to light and remembers i
   assert.equal(await page.evaluate(() => document.documentElement.getAttribute("data-theme")), "light");
 });
 
+test("settings: the DeepSeek key is kept in this browser only, checked with DeepSeek itself, and removed", async () => {
+  await signIn();
+  await page.getByRole("link", { name: "Settings" }).click();
+  await page.getByRole("heading", { name: "DeepSeek (optional)" }).waitFor();
+  await page.getByRole("button", { name: "Save key" }).click();
+  await page.getByText("Please paste a key first.").waitFor();
+  await page.locator("#key-input").fill("  sk-abcdefgh9876  ");
+  await page.getByRole("button", { name: "Save key" }).click();
+  await page.getByText("The key works. DeepSeek answered normally.").waitFor();
+  await page.getByText("…9876").waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem("tb-deepseek-key")), "sk-abcdefgh9876");
+  assert.equal(await page.locator("#key-input").inputValue(), "", "the key isn't left on screen");
+  const asked = stub.s.requests.filter((r) => r.endpoint === "deepseek");
+  assert.deepEqual(asked.map((r) => r.auth), ["Bearer sk-abcdefgh9876"]);
+  assert.ok(stub.s.requests.filter((r) => r.endpoint !== "deepseek").every((r) => !JSON.stringify(r).includes("sk-abcdefgh9876")), "never sent to the function");
+
+  stub.s.deepseekStatus = 402;
+  await page.getByRole("button", { name: "Check it works" }).click();
+  await page.getByText("The key is valid, but the DeepSeek account has no credit left.").waitFor();
+  await page.getByRole("button", { name: "Remove the key from this browser" }).click();
+  await page.getByText("The key has been removed from this browser.").waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem("tb-deepseek-key")), null);
+});
+
 test("fonts: interface in Source Sans 3, a chapter's text in Source Serif 4", async () => {
   await signIn();
   await page.goto(`${origin}/#/a-book/chapter/${encodeURIComponent("chapters/chapter-01.md")}`);

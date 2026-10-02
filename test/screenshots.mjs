@@ -58,6 +58,8 @@ for (const [label, viewport] of [["desktop", { width: 1100, height: 900 }], ["ph
     await page.goto(`${origin}/#/a-book/suggestion/7`); await page.getByText("What they suggest").waitFor(); await shot("8-suggestion");
     await page.goto(`${origin}/#/a-book/change/12`); await page.getByText("The three domains.").waitFor(); await shot("9-change");
     await page.goto(`${origin}/#/a-book/publish`); await page.getByRole("button", { name: "Publish to the live book" }).waitFor(); await shot("10-publish");
+    await page.goto(`${origin}/#/settings`); await page.locator("#key-input").fill("sk-abcdefgh9876"); await page.getByRole("button", { name: "Save key" }).click(); await page.getByText("The key works.").waitFor(); await shot("11-settings");
+    await page.goto(`${origin}/#/a-book/tidy/${encodeURIComponent("chapters/chapter-01.md")}`); await page.getByText("A few more choices").click(); await shot("12-tidy-options");
     await context.close();
   }
 }

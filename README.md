@@ -24,6 +24,8 @@ site/                    what Cloudflare Pages serves (the output directory)
   lib/public.js          reads that need no sign-in: registry, jobs, drafts preview
   lib/upload.js          a Word file in 2.5 MB parts, as the portal's form sends one
   lib/python.js          Pyodide and the converter's Python, loaded only for the questions
+  lib/deepseek.js        the author's own DeepSeek key (this browser only), and the request
+  lib/screens-settings.js  Settings: that key
   lib/screens-tidy.js    the citation, concept-link and glossary questions
   lib/screens-edit.js    the editor (edit-on-github editor.ts's layout, as a screen)
   py/                    GENERATED at build: the converter's Python (converter.json)
@@ -48,6 +50,7 @@ test/screenshots.mjs     every screen, light and dark, desktop and phone
 | accepts or declines draft changes | `#/<book>/change/<n>` | `author-act` change-accept, -decline |
 | sends the drafts to readers | `#/<book>/publish` | `author-act` publish-prepare, publish |
 | sees the jobs and the drafts preview | `#/<book>/waiting` | none: public reads from the browser |
+| keeps a DeepSeek key for the optional checks | `#/settings` | none: the key stays in the browser and goes only to DeepSeek |
 
 The endpoints are suggest-edit-function's `api/author-*.js` (its README, "The author
 site"). They check, on every request, that the page is a registry platform page with
@@ -65,8 +68,17 @@ Pyodide (pinned, from jsDelivr, loaded only when an author opens the questions).
 implementation: book-requests' Word import runs the same repository, and its Python
 tests stay the source of truth. The session works on a snapshot of the drafts, read
 from GitHub's public copy and checked against the drafts' own blob ids, so it needs
-no files. Four modules are replaced by stand-ins in `lib/python.js`, because they
-belong to the Mac or to DeepSeek: `picker`, `keychain`, `llm` and `formatting`.
+no files. Two modules are replaced by stand-ins in `lib/python.js`, because they
+belong to the Mac: `picker` and `keychain`.
+
+**DeepSeek**, optional as in the app: extra glossary suggestions and the AI
+formatting check (`formatting.py` and its `formatting_rules.md`), with the author's
+**own** key, entered under Settings and kept in that browser's `localStorage` only.
+DeepSeek's API answers browsers cross-origin, so the page calls it directly; the key
+never reaches the function or anything else of ours (the CSP allows
+`api.deepseek.com`). `llm.py` runs as it is, with `load_key` and `urlopen` swapped in
+the glue: a DeepSeek check runs twice, the first pass collecting the requests the
+converter wants made, the page making them, the second pass reading the answers.
 
 `converter.json` pins the commit; the Pages build (`node scripts/fetch-converter.mjs`)
 copies those files into `site/py/`. That needs authoring-assistant to be public.

@@ -17,7 +17,7 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { chromium } from "playwright-core";
 import { startServer, SITE } from "./server.mjs";
-import { createStub, HEAD } from "./stub.mjs";
+import { createStub, HEAD, DEEPSEEK_TERMS, DEEPSEEK_FORMAT } from "./stub.mjs";
 
 const BOOK_DIR = new URL("./fixtures/book/", import.meta.url).pathname;
 const CONVERTER = resolve(process.env.CONVERTER_DIR ?? new URL("../../authoring-assistant", import.meta.url).pathname);
@@ -25,12 +25,28 @@ const skip = !existsSync(`${SITE}py/manifest.json`) ? "site/py is missing: run s
   : !existsSync(`${CONVERTER}/app/session.py`) ? `no converter at ${CONVERTER} to compare with (set CONVERTER_DIR)` : false;
 if (skip && process.env.REQUIRE_CONVERTER) throw new Error(`REQUIRE_CONVERTER is set, but: ${skip}`);
 
-/** The desktop app's answer: DraftsSession on the same book, with the same choices. */
+/**
+ * The desktop app's answer: DraftsSession on the same book, with the same choices.
+ * `accepted` "all" takes every finding. With DeepSeek asked, llm.py gets the stub's
+ * answers through its own urlopen, as the app would have from DeepSeek.
+ */
 function desktop(accepted, expand, options) {
   const code = `
-import hashlib, json, os, sys, types
+import hashlib, json, os, sys, types, urllib.request
 sys.path.insert(0, ${JSON.stringify(CONVERTER)})
-from app import session as S
+from app import session as S, llm
+class _R:
+    def __init__(self, b): self.b = b.encode()
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def read(self, n=-1): return self.b
+TERMS, FORMAT = json.loads(${JSON.stringify(JSON.stringify(DEEPSEEK_TERMS))}), json.loads(${JSON.stringify(JSON.stringify(DEEPSEEK_FORMAT))})
+def _urlopen(req, timeout=None):
+    body = json.loads(req.data)
+    ans = TERMS if "glossary" in body["messages"][0]["content"] else FORMAT
+    return _R(json.dumps({"choices": [{"message": {"content": json.dumps(ans)}}]}))
+urllib.request.urlopen = _urlopen
+llm.load_key = lambda: "sk-test-key-1234"
 root = ${JSON.stringify(BOOK_DIR)}
 files, store = {}, {}
 for d, _, fs in os.walk(root):
@@ -40,8 +56,9 @@ for d, _, fs in os.walk(root):
         files[os.path.relpath(p, root)] = sha; store[sha] = b
 s = S.DraftsSession(types.SimpleNamespace(), {"head": "x", "tree": None, "files": files}, lambda k: store[k])
 s.load_chapter("chapters/chapter-01.md")
-s.run_analyses(json.loads(${JSON.stringify(JSON.stringify(options))}))
-_, out = s.changes(${JSON.stringify(accepted)}, ${JSON.stringify(expand)})
+found, _ = s.run_analyses(json.loads(${JSON.stringify(JSON.stringify(options))}))
+accepted = ${JSON.stringify(accepted)}
+_, out = s.changes([f["id"] for f in found] if accepted == "all" else accepted, ${JSON.stringify(expand)})
 print(json.dumps({p: b.decode() for p, b in out.items()}))
 `;
   const r = spawnSync("python3", ["-c", code], { encoding: "utf8" });
@@ -174,4 +191,67 @@ test("a suggestion that isn't an exact replacement found once says why, and is l
   await page.getByRole("button", { name: "Look for it" }).click();
   await page.getByText("appears twice in that chapter").waitFor({ timeout: PYODIDE_TIMEOUT });
   assert.equal(stub.s.requests.filter((r) => r.endpoint === "author-send").length, 0);
+});
+
+const KEY = "sk-test-key-1234";
+const keepKey = () => page.evaluate((k) => localStorage.setItem("tb-deepseek-key", k), KEY);
+
+test("DeepSeek, with the author's own key from this browser: glossary suggestions and the formatting check, byte for byte the app's", { skip, timeout: 240_000 }, async () => {
+  await keepKey();
+  await page.goto(`${server.origin}/#/a-book/tidy/${encodeURIComponent(CHAPTER)}`);
+  await page.getByText("Uses the DeepSeek key kept in this browser.").waitFor();
+  await page.locator("#opt-references").uncheck();
+  await page.locator("#opt-terms").uncheck();
+  await page.locator("#opt-format").check();
+  await page.getByText("A few more choices").click();
+  await page.locator("#opt-deepseek").check();
+  await page.getByRole("button", { name: "Look through this chapter" }).click();
+
+  await page.getByText("1 of 3").waitFor({ timeout: PYODIDE_TIMEOUT });
+  assert.match(await page.locator("h2").first().textContent(), /Morphogenetic approach/);
+  await page.getByText("Suggested wording, from DeepSeek").waitFor();
+  await page.getByRole("button", { name: "Yes, make this change", exact: true }).click();
+  await page.getByText("2 of 3").waitFor();
+  await page.getByRole("button", { name: "Yes, make this change", exact: true }).click();
+  await page.getByText("3 of 3").waitFor();
+  assert.match(await page.locator("h2").first().textContent(), /Formatting: .*line 5/);
+  assert.equal(await page.locator(".card mark.new").textContent(), DEEPSEEK_FORMAT.changes[0].after);
+  await page.getByRole("button", { name: "Yes, make this change", exact: true }).click();
+
+  await page.getByRole("heading", { name: "Here is exactly what will change" }).waitFor();
+  await page.getByText("You chose: 2 glossary entries added, 1 formatting fix.", { exact: false }).waitFor();
+  await page.getByText("A proposed formatting change to line 3 was thrown away", { exact: false }).waitFor();
+  await page.getByText("DeepSeek suggested 1 extra term on top of the plain checks.").waitFor();
+  await page.getByLabel("I have read the changes above").check();
+  await page.getByRole("button", { name: "Send to drafts" }).click();
+  await page.getByRole("heading", { name: "Sent to the drafts area" }).waitFor();
+
+  const options = { analyses: ["glossary", "format"], first_mention_only: true, anchor_style: "obsidian", use_deepseek: true };
+  const byPath = Object.fromEntries(lastSend().files.map((f) => [f.path, f.text]));
+  assert.deepEqual(byPath, desktop("all", [], options));
+  assert.match(lastSend().message, /glossary, formatting/);
+  // The key went to DeepSeek only, once per check, and never to the function.
+  const asked = stub.s.requests.filter((r) => r.endpoint === "deepseek");
+  assert.equal(asked.length, 2);
+  assert.ok(asked.every((r) => r.auth === `Bearer ${KEY}`));
+  assert.ok(stub.s.requests.filter((r) => r.endpoint !== "deepseek").every((r) => !JSON.stringify(r).includes(KEY)));
+});
+
+test("DeepSeek refusing the key: the plain checks carry on, and the author is told where to fix it", { skip, timeout: 240_000 }, async () => {
+  await keepKey();
+  stub.s.deepseekStatus = 401;
+  await page.goto(`${server.origin}/#/a-book/tidy/${encodeURIComponent(CHAPTER)}`);
+  await page.locator("#opt-references").uncheck();
+  await page.locator("#opt-terms").uncheck();
+  await page.locator("#opt-glossary").uncheck();
+  await page.locator("#opt-format").check();
+  await page.getByRole("button", { name: "Look through this chapter" }).click();
+  await page.getByText("DeepSeek didn't accept the saved key, so the formatting check didn't run. You can set a new key in Settings.").waitFor({ timeout: PYODIDE_TIMEOUT });
+});
+
+test("without a key the DeepSeek checks are off and say where to add one", { skip, timeout: 60_000 }, async () => {
+  await page.goto(`${server.origin}/#/a-book/tidy/${encodeURIComponent(CHAPTER)}`);
+  assert.equal(await page.locator("#opt-format").isDisabled(), true);
+  assert.equal(await page.locator("#opt-deepseek").isDisabled(), true);
+  assert.equal(await page.getByRole("link", { name: "Add one in Settings" }).first().getAttribute("href"), "#/settings");
 });
