@@ -25,8 +25,8 @@ export function conflictView(conflict) {
     files.map((f) => renderPatch(f.patch, `${f.path} (${f.status})`)));
 }
 
-/** The send went through: what happened, with a link to the change. */
-export function sentView(book, sent, title, extra = []) {
+/** The send went through: what happened, with a link to the change, and `next`, an action to offer first. */
+export function sentView(book, sent, title, extra = [], next = null) {
   return [
     h("h2", { class: "flush-top", text: title }),
     h("ul", { class: "steps" },
@@ -36,6 +36,7 @@ export function sentView(book, sent, title, extra = []) {
     h("p", {}, h("a", { href: sent.url, target: "_blank", rel: "noopener", text: "See the change on GitHub" })),
     h("p", { class: "muted", text: "Readers don't see it until the drafts are published, under Waiting for you." }),
     h("div", { class: "actions" },
+      next,
       h("a", { class: "btn", href: `#/${book.slug}`, text: "Back to the chapters" }),
       h("a", { class: "btn", href: `#/${book.slug}/waiting`, text: "Waiting for you" })),
   ];

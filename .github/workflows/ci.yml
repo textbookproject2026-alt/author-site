@@ -53,3 +53,18 @@ jobs:
         env:
           CONVERTER_DIR: ${{ runner.temp }}/converter
           REQUIRE_CONVERTER: '1'
+
+  # After a push to main: the custom domain must pass on _headers' Cache-Control for
+  # the modules. A Cloudflare zone's Browser Cache TTL rewrote it to max-age=14400 once,
+  # and browsers kept PR #1's modules for hours after PR #2 deployed (README, Deploy).
+  production-headers:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: |
+          for f in app.js lib/screens-books.js styles.css; do
+            cc=$(curl -sfI "https://author.confused4now.org/$f" | tr -d '\r' | awk -F': ' 'tolower($1)=="cache-control"{print $2}')
+            echo "$f: $cc"
+            [ "$cc" = "no-cache" ] || { echo "::error::author.confused4now.org/$f is served with Cache-Control '$cc', not _headers' no-cache"; exit 1; }
+          done

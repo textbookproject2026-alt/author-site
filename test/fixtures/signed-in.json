@@ -1,0 +1,93 @@
+{
+  "_note": "What author-read answered @textbookproject2026-alt for From Ontology to Method on 2 Oct 2026 (books, tree), in its own shapes: the book in which the chapter view showed no questions button.",
+  "books": {
+    "login": "textbookproject2026-alt",
+    "books": [
+      {
+        "slug": "from-ontology-to-method-an-ontologic",
+        "title": "From Ontology to Method: An Ontologically Situated Critical Realist Approach to Research Methodology",
+        "status": "live",
+        "repo": "textbookproject2026-alt/from-ontology-to-method-an-ontologic",
+        "drafts_branch": "drafts",
+        "live_branch": "main",
+        "domain": "from-ontology-to-method-an-ontologic.confused4now.org",
+        "zip": "https://github.com/textbookproject2026-alt/from-ontology-to-method-an-ontologic/archive/refs/heads/drafts.zip"
+      }
+    ]
+  },
+  "tree": {
+    "head": "e514d3bcfb78dfb0beaaf5cb4faf956640c286f0",
+    "files": [
+      {
+        "path": "assets/README.md",
+        "sha": "370f3fc618b262e56e5d3c69f8149129fa0f987a",
+        "size": 591
+      },
+      {
+        "path": "chapters/Definitions/Example concept.md",
+        "sha": "e83f4ed2fa1271d6832691364b32c9dce41105e6",
+        "size": 528
+      },
+      {
+        "path": "chapters/chapter-01.md",
+        "sha": "da12abd25dc1410df07f2572285bfb08384b796e",
+        "size": 1005
+      },
+      {
+        "path": "glossary.md",
+        "sha": "619320ce7c172c22e14a33c55e27a936581f5221",
+        "size": 506
+      },
+      {
+        "path": "index.md",
+        "sha": "15a1b146e6fdad613f9bb300d792affdcda1db2a",
+        "size": 1873
+      }
+    ]
+  },
+  "registry": {
+    "slug": "from-ontology-to-method-an-ontologic",
+    "status": "live",
+    "title": "From Ontology to Method: An Ontologically Situated Critical Realist Approach to Research Methodology",
+    "summary": "This paper shows how the quantitative-qualitative divide reflects the philosophical problem of the epistemic fallacy, which collapses questions about what exists into questions about how we can know it and proposes, in response, a hybrid integration of three Critical Realist models of social change.",
+    "licence": "CC-BY-SA-4.0",
+    "maintainer": {
+      "name": "Brandon Sommer, Caroline Laschkolnig",
+      "github": "BrandonAndCaroline"
+    },
+    "authors": [
+      "BrandonAndCaroline",
+      "textbookproject2026-alt"
+    ],
+    "content": {
+      "repo": "textbookproject2026-alt/from-ontology-to-method-an-ontologic",
+      "live_branch": "main",
+      "drafts_branch": "drafts"
+    },
+    "site": {
+      "domain": "from-ontology-to-method-an-ontologic.confused4now.org",
+      "aliases": [],
+      "host": {
+        "kind": "static",
+        "provider": "cloudflare-pages",
+        "project": "from-ontology-to-method-an-ontologic",
+        "paid_by": "platform",
+        "builder": "quartz-book"
+      },
+      "legacy_origins": [],
+      "dark": null
+    },
+    "annotations": {
+      "hypothesis_groups": []
+    },
+    "suggest_edit": {
+      "enabled": true,
+      "counted_from": "2026-09-26"
+    },
+    "cms": {
+      "enabled": false,
+      "host": null
+    },
+    "editions": null
+  }
+}

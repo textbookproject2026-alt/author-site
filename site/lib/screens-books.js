@@ -62,7 +62,7 @@ export async function chaptersScreen(slug) {
     ]),
     top.length ? [h("h2", { text: "The rest of the book" }), h("ul", { class: "list" }, top.map((f) => link(f, f.path === "index.md" ? "Front page (index.md)" : "Glossary (glossary.md)")))] : null,
     note([
-      h("p", {}, "To change a chapter's wording, open it on the book's site and press ", h("strong", { text: "Edit this page" }), ". Your edit arrives under ", h("a", { href: `#/${slug}/waiting`, text: "Waiting for you" }), " as a draft change, for you to accept. A chapter that still lives in Word can be ", h("a", { href: `#/${slug}/import`, text: "brought in again" }), " to replace it."),
+      h("p", {}, "A chapter that still lives in Word can be ", h("a", { href: `#/${slug}/import`, text: "brought in again" }), " to replace it."),
     ]),
   ];
 }
@@ -88,7 +88,7 @@ export async function chapterScreen(slug, path) {
     h("div", { class: "row spaced" },
       /\.md$/i.test(path) && path.startsWith("chapters/") ? h("a", { class: "btn primary", href: `#/${slug}/tidy/${encodeURIComponent(path)}`, text: "Citations, concept links and glossary" }) : null,
       preview ? h("a", { class: "btn", href: `${preview}${slugPath}`, target: "_blank", rel: "noopener", text: "In the drafts preview" }) : null,
-      book.domain ? h("a", { class: "btn", href: `https://${book.domain}/${slugPath}`, target: "_blank", rel: "noopener", text: "On the live site (to edit it)" }) : null),
+      book.domain ? h("a", { class: "btn", href: `https://${book.domain}/${slugPath}`, target: "_blank", rel: "noopener", text: "On the live site" }) : null),
     shown,
   ];
 }
