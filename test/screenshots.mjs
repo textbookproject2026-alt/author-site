@@ -62,6 +62,8 @@ for (const [label, viewport] of [["desktop", { width: 1100, height: 900 }], ["ph
     await page.goto(`${origin}/#/a-book/tidy/${encodeURIComponent("chapters/chapter-01.md")}`); await page.getByText("A few more choices").click(); await shot("12-tidy-options");
     await page.goto(`${origin}/#/a-book/people`); await page.locator("ul.list > li").nth(1).getByRole("button", { name: "Remove", exact: true }).click(); await shot("13-people");
     await page.locator("#invite-login").fill("NewPerson"); await page.getByRole("button", { name: "Invite" }).click(); await page.getByText("is invited").waitFor(); await shot("14-people-pending");
+    await page.goto(`${origin}/#/a-book/history`); await page.getByText("Show older changes").waitFor(); await shot("15-history");
+    await page.goto(`${origin}/#/a-book/revision/${"2".padStart(40, "e")}/${encodeURIComponent("chapters/chapter-01.md")}`); await page.locator(".diff ins").first().waitFor(); await shot("16-revision");
     await context.close();
   }
 }

@@ -20,7 +20,6 @@ export async function registryBook(slug) {
 
 /** Every comment in the margins of the book's site (Hypothes.is), as the app linked it. */
 export const discussionUrl = (b) => (b?.site?.domain ? `https://hypothes.is/search?q=url:https://${b.site.domain}/*` : null);
-export const historyUrl = (b) => `https://github.com/${b.content.repo}/commits/${b.content.live_branch}`;
 
 // quartz-book's branchAlias (builder/lib.mjs), exactly: the name Cloudflare gives a
 // branch's preview.
