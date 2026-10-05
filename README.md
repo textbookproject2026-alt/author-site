@@ -79,8 +79,8 @@ Pyodide (pinned, from jsDelivr, loaded only when an author opens the questions).
 implementation: book-requests' Word import runs the same repository, and its Python
 tests stay the source of truth. The session works on a snapshot of the drafts, read
 from GitHub's public copy and checked against the drafts' own blob ids, so it needs
-no files. Two modules are replaced by stand-ins in `lib/python.js`, because they
-belong to the Mac: `picker` and `keychain`.
+no files. One module is replaced by a stand-in in `lib/python.js`, because it
+belongs to the Mac: `keychain`.
 
 **DeepSeek**, optional as in the app: extra glossary suggestions and the AI
 formatting check (`formatting.py` and its `formatting_rules.md`), with the author's

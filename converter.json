@@ -1,7 +1,7 @@
 {
   "_note": "The Authoring Assistant's Python (and formatting.py's rules file), which the link, glossary and formatting questions and a suggestion's exact replacement run in the browser (Pyodide). scripts/fetch-converter.mjs copies these files, at this commit, into site/py/ when Pages builds. Move `ref` on deliberately, after authoring-assistant's own tests pass there; book-requests' CONVERTER_REF pins the same repository for Word imports.",
   "repo": "textbookproject2026-alt/authoring-assistant",
-  "ref": "6e4f4f89d1557198e61ad0f7be4084f8a9e840ac",
+  "ref": "7690fbac13bdecb3b6fe60fa6d54589e1e4d13cf",
   "files": [
     "app/__init__.py",
     "app/mdmap.py",

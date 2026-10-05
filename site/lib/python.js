@@ -10,8 +10,8 @@
 // copied into site/py/ at build time, with DraftsSession (session.py) doing the work
 // on a snapshot of the drafts: no files, only the snapshot and a blob(sha) lookup.
 //
-// The only parts replaced are two modules the browser can't run, as stand-ins below:
-// picker (the Mac's file chooser) and keychain (the Mac's Keychain). llm.py runs as it
+// The only part replaced is a module the browser can't run, as a stand-in below:
+// keychain (the Mac's Keychain). llm.py runs as it
 // is, with its two ways out of Python swapped in the glue: load_key gives the
 // author's own key from this browser (deepseek.js), and urlopen answers with what the
 // page has already fetched from DeepSeek (Pyodide can't make a request mid-call
@@ -26,13 +26,6 @@ const PYODIDE = "314.0.7";
 const INDEX = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE}/full/`;
 
 const STANDINS = {
-  "app/picker.py": `"""Stand-in on the author site: there is no Mac file chooser here."""
-def obsidian_running():
-    return False
-def choose_file(*a, **k):
-    return None, "not available"
-choose_word_document = choose_folder = choose_file
-`,
   "app/keychain.py": `"""Stand-in on the author site: nothing is kept in a keychain."""
 def available():
     return False
