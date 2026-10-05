@@ -164,7 +164,7 @@ code { font-family: var(--portal-font-mono); font-size: 0.85em; padding: 0.05rem
 .confirm { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.75rem 0; }
 .confirm input { margin-top: 0.35rem; }
 label.field { display: block; margin: 0 0 0.75rem; font-weight: 600; }
-label.field select, label.field input[type="text"] { display: block; width: 100%; max-width: 28rem; margin-top: 0.25rem; padding: 0.4rem 0.55rem;
+label.field select, label.field input[type="text"], label.field input[type="password"] { display: block; width: 100%; max-width: 28rem; margin-top: 0.25rem; padding: 0.4rem 0.55rem;
   border: 1px solid var(--portal-border); border-radius: 6px; background: var(--portal-bg-soft); color: var(--portal-ink); font: inherit; font-weight: 400; }
 .file-drop { display: block; padding: 1.25rem; border: 2px dashed var(--portal-border); border-radius: 10px; text-align: center; background: var(--portal-bg-soft); }
 .progress { height: 6px; border-radius: 3px; background: var(--portal-border); overflow: hidden; }

@@ -8,6 +8,7 @@ import { h, clear, busy, note, errorNote, plural } from "./dom.js";
 import { read, send } from "./api.js";
 import { bookBySlug, bookHeader, rawUrl } from "./books.js";
 import { analyse, changes } from "./python.js";
+import { deepseekKey } from "./deepseek.js";
 import { conflictView, sentView } from "./screens-shared.js";
 
 const CONCEPT_FOLDERS = /(^|\/)(definitions|concepts|terms|glossary terms|key concepts)(\/|$)/i;
@@ -43,6 +44,10 @@ async function snapshot(book) {
   return { snap: { head: tree.head, tree: null, files }, blobs, hasConcepts: tree.files.some((f) => CONCEPT_FOLDERS.test(f.path)) };
 }
 
+// ponytail: llm.py and formatting.py speak of the Mac's key; the few sentences that do
+// are reworded here rather than forked. Add a case if the converter adds one.
+const inBrowser = (note) => note.replace(/ on this Mac/g, " in this browser").replace(/ by running Setup again/g, " in Settings");
+
 export async function tidyScreen(slug, path) {
   const book = await bookBySlug(slug);
   const stage = h("div", { "aria-live": "polite" });
@@ -55,13 +60,22 @@ function options(book, path, stage, problem) {
   const refs = box("opt-references", true, "Citations", "find mentions such as “(Bhaskar, 1975)” and link them to the matching entry in the chapter's reference list.");
   const terms = box("opt-terms", true, "Concept pages", "find where the chapter mentions one of your concept pages and link to it.");
   const gloss = box("opt-glossary", true, "Glossary terms", "find terms worth adding to your glossary.");
+  // The DeepSeek checks, as the app offered them: only with the author's own key.
+  const key = Boolean(deepseekKey());
+  const keyState = (on, off) => h("em", { class: "muted" }, " ", key ? on : [off, " ", h("a", { href: "#/settings", text: "Add one in Settings" }), ". Everything else works without it."]);
+  const format = box("opt-format", false, "AI formatting check", "ask DeepSeek to check this chapter against the book's formatting rules, and offer each fix for you to say yes or no to. Formatting only: a proposed change that would alter your wording is thrown away, and you are told.");
+  format.querySelector("input").disabled = !key;
+  format.querySelector("span").append(keyState("Uses the DeepSeek key kept in this browser.", "This needs a DeepSeek key, and none is kept in this browser, so it is turned off."));
+  const deepseek = box("opt-deepseek", false, "DeepSeek", "also ask it for glossary suggestions.");
+  deepseek.querySelector("input").disabled = !key;
+  deepseek.querySelector("span").append(keyState("A key is kept in this browser.", "No key is kept in this browser, so this is turned off."));
   const first = box("opt-first", true, "Only the first mention", "of each concept in the chapter is offered. If you say “yes to every mention” for a term, every mention is linked anyway.");
   const anchor = (value, text, checked) => h("label", { class: "confirm" }, h("input", { type: "radio", name: "anchor", value, checked }), h("span", { text }));
   const go = h("button", { type: "submit", class: "btn primary", text: "Look through this chapter" });
   const form = h("form", {},
     h("p", { text: "One question at a time: each shows the sentence and the change. Nothing reaches the book until you've seen every change together and pressed Send." }),
-    h("h2", { text: "What should it look for?" }), refs, terms, gloss,
-    h("details", {}, h("summary", { text: "A few more choices" }), first,
+    h("h2", { text: "What should it look for?" }), refs, terms, gloss, format,
+    h("details", {}, h("summary", { text: "A few more choices" }), first, deepseek,
       h("p", { class: "muted", text: "How should citation links work?" }),
       anchor("obsidian", "Mark each entry in the reference list and link straight to it (recommended). A short tag such as ^bhaskar-1975 goes at the end of the entry; the book's website follows these links.", true),
       anchor("html", "Put a plain web anchor in front of each entry instead, for exporting the chapter with pandoc.", false)),
@@ -69,10 +83,11 @@ function options(book, path, stage, problem) {
     h("div", { class: "actions" }, go, h("a", { class: "btn link", href: `#/${book.slug}/chapter/${encodeURIComponent(path)}`, text: "Back to the chapter" })));
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    const analyses = [["opt-references", "references"], ["opt-terms", "terms"], ["opt-glossary", "glossary"]]
+    const analyses = [["opt-references", "references"], ["opt-terms", "terms"], ["opt-glossary", "glossary"], ["opt-format", "format"]]
       .filter(([id]) => form.querySelector(`#${id}`).checked).map(([, a]) => a);
     if (!analyses.length) return;
-    const opts = { analyses, first_mention_only: form.querySelector("#opt-first").checked, anchor_style: form.querySelector('input[name="anchor"]:checked').value };
+    const opts = { analyses, first_mention_only: form.querySelector("#opt-first").checked, anchor_style: form.querySelector('input[name="anchor"]:checked').value,
+      use_deepseek: form.querySelector("#opt-deepseek").checked };
     await run(book, path, stage, opts);
   });
   clear(stage, form);
@@ -105,8 +120,9 @@ function question(book, path, stage, opts, result, state, snap) {
   const bar = h("span");
   bar.style.width = `${Math.round((state.index / total) * 100)}%`;
   let explain = f.explain;
-  if (f.occurrence_total > 1) explain += ` This is mention ${f.occurrence} of ${f.occurrence_total} in the chapter.`;
-  const label = f.kind === "reference" ? f.group_label : `“${f.group_label}”`;
+  if (f.occurrence_total > 1) explain += f.kind === "format" ? ` This is fix ${f.occurrence} of ${f.occurrence_total} under this rule.` : ` This is mention ${f.occurrence} of ${f.occurrence_total} in the chapter.`;
+  const label = f.kind === "reference" || f.kind === "format" ? f.group_label : `“${f.group_label}”`;
+  const noun = f.kind === "format" ? "formatting fix under rule" : "mention of";
   const many = f.occurrence_total > 1 || f.kind === "term";
 
   const answer = (value, all) => {
@@ -142,7 +158,7 @@ function question(book, path, stage, opts, result, state, snap) {
       h("p", { class: "sentence" }, f.before, h("mark", { class: "new", text: f.becomes }), f.after)),
     f.detail ? h("div", { class: "card" }, h("p", { class: "muted small", text: f.detail_label ?? "" }), h("p", { text: f.detail })) : null,
     h("div", { class: "actions" }, btn("Yes, make this change", "primary", () => answer(true, false)), btn("No, leave it alone", "", () => answer(false, false))),
-    many ? h("div", { class: "actions" }, btn(`Yes to every mention of ${label}`, "", () => answer(true, true)), btn(`No to every mention of ${label}`, "", () => answer(false, true))) : null,
+    many ? h("div", { class: "actions" }, btn(`Yes to every ${noun} ${label}`, "", () => answer(true, true)), btn(`No to every ${noun} ${label}`, "", () => answer(false, true))) : null,
     h("div", { class: "actions" },
       state.index > 0 ? btn("Go back one", "link", back) : null,
       btn("Stop here and see what I have chosen", "link", () => preview(book, path, stage, opts, result, state, snap))));
@@ -165,9 +181,11 @@ async function preview(book, path, stage, opts, result, state, snap) {
     c.terms ? `${plural(c.terms, "mention")} linked to concept pages` : null,
     c.expanded ? `every mention of ${plural(c.expanded, "term")} linked` : null,
     c.glossary ? `${c.glossary} glossary ${c.glossary === 1 ? "entry" : "entries"} added` : null,
+    c.format ? `${c.format} formatting ${c.format === 1 ? "fix" : "fixes"}` : null,
   ].filter(Boolean);
   const nothing = !p.diff.length && !p.glossary_added.length;
-  const notes = [...result.warnings, ...result.notes];
+  const notes = [...result.warnings, ...result.notes, ...(p.format_skipped ?? []).map((n) =>
+    `The formatting fix for line ${n} was left out, because you chose another change on the same line. Run the formatting check again after sending.`)].map(inBrowser);
   const tick = h("input", { type: "checkbox", id: "tidy-confirm" });
   const go = h("button", { type: "button", class: "btn primary", text: "Send to drafts", disabled: true });
   tick.addEventListener("change", () => { go.disabled = !tick.checked; });
@@ -176,7 +194,7 @@ async function preview(book, path, stage, opts, result, state, snap) {
   go.addEventListener("click", async () => {
     go.disabled = true;
     clear(outcome, busy("Sending it to the drafts area…"));
-    const what = [c.references ? "citations" : null, c.terms || c.expanded ? "concept links" : null, c.glossary ? "glossary" : null].filter(Boolean);
+    const what = [c.references ? "citations" : null, c.terms || c.expanded ? "concept links" : null, c.glossary ? "glossary" : null, c.format ? "formatting" : null].filter(Boolean);
     try {
       const sent = await send({
         book: book.slug, base: snap.head,

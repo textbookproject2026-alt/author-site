@@ -31,6 +31,15 @@ const REGISTRY = {
 const CH1 = "# Chapter 1\n\nSome text about ![a figure](../assets/chapter-01/image1.png) things.\n";
 const CH2 = "# Chapter 2: Soils\n\nConverted from Word.\n\n![](../assets/chapter-02/image1.png)\n";
 
+// What the DeepSeek stub answers: llm.suggest_terms' request (its system prompt is
+// about a glossary) and formatting.check's (everything else), as llm.py reads them.
+export const DEEPSEEK_TERMS = { terms: [{ term: "Morphogenetic approach", definition: "Archer's account of how social structures are reproduced or changed over time." }] };
+export const DEEPSEEK_FORMAT = { changes: [
+  { line: 5, rule: "EMPH-1", before: "**Ontology** is the study of what exists. Ontology asks different questions from epistemology, as Archer (1995) argues at length.", after: "*Ontology* is the study of what exists. Ontology asks different questions from epistemology, as Archer (1995) argues at length.", why: "A defined term is in italics." },
+  { line: 3, rule: "EMPH-1", before: "Critical realism starts from the claim that the world exists independently of our knowledge of it (Bhaskar, 1975). The the domains of reality are layered.", after: "Critical realism starts from the claim that the world exists independently of our knowledge of it (Bhaskar, 1975). The three domains of reality are layered.", why: "Wording." },
+], notes: [] };
+export const deepseekAnswer = (body) => JSON.stringify({ choices: [{ message: { content: JSON.stringify(/glossary/.test(body.messages[0].content) ? DEEPSEEK_TERMS : DEEPSEEK_FORMAT) } }] });
+
 export function createStub({ siteOrigin }) {
   const s = {
     requests: [],
@@ -57,6 +66,7 @@ export function createStub({ siteOrigin }) {
     change: { readable: true, why: "", pages: [{ page: "chapter-01", path: "chapters/chapter-01.md", added: 1, removed: 1, lines: [{ kind: "before", text: "The the domains." }, { kind: "after", text: "The three domains." }] }] },
     publish: { open: true, waiting: false, number: 30, url: "https://github.com/someone/a-book/pull/30", pages: ["chapter-01"], page_count: 1, change_count: 2, who: ["author-one", "reader"], state: "clean", state_words: "This can go to readers now. Nothing else is waiting on it.", can_publish: true },
     status401: false,
+    deepseekStatus: 200,
   };
 
   const json = (route, status, body, headers = {}) => route.fulfill({
@@ -180,7 +190,19 @@ export function createStub({ siteOrigin }) {
     return route.fulfill({ status: 404, headers: cors, body: "" });
   }
 
+  // DeepSeek's API as it answers browsers: CORS for the page's origin, the key in Authorization.
+  async function deepseek(route) {
+    const req = route.request();
+    const cors = { "access-control-allow-origin": siteOrigin, "access-control-allow-headers": "authorization,content-type", "access-control-allow-methods": "POST" };
+    if (req.method() === "OPTIONS") return route.fulfill({ status: 200, headers: cors });
+    const body = JSON.parse(req.postData());
+    s.requests.push({ endpoint: "deepseek", method: req.method(), body, auth: req.headers().authorization });
+    if (s.deepseekStatus !== 200) return route.fulfill({ status: s.deepseekStatus, contentType: "application/json", headers: cors, body: JSON.stringify({ error: { message: "no" } }) });
+    return route.fulfill({ status: 200, contentType: "application/json", headers: cors, body: body.max_tokens === 4 ? JSON.stringify({ choices: [{ message: { content: "ready" } }] }) : deepseekAnswer(body) });
+  }
+
   async function install(context) {
+    await context.route("https://api.deepseek.com/**", deepseek);
     await context.route(`${API}**`, fn);
     await context.route("https://api.github.com/**", github);
     await context.route("https://raw.githubusercontent.com/**", raw);

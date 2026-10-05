@@ -1,5 +1,5 @@
 {
-  "_note": "The Authoring Assistant's Python, which the link and glossary questions and a suggestion's exact replacement run in the browser (Pyodide). scripts/fetch-converter.mjs copies these files, at this commit, into site/py/ when Pages builds. Move `ref` on deliberately, after authoring-assistant's own tests pass there; book-requests' CONVERTER_REF pins the same repository for Word imports.",
+  "_note": "The Authoring Assistant's Python (and formatting.py's rules file), which the link, glossary and formatting questions and a suggestion's exact replacement run in the browser (Pyodide). scripts/fetch-converter.mjs copies these files, at this commit, into site/py/ when Pages builds. Move `ref` on deliberately, after authoring-assistant's own tests pass there; book-requests' CONVERTER_REF pins the same repository for Word imports.",
   "repo": "textbookproject2026-alt/authoring-assistant",
   "ref": "6e4f4f89d1557198e61ad0f7be4084f8a9e840ac",
   "files": [
@@ -15,7 +15,10 @@
     "app/convert.py",
     "app/github.py",
     "app/registry.py",
-    "app/config.py"
+    "app/config.py",
+    "app/llm.py",
+    "app/formatting.py",
+    "app/formatting_rules.md"
   ],
   "pyodide": "314.0.7"
 }

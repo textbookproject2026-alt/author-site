@@ -8,10 +8,19 @@
 //
 // What runs is authoring-assistant's app/ package at converter.json's pinned commit,
 // copied into site/py/ at build time, with DraftsSession (session.py) doing the work
-// on a snapshot of the drafts: no files, only the snapshot and a blob(sha) lookup. The
-// only parts replaced are four modules the browser can't or mustn't run, as stand-ins
-// below: picker (the Mac's file chooser), keychain (the Mac's Keychain), llm and
-// formatting (DeepSeek: out of scope here, and never offered).
+// on a snapshot of the drafts: no files, only the snapshot and a blob(sha) lookup.
+//
+// The only parts replaced are two modules the browser can't run, as stand-ins below:
+// picker (the Mac's file chooser) and keychain (the Mac's Keychain). llm.py runs as it
+// is, with its two ways out of Python swapped in the glue: load_key gives the
+// author's own key from this browser (deepseek.js), and urlopen answers with what the
+// page has already fetched from DeepSeek (Pyodide can't make a request mid-call
+// without freezing the page). So a DeepSeek check runs twice: the first pass only
+// collects the requests it wants made, the page makes them, and the second pass runs
+// on the answers. Everything else (the prompts, reading the answers, every sentence
+// about what went wrong) is the converter's own.
+
+import { deepseekKey, askDeepseek } from "./deepseek.js";
 
 const PYODIDE = "314.0.7";
 const INDEX = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE}/full/`;
@@ -38,29 +47,47 @@ def hint(account):
     return ""
 ACCOUNT_GITHUB = ACCOUNT_DEEPSEEK = ""
 `,
-  "app/llm.py": `"""Stand-in on the author site: DeepSeek is not used here."""
-def have_key():
-    return False
-def suggest_terms(text, max_chars=90000):
-    return None, ""
-def ask_json(*a, **k):
-    raise RuntimeError("not available on the author site")
-`,
-  "app/formatting.py": `"""Stand-in on the author site: the AI formatting check is not offered here."""
-def check(docmap, known_pages):
-    return [], []
-`,
 };
 
 // The glue: a DraftsSession held between calls, JSON in and out.
 const GLUE = `
-import base64, json, types
-from app import session as S, console as C
+import base64, json, types, urllib.error, urllib.request
+from app import session as S, console as C, llm
 
 _sess = None
+_net = {"key": None, "answers": {}, "pending": []}
 
-def analyse(snap_json, blobs_json, chapter, options_json):
+class _Answer:
+    def __init__(self, text):
+        self._b = text.encode("utf-8")
+    def __enter__(self):
+        return self
+    def __exit__(self, *a):
+        return False
+    def read(self, n=-1):
+        return self._b if n is None or n < 0 else self._b[:n]
+
+def _urlopen(req, timeout=None):
+    body = req.data.decode("utf-8")
+    got = _net["answers"].get(body)
+    if got is None:
+        _net["pending"].append(body)
+        raise urllib.error.URLError("asked for in the browser")
+    status, text = got
+    if status == 0:
+        raise urllib.error.URLError("offline")
+    if status < 0:
+        raise TimeoutError()
+    if status >= 400:
+        raise urllib.error.HTTPError(req.full_url, status, "", None, None)
+    return _Answer(text)
+
+llm.urllib = types.SimpleNamespace(error=urllib.error, request=types.SimpleNamespace(Request=urllib.request.Request, urlopen=_urlopen))
+llm.load_key = lambda: _net["key"]
+
+def analyse(snap_json, blobs_json, chapter, options_json, key, answers_json, collect):
     global _sess
+    _net.update(key=key or None, answers={b: tuple(a) for b, a in json.loads(answers_json)}, pending=[])
     snap = json.loads(snap_json)
     store = {sha: base64.b64decode(b) for sha, b in json.loads(blobs_json).items()}
     def blob(sha):
@@ -71,6 +98,8 @@ def analyse(snap_json, blobs_json, chapter, options_json):
     _sess.load_chapter(chapter)
     warnings, _, _ = _sess.preflight()
     findings, notes = _sess.run_analyses(json.loads(options_json))
+    if collect and _net["pending"]:
+        return json.dumps({"pending": list(dict.fromkeys(_net["pending"]))})
     return json.dumps({"findings": findings, "notes": notes, "warnings": warnings,
                        "glossary_path": _sess.glossary_path,
                        "concept_source": _sess.concept_source,
@@ -131,10 +160,20 @@ const b64 = (bytes) => {
  * `blobs` { sha: Uint8Array } for every file the session may read (the chapter, the
  * glossary, the concept pages).
  */
-export async function analyse(snap, blobs, chapter, options, onStatus) {
+export async function analyse(snap, blobs, chapter, options, onStatus = () => {}) {
   const { glue } = await python(onStatus);
-  const enc = Object.fromEntries(Object.entries(blobs).map(([sha, bytes]) => [sha, b64(bytes)]));
-  return JSON.parse(glue.analyse(JSON.stringify(snap), JSON.stringify(enc), chapter, JSON.stringify(options)));
+  const enc = JSON.stringify(Object.fromEntries(Object.entries(blobs).map(([sha, bytes]) => [sha, b64(bytes)])));
+  const key = options.use_deepseek || options.analyses.includes("format") ? deepseekKey() : null;
+  const answers = new Map();
+  // Twice at most: the requests are made from the same chapter the same way, so the
+  // second pass finds every answer. Were one ever missing, llm.py says DeepSeek
+  // couldn't be reached, and the plain checks carry on, as in the app.
+  for (const collect of [true, false]) {
+    const out = JSON.parse(glue.analyse(JSON.stringify(snap), enc, chapter, JSON.stringify(options), key, JSON.stringify([...answers]), collect));
+    if (!out.pending) return out;
+    onStatus("Asking DeepSeek. This can take up to a minute…");
+    await Promise.all(out.pending.map(async (body) => answers.set(body, await askDeepseek(body, key))));
+  }
 }
 
 /** What the author's answers change: { preview, files: { path: text } }. */
