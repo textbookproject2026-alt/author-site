@@ -56,3 +56,5 @@ export const importPart = (part) => call("author-import", { method: "POST", body
 export const importStart = (body) => call("author-import", { method: "POST", body: { action: "start", ...body } });
 export const importAgain = (book, id) => call("author-import", { method: "POST", body: { action: "again", book, id } });
 export const importStatus = (book, id, file) => call("author-import", { query: { book, id, file } });
+export const people = (book) => call("author-people", { query: { book } });
+export const changePeople = (book, action, login) => call("author-people-change", { method: "POST", body: { book, action, login } });

@@ -26,6 +26,7 @@ site/                    what Cloudflare Pages serves (the output directory)
   lib/python.js          Pyodide and the converter's Python, loaded only for the questions
   lib/deepseek.js        the author's own DeepSeek key (this browser only), and the request
   lib/screens-settings.js  Settings: that key
+  lib/screens-people.js  People: the book's authors, invite and remove
   lib/screens-tidy.js    the citation, concept-link and glossary questions
   lib/screens-edit.js    the editor (edit-on-github editor.ts's layout, as a screen)
   py/                    GENERATED at build: the converter's Python (converter.json)
@@ -50,6 +51,7 @@ test/screenshots.mjs     every screen, light and dark, desktop and phone
 | accepts or declines draft changes | `#/<book>/change/<n>` | `author-act` change-accept, -decline |
 | sends the drafts to readers | `#/<book>/publish` | `author-act` publish-prepare, publish |
 | sees the jobs and the drafts preview | `#/<book>/waiting` | none: public reads from the browser |
+| invites or removes the book's authors | `#/<book>/people` | `author-people`, `author-people-change`: a registry pull request with auto-merge; pending until the function runs it |
 | keeps a DeepSeek key for the optional checks | `#/settings` | none: the key stays in the browser and goes only to DeepSeek |
 
 The endpoints are suggest-edit-function's `api/author-*.js` (its README, "The author
