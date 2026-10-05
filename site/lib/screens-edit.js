@@ -12,8 +12,10 @@
 //
 // The unsent text is kept in sessionStorage (this tab only) under the page and the
 // blob it was edited from, so moving to another screen and back doesn't lose it.
+// History's "Restore this version" leaves an older text there as `restored`: the box
+// starts from it, and it is sent like any edit, on the drafts as they are now.
 
-import { h, clear, busy, note, errorNote } from "./dom.js";
+import { h, clear, busy, note, errorNote, when } from "./dom.js";
 import { read, send } from "./api.js";
 import { bookBySlug, bookHeader, rawUrl } from "./books.js";
 import { renderChapter } from "./preview.js";
@@ -61,9 +63,10 @@ export async function editScreen(slug, path) {
   const known = new Set(tree.files.map((f) => f.path));
   const back = `#/${slug}/chapter/${encodeURIComponent(path)}`;
   let base = tree.head;
+  const restored = kept?.restored ? kept : null;
 
   const textarea = h("textarea", { class: "editor-text", id: "editor-text", spellcheck: "true", "aria-label": `${name}, as Markdown` });
-  textarea.value = kept?.sha === file.sha ? kept.text : original;
+  textarea.value = restored || kept?.sha === file.sha ? kept.text : original;
   const current = () => textarea.value;
   const dirty = () => current() !== original;
 
@@ -126,11 +129,12 @@ export async function editScreen(slug, path) {
     discard.querySelector(".btn.primary").focus();
   });
   const message = h("input", { type: "text", id: "edit-message", maxlength: 150, autocomplete: "off", placeholder: `Edit ${name}` });
+  if (restored) message.value = `Restore ${name} as of ${new Date(restored.restored.when).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
   const outcome = h("div", { class: "outcome", "aria-live": "polite" });
   const sync = () => {
     sendBtn.disabled = !dirty();
     guard(dirty());
-    store.set(key, dirty() ? { sha: file.sha, text: current() } : null);
+    store.set(key, dirty() ? { sha: file.sha, text: current(), restored: restored?.restored } : null);
   };
   textarea.addEventListener("input", sync);
 
@@ -174,9 +178,10 @@ export async function editScreen(slug, path) {
   };
   sendBtn.addEventListener("click", go);
 
-  const older = kept && kept.sha !== file.sha ? kept.text : null;
+  const older = kept && !restored && kept.sha !== file.sha ? kept.text : null;
   clear(stage,
-    kept?.sha === file.sha && dirty() ? note([h("p", { text: "Your unsent changes from earlier are back. Send them, or Cancel to discard them." })]) : null,
+    restored ? note([h("p", { text: `This is ${name} as it was ${when(restored.restored.when)}, from its history. Look at Changes to see what restoring it does to the page as it is now, then send it as a new change, or Cancel.` })]) : null,
+    !restored && kept?.sha === file.sha && dirty() ? note([h("p", { text: "Your unsent changes from earlier are back. Send them, or Cancel to discard them." })]) : null,
     older ? note([
       h("p", { text: "You had unsent changes to an earlier version of this page, which has changed since. They are below to copy from; the box starts from the page as it is now." }),
       h("details", {}, h("summary", { text: "Your earlier text" }), h("textarea", { class: "editor-text short", readonly: true, "aria-label": "Your earlier text" }, older)),
