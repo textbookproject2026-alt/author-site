@@ -259,6 +259,25 @@ export async function changeScreen(slug, number) {
   ];
 }
 
+/**
+ * What will go live, split by what the builder serves (the live site's own rule,
+ * via the function): pages readers will see, and behind-the-scenes files (docs/,
+ * .github/ …) folded away. A site that doesn't state its rule gets the plain list.
+ */
+function goingLiveList(p) {
+  const list = (items) => h("ul", {}, items.slice(0, 40).map((t) => h("li", { text: t })), items.length > 40 ? h("li", { class: "muted", text: `and ${items.length - 40} more` }) : null);
+  if (!p.split) return [p.pages.length ? list(p.pages) : null];
+  return [
+    h("h2", { text: "Readers will see" }),
+    p.reader.length ? list(p.reader) : h("p", { class: "muted", text: "Nothing readers see changes." }),
+    p.behind.length
+      ? h("details", { class: "behind" },
+        h("summary", { text: `Behind the scenes (not shown to readers): ${p.behind.length} ${p.behind.length === 1 ? "file" : "files"}` }),
+        list(p.behind))
+      : null,
+  ];
+}
+
 export async function publishScreen(slug) {
   const book = await bookBySlug(slug);
   const { publish: p } = await read("publish", { book: slug });
@@ -291,7 +310,7 @@ export async function publishScreen(slug) {
   return [
     ...header,
     h("p", {}, `${plural(p.change_count, "change")} to ${plural(p.page_count, "page")} will go to readers`, p.who.length ? `, by ${p.who.join(", ")}` : "", "."),
-    p.pages.length ? h("ul", {}, p.pages.slice(0, 40).map((pg) => h("li", { text: pg }))) : null,
+    ...goingLiveList(p),
     note([h("p", { text: p.state_words })], p.can_publish ? "" : "warn"),
     note([h("p", { text: "The drafts area is shared: everything in it goes, whoever wrote it. The site rebuilds itself afterwards, which takes a few minutes." })]),
     form,
