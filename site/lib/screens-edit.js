@@ -20,7 +20,8 @@ import { read, send } from "./api.js";
 import { bookBySlug, bookHeader, rawUrl } from "./books.js";
 import { renderChapter } from "./preview.js";
 import { renderDiff } from "./diff.js";
-import { conflictView, sentView } from "./screens-shared.js";
+import { conflictView, goToLine, lintView, sentView } from "./screens-shared.js";
+import { fixedWords, lintPage } from "./lint.js";
 
 const store = {
   get(key) {
@@ -48,7 +49,7 @@ const guard = (on) => {
 };
 window.addEventListener("hashchange", () => guard(false));
 
-export async function editScreen(slug, path) {
+export async function editScreen(slug, path, line = null) {
   const book = await bookBySlug(slug);
   const tree = await read("tree", { book: slug });
   const file = await read("file", { book: slug, path, ref: tree.head });
@@ -139,15 +140,39 @@ export async function editScreen(slug, path) {
   textarea.addEventListener("input", sync);
 
   const stage = h("div");
+  const toLine = (n) => {
+    select(0);
+    goToLine(textarea, n);
+  };
   const go = async () => {
     sendBtn.disabled = true;
+    // The book's own lint first: what it can put right goes into the box; anything
+    // left stops the send, listed with its line.
+    clear(outcome, busy("Checking the page's formatting…"));
+    let checked;
+    try {
+      checked = await lintPage(book, tree.head, path, current());
+    } catch (err) {
+      sendBtn.disabled = false;
+      return clear(outcome, errorNote(err));
+    }
+    if (checked.text !== current()) {
+      textarea.value = checked.text;
+      sync();
+    }
+    if (checked.problems.length) {
+      sendBtn.disabled = false;
+      clear(outcome, lintView(checked.problems, { go: toLine, fixed: fixedWords(checked.fixed) }));
+      return outcome.scrollIntoView({ block: "start" });
+    }
+    const fixedNote = fixedWords(checked.fixed);
     clear(outcome, busy("Sending it to the drafts area…"));
     const text = crlf ? current().replace(/\n/g, "\r\n") : current();
     try {
       const sent = await send({ book: slug, base, files: [{ path, text }], message: message.value.trim() || `Edit ${name}` });
       store.set(key, null);
       guard(false);
-      clear(stage, ...sentView(book, sent, "Sent to the drafts area", [],
+      clear(stage, ...sentView(book, sent, "Sent to the drafts area", [fixedNote],
         h("a", { class: "btn primary", href: back, text: "Back to the page" })));
     } catch (err) {
       sendBtn.disabled = false;
@@ -200,6 +225,8 @@ export async function editScreen(slug, path) {
     h("p", { class: "muted small", text: "Send makes one change of its own on the drafts area, made by you. Readers see it once the drafts are published, under Waiting for you. If anything else changed the drafts area since you opened this page, nothing is sent and you are shown it." }),
     outcome);
   sync();
+  // From a "Go to line" elsewhere (the publish screen's list): straight to it.
+  if (line) setTimeout(() => goToLine(textarea, line), 0);
 
   return [
     ...bookHeader(book, "chapters", `Edit ${name.replace(/\.md$/i, "")}`),

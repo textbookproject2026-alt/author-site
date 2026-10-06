@@ -11,7 +11,8 @@ import { read, send, importStart, importAgain, importStatus } from "./api.js";
 import { bookBySlug, bookHeader, rawUrl } from "./books.js";
 import { renderChapter } from "./preview.js";
 import { fileProblem, uploadParts } from "./upload.js";
-import { conflictView, sentView } from "./screens-shared.js";
+import { conflictView, goToLine, lintView, sentView } from "./screens-shared.js";
+import { fixedWords, lintPage } from "./lint.js";
 
 const POLL_MS = 3000;
 const GIVE_UP_MS = 6 * 60 * 1000;
@@ -139,9 +140,40 @@ async function review(book, folders, stage, id, docxName, s) {
   const read_ = h("input", { type: "checkbox", id: "read-it" });
   const replaceTick = h("input", { type: "checkbox", id: "replace-it" });
   const sendBtn = h("button", { type: "button", class: "btn primary", text: "Send to drafts", disabled: true });
+  // The book's lint on the converted chapter: fixed what it can, and anything left is
+  // put right here, in the box, before Send. `text` is what goes to drafts.
+  let text = chapter.text;
+  let clean = false;
+  const fixBox = h("textarea", { class: "editor-text", id: "import-fix", spellcheck: "true", "aria-label": `${c.path}, as Markdown` });
+  const lintOut = h("div", { "aria-live": "polite" }, busy("Checking the chapter's formatting…"));
+  const recheck = h("button", { type: "button", class: "btn", text: "Check again" });
   const sync = () => {
-    sendBtn.disabled = !read_.checked || (!c.new && !replaceTick.checked) || !result.writes.length && !result.deletes.length;
+    sendBtn.disabled = !clean || !read_.checked || (!c.new && !replaceTick.checked) || !result.writes.length && !result.deletes.length;
   };
+  const check = async (from) => {
+    clean = false;
+    sync();
+    clear(lintOut, busy("Checking the chapter's formatting…"));
+    try {
+      const r = await lintPage(book, result.base, c.path, from);
+      text = r.text;
+      clean = !r.problems.length;
+      const fixed = fixedWords(r.fixed);
+      if (clean) {
+        clear(lintOut, note([h("p", { text: "The chapter's formatting is as the book wants it." }), fixed ? h("p", { class: "muted small", text: fixed }) : null]));
+      } else {
+        fixBox.value = text;
+        clear(lintOut,
+          lintView(r.problems, { go: (n) => goToLine(fixBox, n), fixed }),
+          h("label", { class: "field", for: "import-fix" }, "Put them right here; your Word document is not changed", fixBox),
+          h("div", { class: "actions" }, recheck));
+      }
+    } catch (err) {
+      clear(lintOut, errorNote(err), h("div", { class: "actions" }, recheck));
+    }
+    sync();
+  };
+  recheck.addEventListener("click", () => check(fixBox.value || text));
   read_.addEventListener("change", sync);
   replaceTick.addEventListener("change", sync);
   const out = h("div", { class: "outcome", "aria-live": "polite" });
@@ -169,7 +201,9 @@ async function review(book, folders, stage, id, docxName, s) {
     sendBtn.disabled = true;
     clear(out, busy("Sending it to the drafts area…"));
     try {
-      const sent = await send({ book: book.slug, base: result.base, import: id, replace: !c.new || undefined, message: `Bring in ${c.path.split("/").pop()} from Word (“${docxName}”)` });
+      // The chapter as the lint left it (or as the author put it right), when that differs.
+      const files = text !== chapter.text ? [{ path: c.path, text }] : undefined;
+      const sent = await send({ book: book.slug, base: result.base, import: id, files, replace: !c.new || undefined, message: `Bring in ${c.path.split("/").pop()} from Word (“${docxName}”)` });
       clear(stage, ...sentView(book, sent, c.new ? "The chapter is in the drafts area" : "The chapter was replaced in the drafts area",
         [c.new && result.contents_line ? "Its line is on the front page, under “Contents”." : null],
         h("a", { class: "btn primary", href: `#/${book.slug}/tidy/${encodeURIComponent(c.path)}`, text: "Go through this chapter now" })));
@@ -217,6 +251,8 @@ async function review(book, folders, stage, id, docxName, s) {
       : h("p", { class: "muted", text: "Nothing in this document needs checking." }),
     h("h3", { text: "The chapter, as it will be" }),
     shown,
+    h("h3", { text: "Its formatting" }),
+    lintOut,
     !result.writes.length && !result.deletes.length ? note([h("p", { text: "The drafts area already has exactly this, so there is nothing to send." })]) : [
       h("label", { class: "confirm" }, read_, h("span", { text: "I've read the converted chapter and want it in the drafts area." })),
       c.new ? null : h("label", { class: "confirm" }, replaceTick, h("span", { text: `Replace the ${c.path} that is there now.` })),
@@ -224,4 +260,5 @@ async function review(book, folders, stage, id, docxName, s) {
     confirmBox,
     out);
   sync();
+  check(chapter.text);
 }

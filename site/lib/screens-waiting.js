@@ -6,7 +6,8 @@
 import { h, clear, busy, note, errorNote, when, plural } from "./dom.js";
 import { read, act, send } from "./api.js";
 import { bookBySlug, bookHeader, pageSlug } from "./books.js";
-import { sentView } from "./screens-shared.js";
+import { lintView, sentView } from "./screens-shared.js";
+import { ruleWords } from "./lint.js";
 import { PREVIEW_WORDS, discussionUrl, jobs, previewState, registryBook } from "./public.js";
 
 /** A button that runs `fn`, showing progress and then what happened in `out`. */
@@ -278,6 +279,30 @@ function goingLiveList(p) {
   ];
 }
 
+/**
+ * What the book's checks say about what would go live: the lint's problems (which stop
+ * it, each with a link to put it right) and the link check's dead links (which don't).
+ */
+function publishChecks(slug, p) {
+  const out = [];
+  if (p.lint?.length) {
+    out.push(lintView(p.lint.map((x) => ({ ...x, words: ruleWords(x.rule, x.description) })), {
+      href: (path, line) => `#/${slug}/edit/${encodeURIComponent(path)}/line/${line}`,
+    }));
+    if (p.lint_count > p.lint.length) out.push(h("p", { class: "muted small", text: `…and ${p.lint_count - p.lint.length} more after these.` }));
+  }
+  const dead = p.links?.dead ?? [];
+  if (dead.length) {
+    out.push(note([
+      h("p", {}, h("strong", { text: `${plural(dead.length, "link")} to other websites ${dead.length === 1 ? "doesn't" : "don't"} work.` }),
+        " This doesn't stop publishing: links to other sites stop working whatever you do. Fix or remove them when you can.",
+        p.links.checked ? "" : " (These are from the last check; the newest changes are still being checked.)"),
+      h("ul", {}, dead.map((d) => h("li", {}, h("a", { href: d.url, target: "_blank", rel: "noopener noreferrer", text: d.url }), ` in ${d.file} (${d.status})`))),
+    ]));
+  }
+  return out;
+}
+
 export async function publishScreen(slug) {
   const book = await bookBySlug(slug);
   const { publish: p } = await read("publish", { book: slug });
@@ -312,6 +337,7 @@ export async function publishScreen(slug) {
     h("p", {}, `${plural(p.change_count, "change")} to ${plural(p.page_count, "page")} will go to readers`, p.who.length ? `, by ${p.who.join(", ")}` : "", "."),
     ...goingLiveList(p),
     note([h("p", { text: p.state_words })], p.can_publish ? "" : "warn"),
+    ...publishChecks(slug, p),
     note([h("p", { text: "The drafts area is shared: everything in it goes, whoever wrote it. The site rebuilds itself afterwards, which takes a few minutes." })]),
     form,
     out,

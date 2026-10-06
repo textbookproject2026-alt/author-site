@@ -516,6 +516,120 @@ test("people: remove asks first; the last author can't be removed; not switched 
   await page.getByText("isn't switched on yet", { exact: false }).waitFor();
 });
 
+// --- the book's lint before Send and Publish; reading order; People that failed ----------------
+
+test("editor: Send runs the book's lint first — fixes what it can, lists the rest with Go to line, and sends only when clean", async () => {
+  await signIn();
+  const box = await openEditor();
+  await box.fill("# Chapter 1\n\n**A heading in bold**\n\nText.\n\n\n\nMore.\n");
+  await page.getByRole("button", { name: "Send to drafts" }).click();
+  await page.getByText("1 thing to put right first.").waitFor({ timeout: 30000 });
+  await page.getByText("Line 3: A line in bold or italic is standing in for a heading.", { exact: false }).waitFor();
+  await page.getByText("Put right automatically: there are several blank lines in a row", { exact: false }).waitFor();
+  assert.equal(await box.inputValue(), "# Chapter 1\n\n**A heading in bold**\n\nText.\n\nMore.\n", "the fix is in the box");
+  assert.equal(stub.s.requests.filter((r) => r.endpoint === "author-send").length, 0, "nothing sent");
+  await page.getByRole("button", { name: "Go to line 3" }).click();
+  assert.equal(await box.evaluate((t) => t.value.slice(t.selectionStart, t.selectionEnd)), "**A heading in bold**");
+
+  await box.fill("# Chapter 1\n\n## A heading in bold\n\nText.\n\nMore.\n");
+  await page.getByRole("button", { name: "Send to drafts" }).click();
+  await page.getByRole("heading", { name: "Sent to the drafts area" }).waitFor({ timeout: 30000 });
+  assert.equal(lastCall("author-send").body.files[0].text, "# Chapter 1\n\n## A heading in bold\n\nText.\n\nMore.\n");
+});
+
+test("import: the converted chapter is linted; what is left is put right in the box, and goes with the import", async () => {
+  await signIn();
+  stub.s.importState = [importDone({ text: "# Chapter 2: Soils\n\n*Soil horizons*\n\nText.\n\n![](../assets/chapter-02/image1.png)\n" })];
+  await chooseDocx();
+  await page.getByRole("button", { name: "Convert it" }).click();
+  await page.getByText("2 things to put right first.").waitFor({ timeout: 30000 });
+  const sendBtn = page.getByRole("button", { name: "Send to drafts" });
+  await page.getByLabel("I've read the converted chapter").check();
+  assert.equal(await sendBtn.isDisabled(), true, "Send waits for the lint");
+  await page.getByText("Line 7: A picture has no description.", { exact: false }).waitFor();
+  const fix = page.locator("#import-fix");
+  await fix.fill("# Chapter 2: Soils\n\n## Soil horizons\n\nText.\n\n![A soil profile](../assets/chapter-02/image1.png)\n");
+  await page.getByRole("button", { name: "Check again" }).click();
+  await page.getByText("The chapter's formatting is as the book wants it.").waitFor({ timeout: 30000 });
+  await sendBtn.click();
+  await page.getByRole("heading", { name: "The chapter is in the drafts area" }).waitFor();
+  const sent = lastCall("author-send").body;
+  assert.equal(sent.import, "0123456789abcdef0123");
+  assert.deepEqual(sent.files, [{ path: "chapters/chapter-02.md", text: "# Chapter 2: Soils\n\n## Soil horizons\n\nText.\n\n![A soil profile](../assets/chapter-02/image1.png)\n" }]);
+});
+
+test("publish: lint problems stop it, each linked to its line; dead links are a notice that doesn't", async () => {
+  await signIn();
+  stub.s.publish = { ...stub.s.publish, state: "lint", can_publish: false, state_words: "This cannot go to readers yet: some pages have formatting problems, listed below.",
+    lint: [{ path: "chapters/chapter-01.md", line: 3, rule: "MD036", description: "Emphasis used instead of a heading", detail: "" }], lint_count: 1,
+    links: { checked: true, dead: [{ url: "https://gone.example/page", file: "chapters/chapter-01.md", status: "404" }] } };
+  await page.goto(`${origin}/#/a-book/publish`);
+  await page.getByText("1 thing to put right first.").waitFor();
+  await page.getByText("A line in bold or italic is standing in for a heading.", { exact: false }).waitFor();
+  assert.equal(await page.getByRole("link", { name: "Go to line 3" }).getAttribute("href"), `#/a-book/edit/${encodeURIComponent("chapters/chapter-01.md")}/line/3`);
+  await page.getByText("1 link to other websites doesn't work.").waitFor();
+  assert.equal(await page.getByRole("link", { name: "https://gone.example/page" }).count(), 1);
+  assert.equal(await page.getByRole("checkbox").count(), 0, "no tick box while it can't be published");
+  assert.equal(await page.getByRole("button", { name: "Publish to the live book" }).isDisabled(), true);
+
+  await page.getByRole("link", { name: "Go to line 3" }).click();
+  const box = page.locator("#editor-text");
+  await box.waitFor();
+  await page.waitForFunction(() => document.activeElement?.id === "editor-text");
+  assert.equal(await box.evaluate((t) => t.value.split("\n").slice(0, 2).join("\n").length + 1 === t.selectionStart), true, "line 3 is selected");
+});
+
+test("people: a change that didn't go through says so, with the reasons, and doesn't hold up the next", async () => {
+  await signIn();
+  stub.s.people = { ...stub.s.people, pending: [{ number: 63, url: "https://github.com/textbookproject2026-alt/textbook-registry/pull/63", action: "add", login: "gobi10k", by: "author-one", state: "failed",
+    when: new Date(Date.now() - 4 * 86400e3).toISOString(), reasons: ["a-book authors: there is no GitHub account called gobi10k"] }] };
+  await page.goto(`${origin}/#/a-book/people`);
+  await page.getByRole("heading", { name: "Didn't go through" }).waitFor();
+  await page.getByText("a-book authors: there is no GitHub account called gobi10k").waitFor();
+  assert.equal(await page.getByRole("heading", { name: "On its way" }).count(), 0);
+  assert.equal(await page.locator("#invite-login").count(), 1, "a new invite can be made");
+});
+
+const INDEX_WITH_CONTENTS = "# A Book of Things\n\n## Contents\n\n- **[[chapters/chapter-01|Chapter 1]]**\n- **[[chapters/chapter-02|Chapter 2: Soils]]**\n- **[[chapters/chapter-03|Chapter 3]]**\n\n## About\n\nx\n";
+
+test("chapters: reorder with the buttons or by dragging, saved as one change to the Contents", async () => {
+  await signIn();
+  stub.s.bookFiles.set("index.md", Buffer.from(INDEX_WITH_CONTENTS));
+  for (const n of ["02", "03"]) stub.s.tree.files.push({ path: `chapters/chapter-${n}.md`, sha: n.repeat(20), size: 20 });
+  await page.goto(`${origin}/#/a-book`);
+  await page.getByRole("heading", { name: "Chapters, in reading order" }).waitFor();
+  const names = () => page.locator("ol.reorder > li a").allInnerTexts();
+  assert.deepEqual(await names(), ["Chapter 1", "Chapter 2: Soils", "Chapter 3"]);
+  await page.getByRole("button", { name: "Move Chapter 3 up" }).click();
+  assert.deepEqual(await names(), ["Chapter 1", "Chapter 3", "Chapter 2: Soils"]);
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Move Chapter 3 up", "focus stays with the chapter");
+  await page.locator("ol.reorder > li").nth(2).dragTo(page.locator("ol.reorder > li").nth(0));
+  assert.deepEqual(await names(), ["Chapter 2: Soils", "Chapter 1", "Chapter 3"]);
+  await page.getByRole("button", { name: "Save this order" }).click();
+  await page.getByText("The new order is in the drafts area.", { exact: false }).waitFor();
+  const sent = lastCall("author-send").body;
+  assert.equal(sent.base, HEAD);
+  assert.deepEqual(sent.files, [{ path: "index.md", text: INDEX_WITH_CONTENTS.replace(
+    "- **[[chapters/chapter-01|Chapter 1]]**\n- **[[chapters/chapter-02|Chapter 2: Soils]]**\n",
+    "- **[[chapters/chapter-02|Chapter 2: Soils]]**\n- **[[chapters/chapter-01|Chapter 1]]**\n") }]);
+});
+
+test("chapters: Rename changes the chapter's # heading and its Contents line in one change; the file keeps its name", async () => {
+  await signIn();
+  stub.s.bookFiles.set("index.md", Buffer.from(INDEX_WITH_CONTENTS));
+  for (const n of ["02", "03"]) stub.s.tree.files.push({ path: `chapters/chapter-${n}.md`, sha: n.repeat(20), size: 20 });
+  await page.goto(`${origin}/#/a-book`);
+  await page.getByRole("button", { name: "Rename Chapter 1" }).click();
+  await page.getByLabel("What it should be called").fill("Chapter 1: Beginnings");
+  await page.getByRole("button", { name: "Save the title" }).click();
+  await page.getByText("Renamed to “Chapter 1: Beginnings”", { exact: false }).waitFor();
+  const sent = lastCall("author-send").body;
+  assert.equal(sent.message, "Retitle chapters/chapter-01.md: “Chapter 1” → “Chapter 1: Beginnings”");
+  assert.deepEqual(sent.files.map((f) => f.path), ["chapters/chapter-01.md", "index.md"]);
+  assert.match(sent.files[0].text, /^# Chapter 1: Beginnings\n\nSome text about/);
+  assert.match(sent.files[1].text, /- \*\*\[\[chapters\/chapter-01\|Chapter 1: Beginnings\]\]\*\*/);
+});
+
 // --- history -----------------------------------------------------------------------------------
 
 test("history: the book's changes in this site, paged, marked live or waiting; not GitHub", async () => {

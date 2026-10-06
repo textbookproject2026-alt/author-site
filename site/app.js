@@ -6,7 +6,7 @@
 //   #/                          your books
 //   #/<book>                    its chapters
 //   #/<book>/chapter/<path>     one chapter
-//   #/<book>/edit/<path>        edit it
+//   #/<book>/edit/<path>[/line/<n>]  edit it (at line n)
 //   #/<book>/tidy/<path>        its citations, concept links and glossary questions
 //   #/<book>/import             bring in a Word document
 //   #/<book>/waiting            suggestions, draft changes, going live, jobs
@@ -106,7 +106,7 @@ const ROUTES = [
   [/^settings$/, () => settingsScreen()],
   [/^([a-z0-9-]+)$/, (book) => chaptersScreen(book)],
   [/^([a-z0-9-]+)\/chapter\/(.+)$/, (book, path) => chapterScreen(book, decodeURIComponent(path))],
-  [/^([a-z0-9-]+)\/edit\/(.+)$/, (book, path) => editScreen(book, decodeURIComponent(path))],
+  [/^([a-z0-9-]+)\/edit\/([^/]+)(?:\/line\/(\d+))?$/, (book, path, line) => editScreen(book, decodeURIComponent(path), line ? Number(line) : null)],
   [/^([a-z0-9-]+)\/tidy\/(.+)$/, (book, path) => tidyScreen(book, decodeURIComponent(path))],
   [/^([a-z0-9-]+)\/import$/, (book) => importScreen(book)],
   [/^([a-z0-9-]+)\/waiting$/, (book) => waitingScreen(book)],

@@ -30,7 +30,10 @@ async function draw(book, stage, said = null) {
   }
   const me = lower(identity()?.login ?? "");
   const open = p.pending.find((c) => c.state === "open");
-  const pendingFor = new Map(p.pending.map((c) => [lower(c.login), c]));
+  // A change that didn't go through is said so, with why: never "on its way" for good.
+  const failed = p.pending.filter((c) => c.state === "failed");
+  const onWay = p.pending.filter((c) => c.state !== "failed");
+  const pendingFor = new Map(onWay.map((c) => [lower(c.login), c]));
 
   const out = h("div", { class: "outcome", "aria-live": "polite" });
   const act = async (action, login, button) => {
@@ -89,9 +92,20 @@ async function draw(book, stage, said = null) {
     said,
     h("h2", { class: "flush-top", text: "Who can work on this book here" }),
     h("ul", { class: "list" }, p.authors.map(row)),
-    p.pending.length ? [
+    failed.length ? [
+      h("h3", { text: "Didn't go through" }),
+      h("ul", { class: "list" }, failed.map((c) => h("li", { class: "failed-change" },
+        note([
+          h("p", { class: "flush" }, c.action === "add" ? "Inviting " : "Removing ", profile(c.login), c.by ? [" (by @", c.by, ")"] : null,
+            " didn't go through, so nothing changed. ", h("a", { href: c.url, target: "_blank", rel: "noopener", text: "See it on GitHub" })),
+          h("p", { class: "flush" }, "Why: "),
+          h("ul", {}, (c.reasons ?? []).map((r) => h("li", { text: r }))),
+          h("p", { class: "muted small", text: "You can try again below; that closes this one. If the reason isn't something you can put right, tell the platform's technical contact." }),
+        ], "warn")))),
+    ] : null,
+    onWay.length ? [
       h("h3", { text: "On its way" }),
-      h("ul", { class: "list" }, p.pending.map((c) => h("li", {},
+      h("ul", { class: "list" }, onWay.map((c) => h("li", {},
         h("p", { class: "flush" }, c.action === "add" ? "Inviting " : "Removing ", profile(c.login), c.by ? [" (by @", c.by, ")"] : null, ": ", words(c), ". ",
           h("a", { href: c.url, target: "_blank", rel: "noopener", text: "See it on GitHub" })),
         c.when ? h("p", { class: "muted small below", text: `Started ${when(c.when)}.` }) : null))),
@@ -101,7 +115,7 @@ async function draw(book, stage, said = null) {
     out);
 
   // Checked again while something is on its way, for as long as this screen is open.
-  if (p.pending.length) {
+  if (onWay.length) {
     const here = location.hash;
     setTimeout(() => {
       if (location.hash === here && stage.isConnected) draw(book, stage).catch(() => {});

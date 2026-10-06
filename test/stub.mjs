@@ -28,8 +28,10 @@ const REGISTRY = {
     site: { domain: "a-book.example.org", host: { kind: "static", provider: "cloudflare-pages", project: "a-book", builder: "quartz-book" } },
   }],
 };
+// The template's .markdownlint-cli2.yaml, as every book has it.
+export const LINT_CONFIG = readFileSync(new URL("./fixtures/markdownlint-cli2.yaml", import.meta.url), "utf8");
 const CH1 = "# Chapter 1\n\nSome text about ![a figure](../assets/chapter-01/image1.png) things.\n";
-const CH2 = "# Chapter 2: Soils\n\nConverted from Word.\n\n![](../assets/chapter-02/image1.png)\n";
+const CH2 = "# Chapter 2: Soils\n\nConverted from Word.\n\n![A soil profile](../assets/chapter-02/image1.png)\n";
 
 // What the DeepSeek stub answers: llm.suggest_terms' request (its system prompt is
 // about a glossary) and formatting.check's (everything else), as llm.py reads them.
@@ -202,10 +204,16 @@ export function createStub({ siteOrigin }) {
     s.tree = { head: HEAD, files };
   }
   s.bookFiles = new Map();
+  s.lintConfig = LINT_CONFIG;
 
   async function raw(route) {
     const url = new URL(route.request().url());
     const cors = { "access-control-allow-origin": "*" };
+    // The book's lint settings, at whichever commit is asked for (null: the book has none).
+    if (url.pathname.endsWith("/.markdownlint-cli2.yaml")) {
+      return s.lintConfig === null ? route.fulfill({ status: 404, headers: cors, body: "" })
+        : route.fulfill({ status: 200, contentType: "text/plain", headers: cors, body: s.lintConfig });
+    }
     const prefix = `/${REPO}/${HEAD}/`;
     if (url.pathname.startsWith(prefix)) {
       const path = decodeURIComponent(url.pathname.slice(prefix.length));
@@ -249,10 +257,10 @@ export function sentAnswer() {
   return { sha: SENT, url: `https://github.com/${REPO}/commit/${SENT}`, written: ["chapters/chapter-02.md"], deleted: [], steps: ["The change is in the drafts area, as one change made by you."] };
 }
 
-export function importDone({ isNew = true } = {}) {
+export function importDone({ isNew = true, text = CH2 } = {}) {
   return {
     state: "done", attempt: 1,
-    chapter: { path: "chapters/chapter-02.md", text: CH2 },
+    chapter: { path: "chapters/chapter-02.md", text },
     result: {
       version: 1, id: "0123456789abcdef0123", attempt: 1, ok: true, book: "a-book", base: HEAD, login: "author-one",
       chapter: isNew
