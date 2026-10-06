@@ -87,6 +87,15 @@ test("an account that is no book's author is told so, and how to fix it", async 
   await page.getByText("isn't one of any book's authors").waitFor();
 });
 
+test("the header's Guide link opens the author guide in a new tab, signed in or out", async () => {
+  await page.goto(`${origin}/`);
+  const guide = page.locator(".masthead").getByRole("link", { name: "Guide", exact: true });
+  assert.equal(await guide.getAttribute("href"), "https://guide.confused4now.org");
+  assert.equal(await guide.getAttribute("target"), "_blank");
+  await signIn();
+  assert.ok(await guide.isVisible());
+});
+
 test("theme: follows a dark system, the toggle switches to light and remembers it before first paint", async () => {
   await page.emulateMedia({ colorScheme: "dark" });
   await page.goto(`${origin}/`);
