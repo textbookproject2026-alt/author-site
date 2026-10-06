@@ -426,6 +426,30 @@ test("publishing: only with the tick, and only the request shown", async () => {
   assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "publish", number: 30, confirm: true });
 });
 
+test("going live: what readers will see, and the behind-the-scenes files folded away", async () => {
+  stub.s.publish = { ...stub.s.publish, pages: ["chapter-01", "README", "lint"], reader: ["chapter-01"], behind: ["docs/README.md", ".github/workflows/lint.yml"], split: true, page_count: 3 };
+  await signIn();
+  await page.goto(`${origin}/#/a-book/publish`);
+  await page.getByRole("heading", { name: "Readers will see" }).waitFor();
+  const main = page.locator("main");
+  assert.ok(await main.getByText("chapter-01", { exact: true }).isVisible());
+  const behind = main.locator("details.behind");
+  assert.equal(await behind.getAttribute("open"), null, "collapsed by default");
+  assert.equal(await behind.locator("summary").innerText(), "Behind the scenes (not shown to readers): 2 files");
+  assert.equal(await main.getByText("docs/README.md").isVisible(), false);
+  await behind.locator("summary").click();
+  assert.ok(await main.getByText("docs/README.md").isVisible());
+  assert.ok(await main.getByText(".github/workflows/lint.yml").isVisible());
+});
+
+test("going live: a site that doesn't say what it serves keeps the plain list", async () => {
+  await signIn();
+  await page.goto(`${origin}/#/a-book/publish`);
+  await page.getByRole("button", { name: "Publish to the live book" }).waitFor();
+  assert.equal(await page.getByRole("heading", { name: "Readers will see" }).count(), 0);
+  assert.ok(await page.locator("main").getByText("chapter-01", { exact: true }).isVisible());
+});
+
 test("publishing: not clean means no tick box and no button that works", async () => {
   stub.s.publish = { ...stub.s.publish, state: "conflict", can_publish: false, state_words: "This cannot be published as it stands." };
   await signIn();
