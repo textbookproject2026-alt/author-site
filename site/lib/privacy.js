@@ -6,7 +6,7 @@
 import { h } from "./dom.js";
 
 const KEY = "tb-privacy-ok";
-export const PRIVACY_URL = "https://confused4now.org/#privacy";
+export const PRIVACY_URL = "https://confused4now.org/privacy";
 
 export function privacyNote() {
   try {
