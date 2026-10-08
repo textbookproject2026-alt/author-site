@@ -60,7 +60,8 @@ export function changedParagraphs(a, b) {
 
 /** The line the author reads for one item. */
 export function itemWords(it) {
-  if (it.kind === "new") return `New chapter “${it.title}”`;
+  // A chapter is a page directly in chapters/; the glossary, the front page and concept pages are pages.
+  if (it.kind === "new") return `${/^chapters\/[^/]+$/.test(it.path ?? "") ? "New chapter" : "New page"} “${it.title}”`;
   if (it.kind === "removed") return `Removed “${it.title}”`;
   if (it.kind === "order") return "Chapter order changed";
   if (it.kind === "front") return "Edited the front page";

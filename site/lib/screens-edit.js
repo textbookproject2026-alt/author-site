@@ -5,6 +5,9 @@
 // keep going), each save one change made by them through author-send, and the line
 // under the title says so: "Saving…", "Draft saved 14:32", or what went wrong.
 //
+// Links & glossary (beside Done) saves what is typed, then opens the chapter's
+// citation, concept-link, glossary and AI formatting questions (screens-tidy.js).
+//
 // The book's own lint runs as they type (lint.js): what markdownlint can put right
 // it does, away from the line being typed; the rest is listed with Go to line.
 //
@@ -15,12 +18,13 @@
 
 import { h, clear, busy, note, errorNote, when } from "./dom.js";
 import { read, send } from "./api.js";
-import { bookBySlug, bookHeader, rawUrl } from "./books.js";
+import { bookBySlug, bookHeader, pageSlug, rawUrl } from "./books.js";
 import { renderChapter } from "./preview.js";
 import { renderDiff } from "./diff.js";
 import { goToLine, lintView, savedAt } from "./screens-shared.js";
 import { fixedWords, lintLive } from "./lint.js";
 import { forgetCount, rawText, titlesFrom } from "./drafts.js";
+import { draftsPreview, registryBook } from "./public.js";
 
 const IDLE_MS = 1500;
 const MIN_GAP_MS = 20_000;
@@ -59,9 +63,10 @@ window.addEventListener("hashchange", () => {
 export async function editScreen(slug, path, line = null) {
   const book = await bookBySlug(slug);
   const tree = await read("tree", { book: slug });
-  const [file, index] = await Promise.all([
+  const [file, index, reg] = await Promise.all([
     read("file", { book: slug, path, ref: tree.head }),
     path !== "index.md" && tree.files.some((f) => f.path === "index.md") ? read("file", { book: slug, path: "index.md", ref: tree.head }).catch(() => null) : null,
+    registryBook(slug),
   ]);
   if (typeof file.text !== "string") throw Object.assign(new Error("not text"), { userMessage: "This page isn't text, so it can't be edited here." });
   const title = titlesFrom(index?.text).get(path, file.text);
@@ -220,20 +225,37 @@ export async function editScreen(slug, path, line = null) {
     }
   };
 
-  const chapter = path.startsWith("chapters/");
+  const chapter = path.startsWith("chapters/") && /\.md$/i.test(path);
+  // Links & glossary reads the drafts: what is typed goes there first.
+  const tidy = chapter ? h("button", { type: "button", class: "btn", text: "Links & glossary" }) : null;
+  tidy?.addEventListener("click", async () => {
+    tidy.disabled = true;
+    clearTimeout(timer);
+    if (textarea.value !== lastSaved) {
+      lastSaveAt = 0;
+      await save();
+      if (textarea.value !== lastSaved) return void (tidy.disabled = false); // not saved: the line says why
+    }
+    location.hash = `#/${slug}/tidy/${encodeURIComponent(path)}`;
+  });
+  const slugPath = pageSlug(path === "index.md" ? "" : path);
+  const preview = draftsPreview(reg);
   const stage = [
+    h("p", { class: "muted small row spaced" },
+      file.last ? h("span", {}, "Last changed by ", h("strong", { text: file.last.who }), ` ${when(file.last.when)}`) : null,
+      preview ? h("a", { href: `${preview}${slugPath}`, target: "_blank", rel: "noopener", text: "In the drafts preview" }) : null,
+      book.domain ? h("a", { href: `https://${book.domain}/${slugPath}`, target: "_blank", rel: "noopener", text: "On the live site" }) : null),
     status.node,
     restored ? note([h("p", { text: `This is the page as it was ${when(restored.restored.when)}, from its history. It is being saved to the drafts as a new change; Changes shows what it does to the page readers have.` })]) : null,
     unsaved ? note([h("p", { text: "Your changes from before weren't saved yet. They are back in the box and are being saved now." })]) : null,
     h("div", { class: "editor" },
       h("div", { class: "editor-bar" },
         h("div", { role: "tablist", "aria-label": "Editor view" }, tabs),
-        h("a", { class: "btn", href: `#/${slug}`, text: "Done" })),
+        h("div", { class: "row" }, tidy, h("a", { class: "btn", href: `#/${slug}`, text: "Done" }))),
       panels),
     lintBox,
     h("p", { class: "row spaced small" },
-      h("a", { href: `#/${slug}/history/${encodeURIComponent(path)}`, text: "History of this page" }),
-      chapter ? h("a", { href: `#/${slug}/tidy/${encodeURIComponent(path)}`, text: "Citations, concept links and glossary" }) : null),
+      h("a", { href: `#/${slug}/history/${encodeURIComponent(path)}`, text: "History of this page" })),
   ];
   // The restored or unsaved text goes to the drafts straight away; the check runs either way.
   setTimeout(() => {

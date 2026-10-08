@@ -109,8 +109,8 @@ const CHAPTER = "chapters/chapter-01.md";
 const lastSend = () => stub.s.requests.filter((r) => r.endpoint === "author-send").at(-1)?.body;
 
 test("the questions, one at a time, then exactly what changes, sent as one change: byte for byte the desktop app's", { skip, timeout: 240_000 }, async () => {
-  await page.goto(`${server.origin}/#/a-book/chapter/${encodeURIComponent(CHAPTER)}`);
-  await page.getByRole("link", { name: "Citations, concept links and glossary" }).click();
+  await page.goto(`${server.origin}/#/a-book/edit/${encodeURIComponent(CHAPTER)}`);
+  await page.getByRole("button", { name: "Links & glossary" }).click();
   await page.getByRole("button", { name: "Look through this chapter" }).click();
 
   const heading = page.locator("h2").first();
@@ -140,7 +140,8 @@ test("the questions, one at a time, then exactly what changes, sent as one chang
 
   const sent = lastSend();
   assert.equal(sent.base, HEAD);
-  assert.equal(sent.message, "Tidy chapter-01.md: citations, concept links, glossary");
+  assert.match(sent.message, /^Links & glossary for “.+”: citations, concept links, glossary$/);
+  assert.doesNotMatch(sent.message, /\.md/);
   const byPath = Object.fromEntries(sent.files.map((f) => [f.path, f.text]));
   const options = { analyses: ["references", "terms", "glossary"], first_mention_only: true, anchor_style: "obsidian" };
   assert.deepEqual(byPath, desktop(["r0", "t2", "g4"], [], options));
@@ -169,6 +170,24 @@ test("yes to every mention of a concept, and the drafts moving on: the same choi
   await page.getByRole("heading", { name: "Saved to the drafts" }).waitFor();
   const byPath = Object.fromEntries(lastSend().files.map((f) => [f.path, f.text]));
   assert.deepEqual(byPath, desktop(["t0"], ["Critical realism"], { analyses: ["terms"], first_mention_only: true, anchor_style: "obsidian" }));
+});
+
+test("book-wide: glossary terms in every chapter, chapter by chapter, each saved as its own change, then Done", { skip, timeout: 240_000 }, async () => {
+  await page.goto(`${server.origin}/#/a-book`);
+  await page.getByRole("link", { name: "Glossary terms in every chapter" }).click();
+  await page.getByText("Chapter 1 of 1:", { exact: false }).waitFor();
+  await page.getByRole("button", { name: "Yes, make this change" }).first().waitFor({ timeout: PYODIDE_TIMEOUT });
+  // Only glossary questions: no citations, no concept links.
+  assert.equal(await page.locator(".card mark").first().textContent(), "Ontology");
+  await page.getByRole("button", { name: "Yes, make this change" }).click();
+  await page.getByRole("heading", { name: "Here is exactly what will change" }).waitFor({ timeout: PYODIDE_TIMEOUT });
+  await page.getByLabel("I have read the changes above").check();
+  await page.getByRole("button", { name: "Save to drafts" }).click();
+  await page.getByText("Saved to the drafts:", { exact: false }).waitFor();
+  const byPath = Object.fromEntries(lastSend().files.map((f) => [f.path, f.text]));
+  assert.match(byPath["glossary.md"], /## Ontology/);
+  await page.getByRole("link", { name: "Finish" }).click();
+  await page.getByText("Done: every chapter has been through.", { exact: false }).waitFor();
 });
 
 test("a reader's exact replacement, found exactly once, made and thanked in one send", { skip, timeout: 240_000 }, async () => {

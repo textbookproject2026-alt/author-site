@@ -9,7 +9,8 @@
 //   #/<book>/import             bring in a document
 //   #/<book>/drafts             Drafts: reader suggestions, what's changed, Publish
 //   #/<book>/suggestion/<n>     one written reader suggestion
-//   #/<book>/tidy/<path>        a chapter's citations, concept links and glossary questions
+//   #/<book>/tidy/<path>        Links & glossary: a chapter's citations, concept links, glossary, AI formatting
+//   #/<book>/tidy-all/<glossary|concepts>[/<n>]  the same, book-wide, chapter by chapter
 //   #/<book>/people             who can work on it; invite, remove
 //   #/<book>/history[/<path>]   the drafts' history, of the book or one page
 //   #/<book>/revision/<sha>[/<path>]  one change; one page at it, Restore, Bring it back
@@ -20,7 +21,7 @@ import { h, clear, busy, errorNote } from "./lib/dom.js";
 import { identity, onChange, signIn, signOut } from "./lib/auth.js";
 import { booksScreen, chaptersScreen, chapterScreen } from "./lib/screens-books.js";
 import { importScreen } from "./lib/screens-import.js";
-import { tidyScreen } from "./lib/screens-tidy.js";
+import { tidyScreen, tidyAllScreen } from "./lib/screens-tidy.js";
 import { editScreen } from "./lib/screens-edit.js";
 import { settingsScreen } from "./lib/screens-settings.js";
 import { peopleScreen } from "./lib/screens-people.js";
@@ -107,6 +108,7 @@ const ROUTES = [
   [/^([a-z0-9-]+)\/chapter\/(.+)$/, (book, path) => chapterScreen(book, decodeURIComponent(path))],
   [/^([a-z0-9-]+)\/edit\/([^/]+)(?:\/line\/(\d+))?$/, (book, path, line) => editScreen(book, decodeURIComponent(path), line ? Number(line) : null)],
   [/^([a-z0-9-]+)\/tidy\/(.+)$/, (book, path) => tidyScreen(book, decodeURIComponent(path))],
+  [/^([a-z0-9-]+)\/tidy-all\/(glossary|concepts)(?:\/(\d+))?$/, (book, kind, n) => tidyAllScreen(book, kind, n ? Number(n) : 0)],
   [/^([a-z0-9-]+)\/import$/, (book) => importScreen(book)],
   [/^([a-z0-9-]+)\/(?:drafts|waiting|publish|change\/\d+)$/, (book) => draftsScreen(book)],
   [/^([a-z0-9-]+)\/suggestion\/(\d+)$/, (book, n) => suggestionScreen(book, Number(n))],

@@ -11,7 +11,7 @@
 //                                     +---- convert again <----------+ (drafts moved)
 
 import { h, clear, busy, note, errorNote, when, plural } from "./dom.js";
-import { importStart, importAgain, importStatus, send } from "./api.js";
+import { importStart, importAgain, importStatus, read, send } from "./api.js";
 import { bookBySlug, bookHeader, rawUrl } from "./books.js";
 import { renderChapter } from "./preview.js";
 import { ACCEPT, fileProblem, uploadParts } from "./upload.js";
@@ -21,8 +21,16 @@ import { forgetCount } from "./drafts.js";
 const POLL_MS = 3000;
 const GIVE_UP_MS = 6 * 60 * 1000;
 
+/** The document's own name as a page name, for a folder that keeps names (convert.suggest_name). */
+const suggestName = (file) => (file.replace(/\.(docx|doc|odt|rtf)$/i, "").trim().replace(/^\.+|\.+$/g, "").replace(/[/\\:*?"<>|]/g, "-").replace(/\s+/g, " ").trim() || "Untitled page");
+
+let folders = [];
+
 export async function importScreen(slug) {
   const book = await bookBySlug(slug);
+  const tree = await read("tree", { book: slug });
+  // Folders inside chapters (concept pages, say): a document can go there under a name of the author's choosing.
+  folders = [...new Set(tree.files.filter((f) => /^chapters\/.+\/[^/]+\.md$/i.test(f.path)).map((f) => f.path.slice(0, f.path.lastIndexOf("/"))))].sort();
   const stage = h("div", { "aria-live": "polite" });
   choose(book, stage);
   return [...bookHeader(book, "chapters", "Bring in a document"), stage];
@@ -31,14 +39,28 @@ export async function importScreen(slug) {
 function choose(book, stage, problem) {
   const input = h("input", { type: "file", accept: ACCEPT, id: "docx" });
   const said = h("div");
+  const where = h("select", { id: "where" },
+    h("option", { value: "chapters", text: "A chapter of the book" }),
+    folders.map((f) => h("option", { value: f, text: `A page in ${f.slice("chapters/".length)}` })));
+  const name = h("input", { type: "text", id: "chapter-name", autocomplete: "off" });
+  const nameField = h("label", { class: "field", hidden: true }, "What the page should be called", name);
+  const syncName = () => {
+    nameField.hidden = where.value === "chapters";
+    if (!nameField.hidden && !name.value && input.files[0]) name.value = suggestName(input.files[0].name);
+  };
+  where.addEventListener("change", syncName);
   input.addEventListener("change", () => {
     const p = fileProblem(input.files[0]);
     clear(said, p ? note([h("p", { text: p })], "warn") : null);
+    name.value = "";
+    syncName();
   });
   const form = h("form", { novalidate: true },
     h("p", { text: "Choose the document. You'll see the whole chapter as readers will, and anything worth checking, before it goes into your drafts. Your document itself is never changed." }),
     h("label", { class: "file-drop" }, h("span", { class: "sr-only", text: "Document" }), input),
     h("p", { class: "muted small", text: "Word (.docx or .doc), OpenDocument (.odt) or Rich Text (.rtf), up to 20 MB. A document you brought in before replaces the chapter it became." }),
+    folders.length ? h("label", { class: "field" }, "Where it goes", where) : null,
+    nameField,
     said,
     problem ? errorNote(problem) : null,
     h("div", { class: "actions" }, h("button", { type: "submit", class: "btn primary", text: "Convert it" }), h("a", { class: "btn", href: `#/${book.slug}`, text: "Back to the chapters" })));
@@ -47,12 +69,13 @@ function choose(book, stage, problem) {
     const file = input.files[0];
     const p = fileProblem(file);
     if (p) return clear(said, note([h("p", { text: p })], "warn"));
-    await upload(book, stage, file);
+    if (!nameField.hidden && !name.value.trim()) return clear(said, note([h("p", { text: "Please give the page a name." })], "warn"));
+    await upload(book, stage, file, where.value, nameField.hidden ? null : name.value.trim());
   });
   clear(stage, form);
 }
 
-async function upload(book, stage, file) {
+async function upload(book, stage, file, folder = "chapters", chapterName = null) {
   const bar = h("span");
   bar.style.width = "0%";
   clear(stage, h("p", { class: "busy", text: "Uploading your document…" }), h("div", { class: "progress", role: "progressbar", "aria-label": "Upload" }, bar));
@@ -62,7 +85,7 @@ async function upload(book, stage, file) {
       bar.style.width = `${Math.round(f * 100)}%`;
     });
     clear(stage, busy("Starting the conversion…"));
-    started = await importStart({ book: book.slug, name: file.name, parts: receipts, folder: "chapters" });
+    started = await importStart({ book: book.slug, name: file.name, parts: receipts, folder, chapterName });
   } catch (err) {
     return choose(book, stage, err);
   }
@@ -124,11 +147,12 @@ async function review(book, stage, id, s) {
       forgetCount(book.slug);
       clear(stage,
         h("h2", { class: "flush-top", text: c.new ? `“${title}” is in the drafts` : `“${title}” was replaced in the drafts` }),
-        h("p", { text: c.new ? "It is at the end of the reading order; move it on Chapters if it belongs elsewhere." : "Its place in the reading order is unchanged." }),
+        h("p", { text: !c.path.slice("chapters/".length).includes("/") ? (c.new ? "It is at the end of the reading order; move it on Chapters if it belongs elsewhere." : "Its place in the reading order is unchanged.") : "It is listed on Chapters under its folder." }),
         fixed?.problems.length ? note([h("p", { text: `${plural(fixed.problems.length, "formatting thing")} to put right before you publish: the editor lists ${fixed.problems.length === 1 ? "it" : "them"}, with the line.` })], "warn") : null,
         h("p", { class: "muted", text: "Readers see it when you publish, from Drafts." }),
         h("div", { class: "actions" },
-          h("a", { class: "btn primary", href: `#/${book.slug}/edit/${encodeURIComponent(c.path)}`, text: "Open it in the editor" }),
+          h("a", { class: "btn primary", href: `#/${book.slug}/tidy/${encodeURIComponent(c.path)}`, text: "Links & glossary for it now" }),
+          h("a", { class: "btn", href: `#/${book.slug}/edit/${encodeURIComponent(c.path)}`, text: "Open it in the editor" }),
           h("a", { class: "btn", href: `#/${book.slug}`, text: "Back to the chapters" })));
     } catch (err) {
       if (err.status === 409 && (err.body?.error === "conflict" || err.body?.error === "import base")) {

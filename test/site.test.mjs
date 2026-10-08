@@ -276,6 +276,49 @@ test("editor: a save that fails says so with Try again; the drafts moved elsewhe
   assert.equal(sends().at(-1).base, MOVED);
 });
 
+test("editor: Links & glossary saves what is typed first, then opens the chapter's questions; the page's links and last change are on top", async () => {
+  await signIn();
+  const box = await openEditor();
+  await page.getByText(/^Last changed by author-one/).waitFor();
+  assert.equal(await page.getByRole("link", { name: "On the live site" }).getAttribute("href"), "https://a-book.example.org/chapters/chapter-01");
+  assert.equal(await page.getByRole("link", { name: "In the drafts preview" }).getAttribute("href"), "https://drafts.a-book.pages.dev/chapters/chapter-01");
+  await box.press("End");
+  await box.type(" More.");
+  await page.getByRole("button", { name: "Links & glossary" }).click();
+  await page.getByRole("heading", { name: "Links & glossary: “Chapter 1”" }).waitFor();
+  assert.ok(sends()[0].files[0].text.includes("More."), "saved before leaving");
+  for (const id of ["#opt-references", "#opt-terms", "#opt-glossary", "#opt-format"]) await page.locator(id).waitFor({ state: "attached" });
+  assert.equal(await page.locator("#opt-format").isDisabled(), true, "the AI pass needs the DeepSeek key");
+  await noFileNames();
+  // Not offered for the front page or the glossary.
+  await openEditor("index.md");
+  assert.equal(await page.getByRole("button", { name: "Links & glossary" }).count(), 0);
+});
+
+test("chapters: book-wide glossary and concept links, concept pages under their folder, and Reader discussion", async () => {
+  await signIn();
+  await page.goto(`${origin}/#/a-book`);
+  await page.getByRole("heading", { name: "Across the whole book" }).waitFor();
+  assert.equal(await page.getByRole("link", { name: "Glossary terms in every chapter" }).getAttribute("href"), "#/a-book/tidy-all/glossary");
+  assert.equal(await page.getByRole("link", { name: "Concept links in every chapter" }).getAttribute("href"), "#/a-book/tidy-all/concepts");
+  await page.getByRole("heading", { name: "Definitions" }).waitFor();
+  assert.equal(await page.getByRole("link", { name: "Realism" }).getAttribute("href"), `#/a-book/edit/${encodeURIComponent("chapters/Definitions/Realism.md")}`);
+  assert.equal(await page.getByRole("link", { name: "Reader discussion" }).getAttribute("href"), "https://hypothes.is/search?q=url:https://a-book.example.org/*");
+});
+
+test("import: a concept page goes into its folder under a name of the author's choosing", async () => {
+  await signIn();
+  await page.goto(`${origin}/#/a-book/import`);
+  await page.locator("#where").selectOption("chapters/Definitions");
+  stub.s.importState = [importDone()];
+  await chooseFile("Structure.odt", Buffer.from("PK\x03\x04odt", "binary"));
+  assert.equal(await page.locator("#chapter-name").inputValue(), "Structure");
+  await page.getByRole("button", { name: "Convert it" }).click();
+  await page.getByRole("button", { name: /to the drafts$/ }).waitFor();
+  const start = lastCall("author-import", (r) => r.body?.action === "start").body;
+  assert.deepEqual([start.folder, start.chapterName], ["chapters/Definitions", "Structure"]);
+});
+
 // --- bringing in a document -------------------------------------------------------------------------
 
 async function chooseFile(name, bytes) {
@@ -299,6 +342,7 @@ test("import: an .odt is uploaded, converted and added to the drafts as a new ch
   assert.equal(sent.import, "0123456789abcdef0123");
   assert.equal(sent.replace, undefined);
   assert.equal(await page.getByRole("link", { name: "Open it in the editor" }).getAttribute("href"), "#/a-book/edit/chapters%2Fchapter-02.md");
+  assert.equal(await page.getByRole("link", { name: "Links & glossary for it now" }).getAttribute("href"), "#/a-book/tidy/chapters%2Fchapter-02.md");
 });
 
 test("import: replacing says so on the button; a .pages file is refused in plain words", async () => {
