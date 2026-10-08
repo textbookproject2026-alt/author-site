@@ -131,4 +131,6 @@ domain, so after a deploy a browser kept running the old modules, hard reload or
 `author.confused4now.org`, Browser TTL **Respect origin**; CI's `production-headers`
 job fails on main if that stops holding.
 
-No analytics.
+Pageviews go to the platform's one Plausible site, `confused4now.org`
+(`site/analytics.js`, the registry's `platform.analytics.plausible.script_src`). Only
+`author.confused4now.org` loads it: previews and tests load no script. No custom events.
