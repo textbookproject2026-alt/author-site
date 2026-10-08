@@ -5,7 +5,7 @@
 
 import { h, clear, busy, note } from "./dom.js";
 import { read, send } from "./api.js";
-import { parseContents, retitledChapter, withLabel, withOrder, withoutPath } from "./contents.js";
+import { itemLine, parseContents, retitledChapter, titleOf, withItem, withLabel, withOrder, withoutPath } from "./contents.js";
 import { bookBySlug, bookHeader, myBooks } from "./books.js";
 import { draftItems, forgetCount, titlesFrom } from "./drafts.js";
 import { savedAt } from "./screens-shared.js";
@@ -39,6 +39,15 @@ const natural = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 const STATUS = { published: "Published", edited: "Draft changes", new: "New", removed: "To be removed" };
 const edit = (slug, path) => `#/${slug}/edit/${encodeURIComponent(path)}`;
 
+/**
+ * The pages the book's sidebar (Quartz's explorer) shows: every .md in chapters/
+ * (concept folders too), glossary.md and community/, but index.md files. The
+ * builder adds any the Contents misses at its end (quartz-book completeContents,
+ * the same rule), so every one of them is in the reading order here.
+ */
+export const isPage = (path) =>
+  /\.md$/i.test(path) && !/(^|\/)index\.md$/i.test(path) && (path === "glossary.md" || /^(chapters|community)\//.test(path));
+
 export async function chaptersScreen(slug) {
   const book = await bookBySlug(slug);
   const [tree, state, reg] = await Promise.all([read("tree", { book: slug }), draftItems(book, { texts: false }).catch(() => null), registryBook(slug)]);
@@ -50,18 +59,24 @@ export async function chaptersScreen(slug) {
   const badge = (path) => h("span", { class: `badge status-${statusOf(path)}`, text: STATUS[statusOf(path)] });
   const removed = (state?.items ?? []).filter((i) => i.kind === "removed" && i.path.startsWith("chapters/"));
 
-  const pages = tree.files.filter((f) => /\.md$/i.test(f.path) && f.path.startsWith("chapters/")).sort((a, b) => natural.compare(a.path, b.path));
-  const parsed = typeof index?.text === "string" ? parseContents(index.text) : null;
-  const usable = parsed && !parsed.problem && parsed.items.length ? parsed : null;
+  const pages = tree.files.filter((f) => isPage(f.path)).sort((a, b) => natural.compare(a.path, b.path));
+  // No Contents heading yet: one at the end of the front page, which the first save writes.
+  let parsed = typeof index?.text === "string" ? parseContents(index.text) : null;
+  if (parsed === null && typeof index?.text === "string" && pages.length) parsed = parseContents(`${index.text.trimEnd()}\n\n## Contents\n`);
+  let usable = parsed && !parsed.problem ? parsed : null;
+  // Pages the Contents doesn't list go at its end, flagged, as readers' sidebar has them.
   const listed = new Set(usable?.items.map((i) => i.path) ?? []);
-  const unlisted = pages.filter((f) => !listed.has(f.path));
-  // Pages in a folder inside chapters (concept pages, say) under the folder's name, as before.
-  const rest = unlisted.filter((f) => !f.path.slice("chapters/".length).includes("/"));
-  const folders = new Map();
-  for (const f of unlisted.filter((x) => x.path.slice("chapters/".length).includes("/"))) {
-    const folder = f.path.slice("chapters/".length, f.path.lastIndexOf("/"));
-    folders.set(folder, [...(folders.get(folder) ?? []), f]);
+  const missing = usable ? pages.filter((f) => !listed.has(f.path)) : [];
+  if (missing.length) {
+    const texts = await Promise.all(missing.map((f) => read("file", { book: slug, path: f.path, ref: tree.head }).then((r) => r.text, () => null)));
+    missing.forEach((f, i) => {
+      usable = parseContents(withItem(usable, [itemLine(usable, f.path, titleOf(texts[i]) ?? titles.get(f.path))], usable.items.length));
+    });
   }
+  if (usable && !usable.items.length) usable = null;
+  const unlisted = usable ? [] : pages;
+  // Concept folders (pages in a folder inside chapters), for the book-wide concept links.
+  const folders = new Set(pages.filter((f) => f.path.startsWith("chapters/") && f.path.slice("chapters/".length).includes("/")).map((f) => f.path.slice(0, f.path.lastIndexOf("/"))));
   const pageRow = (path) => h("li", { class: "row" },
     h("a", { class: "grow", href: edit(slug, path), text: titles.get(path) }), badge(path));
 
@@ -73,7 +88,7 @@ export async function chaptersScreen(slug) {
       h("a", { class: "btn", href: book.zip, download: "", text: "Download a copy" }),
       discussionUrl(reg) ? h("a", { class: "btn link", href: discussionUrl(reg), target: "_blank", rel: "noopener", text: "Reader discussion" }) : null),
     saved.node,
-    usable ? readingOrder(book, tree, usable, titles, badge, saved) : [
+    usable ? readingOrder(book, tree, usable, titles, badge, saved, new Set(missing.map((f) => f.path))) : [
       h("h2", { text: "Chapters" }),
       parsed?.problem ? note([h("p", { text: parsed.problem })]) : null,
       pages.length ? null : h("p", { class: "muted", text: "No chapters yet. Bring one in from a document." }),
@@ -83,8 +98,7 @@ export async function chaptersScreen(slug) {
       h("ul", { class: "list" }, removed.map((i) => h("li", { class: "row" }, h("span", { class: "grow muted", text: i.title }), badge(i.path)))),
       h("p", { class: "muted small" }, "Changed your mind? Discard it under ", h("a", { href: `#/${slug}/drafts`, text: "Drafts" }), ", or bring it back from History."),
     ] : null,
-    rest.length ? [h("h3", { text: usable ? "Other pages" : "Pages" }), h("ul", { class: "list" }, rest.map((f) => pageRow(f.path)))] : null,
-    [...folders].map(([folder, list]) => [h("h3", { text: folder }), h("ul", { class: "list" }, list.map((f) => pageRow(f.path)))]),
+    unlisted.length ? [h("h3", { text: "Pages" }), h("ul", { class: "list" }, unlisted.map((f) => pageRow(f.path)))] : null,
     h("h2", { text: "Across the whole book" }),
     h("p", { class: "muted small", text: "The Links & glossary questions for every chapter in turn, one kind at a time. Each chapter you save becomes a change on Drafts. For one chapter, use Links & glossary in its editor." }),
     h("div", { class: "row spaced" },
@@ -95,7 +109,7 @@ export async function chaptersScreen(slug) {
     h("h3", { text: "The rest of the book" }),
     h("ul", { class: "list" },
       known.has("index.md") ? pageRow("index.md") : null,
-      known.has("glossary.md") ? pageRow("glossary.md") : null),
+      known.has("glossary.md") && !usable ? pageRow("glossary.md") : null),
   ];
 }
 
@@ -104,7 +118,7 @@ export async function chaptersScreen(slug) {
  * drag a row, or use its ↑ and ↓; Rename; Remove. Each is saved to the drafts as one
  * change, in turn (a move a second after the last one).
  */
-function readingOrder(book, tree, parsed, titles, badge, saved) {
+function readingOrder(book, tree, parsed, titles, badge, saved, missing) {
   const slug = book.slug;
   let base = tree.head;
   let current = parsed;
@@ -159,10 +173,12 @@ function readingOrder(book, tree, parsed, titles, badge, saved) {
         h("span", { class: "drag-handle", "aria-hidden": "true", text: "⠿" }),
         h("a", { class: "grow", href: edit(slug, it.path), text: name }),
         badge(it.path),
+        missing.has(it.path) ? h("span", { class: "badge status-missing", text: "Not in the Contents" }) : null,
         h("button", { type: "button", class: "btn link", "data-move": "up", "aria-label": `Move ${name} up`, text: "↑", disabled: pos === 0, onclick: () => move(pos, pos - 1, "up") }),
         h("button", { type: "button", class: "btn link", "data-move": "down", "aria-label": `Move ${name} down`, text: "↓", disabled: pos === order.length - 1, onclick: () => move(pos, pos + 1, "down") }),
         h("button", { type: "button", class: "btn link", text: "Rename", "aria-label": `Rename ${name}`, onclick: () => rename(li, k) }),
-        h("button", { type: "button", class: "btn link danger", text: "Remove", "aria-label": `Remove ${name}`, onclick: () => remove(li, k) }));
+        // The glossary is where the glossary questions write: renamed, never removed here.
+        it.path === "glossary.md" ? null : h("button", { type: "button", class: "btn link danger", text: "Remove", "aria-label": `Remove ${name}`, onclick: () => remove(li, k) }));
       li.addEventListener("dragstart", (e) => {
         dragging = pos;
         e.dataTransfer.effectAllowed = "move";
@@ -239,10 +255,24 @@ function readingOrder(book, tree, parsed, titles, badge, saved) {
     yes.focus();
   };
 
+  // Saving the order as it stands writes the flagged pages into the Contents where they are.
+  const addMissing = missing.size
+    ? note([
+      h("p", { text: `${missing.size === 1 ? "One page isn't" : `${missing.size} pages aren't`} in the front page's Contents (flagged below). Readers find ${missing.size === 1 ? "it" : "them"} at the end of the book's sidebar and Contents. Move ${missing.size === 1 ? "it" : "one"} where it belongs, or add ${missing.size === 1 ? "it" : "them"} at the end as ${missing.size === 1 ? "it is" : "they are"}.` }),
+      h("button", { type: "button", class: "btn", text: "Add to the Contents", onclick: async (e) => {
+        e.target.disabled = true;
+        clearTimeout(moveTimer);
+        moveTimer = null;
+        const text = withOrder(current, order);
+        if (await save([{ path: "index.md", text }], [], "Add the missing pages to the Contents")) reload();
+      } }),
+    ])
+    : null;
   draw();
   return [
     h("h2", { text: "Chapters, in reading order" }),
     h("p", { class: "muted small", text: "Drag a chapter, or use ↑ and ↓, to change the order. Every change is saved to the drafts as you make it; readers see it when you publish." }),
+    addMissing,
     list,
   ];
 }

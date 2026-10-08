@@ -175,7 +175,12 @@ test("chapters: reading order with each chapter's status, the removed one listed
   await page.getByRole("heading", { name: "Chapters, in reading order" }).waitFor();
   const rows = page.locator("ol.reorder > li");
   await rows.nth(2).waitFor();
-  assert.deepEqual((await rows.allInnerTexts()).map((t) => t.split("\n").slice(0, 3).join(" | ")), ["⠿ | Soils | Published", "⠿ | Chapter 1 | Draft changes", "⠿ | Water | New"]);
+  assert.deepEqual((await rows.allInnerTexts()).map((t) => t.split("\n").slice(0, 3).join(" | ")), ["⠿ | Soils | Published", "⠿ | Chapter 1 | Draft changes", "⠿ | Water | New", "⠿ | Realism | Published", "⠿ | Glossary | Published"]);
+  // The concept page and the glossary aren't in index.md's Contents: at its end, flagged, as the builder adds them.
+  assert.equal(await rows.nth(3).getByText("Not in the Contents").count(), 1);
+  assert.equal(await rows.nth(4).getByText("Not in the Contents").count(), 1);
+  assert.equal(await rows.nth(2).getByText("Not in the Contents").count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Remove Glossary" }).count(), 0, "the glossary is never removed here");
   await page.getByRole("heading", { name: "To be removed when you publish" }).waitFor();
   await page.getByText("Rocks").waitFor();
   assert.equal(await page.getByRole("link", { name: "Bring in a document" }).getAttribute("href"), "#/a-book/import");
@@ -202,6 +207,15 @@ test("chapters: ↑ and ↓ or dragging change the order, saved to the drafts by
   await page.waitForFunction(() => document.querySelector(".saved")?.textContent.startsWith("Draft saved") && true);
   await page.waitForTimeout(1300);
   assert.equal(sends().at(-1).base, SENT, "the next change is made on the one before");
+});
+
+test("chapters: Add to the Contents writes the flagged pages at its end, as one change", async () => {
+  await signIn();
+  await page.goto(`${origin}/#/a-book`);
+  await Promise.all([page.waitForResponse((r) => r.url().includes("author-send")), page.getByRole("button", { name: "Add to the Contents" }).click()]);
+  const sent = sends()[0];
+  assert.equal(sent.message, "Add the missing pages to the Contents");
+  assert.match(sent.files[0].text, /- \[\[chapters\/chapter-04\|Water\]\]\n- \[\[chapters\/Definitions\/Realism\|Realism\]\]\n- \[\[glossary\|Glossary\]\]\n$/);
 });
 
 test("chapters: Rename changes the heading and the reading order's label; Remove asks with the name, then takes it out", async () => {
@@ -295,14 +309,13 @@ test("editor: Links & glossary saves what is typed first, then opens the chapter
   assert.equal(await page.getByRole("button", { name: "Links & glossary" }).count(), 0);
 });
 
-test("chapters: book-wide glossary and concept links, concept pages under their folder, and Reader discussion", async () => {
+test("chapters: book-wide glossary and concept links, concept pages in the reading order, and Reader discussion", async () => {
   await signIn();
   await page.goto(`${origin}/#/a-book`);
   await page.getByRole("heading", { name: "Across the whole book" }).waitFor();
   assert.equal(await page.getByRole("link", { name: "Glossary terms in every chapter" }).getAttribute("href"), "#/a-book/tidy-all/glossary");
   assert.equal(await page.getByRole("link", { name: "Concept links in every chapter" }).getAttribute("href"), "#/a-book/tidy-all/concepts");
-  await page.getByRole("heading", { name: "Definitions" }).waitFor();
-  assert.equal(await page.getByRole("link", { name: "Realism" }).getAttribute("href"), `#/a-book/edit/${encodeURIComponent("chapters/Definitions/Realism.md")}`);
+  assert.equal(await page.locator("ol.reorder").getByRole("link", { name: "Realism" }).getAttribute("href"), `#/a-book/edit/${encodeURIComponent("chapters/Definitions/Realism.md")}`);
   assert.equal(await page.getByRole("link", { name: "Reader discussion" }).getAttribute("href"), "https://hypothes.is/search?q=url:https://a-book.example.org/*");
 });
 
