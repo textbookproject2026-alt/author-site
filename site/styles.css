@@ -301,3 +301,6 @@ details.jobs { margin-top: 2rem; }
 .privacy-note p { margin: 0 0 0.6rem; }
 .privacy-actions { display: flex; justify-content: flex-end; }
 @media print { .privacy-note { display: none; } }
+
+.glossary-add { margin: 1rem 0; padding: 0.9rem 1rem; border: 1px solid var(--portal-border); border-radius: 8px; }
+.glossary-add textarea { width: 100%; box-sizing: border-box; font: inherit; }

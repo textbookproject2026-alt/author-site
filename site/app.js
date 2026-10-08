@@ -7,6 +7,7 @@
 //   #/<book>                    Chapters: the reading order, each chapter's status
 //   #/<book>/edit/<path>[/line/<n>]  the editor (at line n); saves to the drafts as you type
 //   #/<book>/import             bring in a document
+//   #/<book>/new/<chapter|concept>  a new chapter or concept page, written here
 //   #/<book>/drafts             Drafts: reader suggestions, what's changed, Publish
 //   #/<book>/suggestion/<n>     one written reader suggestion
 //   #/<book>/tidy/<path>        Links & glossary: a chapter's citations, concept links, glossary, AI formatting
@@ -28,6 +29,7 @@ import { peopleScreen } from "./lib/screens-people.js";
 import { historyScreen, revisionScreen } from "./lib/screens-history.js";
 import { suggestionScreen } from "./lib/screens-suggestion.js";
 import { privacyNote } from "./lib/privacy.js";
+import { newChapterScreen, newConceptScreen } from "./lib/screens-new.js";
 import { draftsScreen } from "./lib/screens-drafts.js";
 
 const main = document.getElementById("main");
@@ -111,6 +113,8 @@ const ROUTES = [
   [/^([a-z0-9-]+)\/tidy\/(.+)$/, (book, path) => tidyScreen(book, decodeURIComponent(path))],
   [/^([a-z0-9-]+)\/tidy-all\/(glossary|concepts)(?:\/(\d+))?$/, (book, kind, n) => tidyAllScreen(book, kind, n ? Number(n) : 0)],
   [/^([a-z0-9-]+)\/import$/, (book) => importScreen(book)],
+  [/^([a-z0-9-]+)\/new\/chapter$/, (book) => newChapterScreen(book)],
+  [/^([a-z0-9-]+)\/new\/concept$/, (book) => newConceptScreen(book)],
   [/^([a-z0-9-]+)\/(?:drafts|waiting|publish|change\/\d+)$/, (book) => draftsScreen(book)],
   [/^([a-z0-9-]+)\/suggestion\/(\d+)$/, (book, n) => suggestionScreen(book, Number(n))],
   [/^([a-z0-9-]+)\/people$/, (book) => peopleScreen(book)],

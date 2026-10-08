@@ -26,6 +26,7 @@ import { goToLine, lintView, savedAt } from "./screens-shared.js";
 import { fixedWords, lintLive } from "./lint.js";
 import { forgetCount, rawText, titlesFrom } from "./drafts.js";
 import { draftsPreview, registryBook } from "./public.js";
+import { withGlossaryTerm } from "./contents.js";
 
 const IDLE_MS = 1500;
 const MIN_GAP_MS = 20_000;
@@ -240,6 +241,54 @@ export async function editScreen(slug, path, line = null) {
     }
     location.hash = `#/${slug}/tidy/${encodeURIComponent(path)}`;
   });
+  // Add glossary term: on the Glossary page itself, into the text being edited
+  // (saved like any typing); anywhere else, the Glossary page as its own change,
+  // in turn with this page's saves.
+  const glossaryOut = h("div", { "aria-live": "polite" });
+  const gTerm = h("input", { type: "text", id: "gloss-term", maxlength: 80, autocomplete: "off" });
+  const gDef = h("textarea", { id: "gloss-def", rows: 3, maxlength: 600 });
+  const glossaryForm = h("form", { class: "glossary-add", hidden: true, novalidate: true, "aria-label": "Add glossary term" },
+    h("label", { class: "field", for: "gloss-term" }, "The term", gTerm),
+    h("label", { class: "field", for: "gloss-def" }, "What it means", gDef),
+    h("p", { class: "muted small", text: "It goes into the Glossary page in A–Z order, as one change on your drafts." }),
+    glossaryOut,
+    h("div", { class: "row" }, h("button", { type: "submit", class: "btn primary", text: "Add to the glossary" }),
+      h("button", { type: "button", class: "btn", text: "Cancel", onclick: () => { glossaryForm.hidden = true; } })));
+  const glossaryBtn = h("button", { type: "button", class: "btn", text: "Add glossary term", onclick: () => {
+    glossaryForm.hidden = !glossaryForm.hidden;
+    if (!glossaryForm.hidden) gTerm.focus();
+  } });
+  glossaryForm.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const term = gTerm.value.trim();
+    const definition = gDef.value;
+    try {
+      if (path === "glossary.md") {
+        textarea.value = withGlossaryTerm(textarea.value, term, definition);
+        textarea.dispatchEvent(new Event("input"));
+      } else {
+        withGlossaryTerm(null, term, definition); // says now if either part is empty
+        clear(glossaryOut, busy("Adding it…"));
+        queue = queue.then(async () => {
+          const tree = await read("tree", { book: slug });
+          const has = tree.files.some((f) => f.path === "glossary.md");
+          const g = has ? await read("file", { book: slug, path: "glossary.md", ref: tree.head }) : null;
+          const sent = await send({ book: slug, base: tree.head, files: [{ path: "glossary.md", text: withGlossaryTerm(g?.text ?? null, term, definition) }], message: `Add “${term}” to the glossary` });
+          base = sent.sha; // the glossary only: this page is as this editor last saved it
+          forgetCount(slug);
+        });
+        queue.then(() => clear(glossaryOut, note([h("p", {}, `“${term}” is in the glossary. `, h("a", { href: `#/${slug}/edit/glossary.md`, text: "Open the Glossary" }))])),
+          (err) => clear(glossaryOut, errorNote(err)));
+        queue = queue.catch(() => {});
+      }
+      gTerm.value = "";
+      gDef.value = "";
+      if (path === "glossary.md") clear(glossaryOut, note([h("p", { text: `“${term}” is added below; it is saved with the page.` })]));
+    } catch (err) {
+      clear(glossaryOut, errorNote(err));
+    }
+  });
+
   const slugPath = pageSlug(path === "index.md" ? "" : path);
   const preview = draftsPreview(reg);
   const stage = [
@@ -253,8 +302,9 @@ export async function editScreen(slug, path, line = null) {
     h("div", { class: "editor" },
       h("div", { class: "editor-bar" },
         h("div", { role: "tablist", "aria-label": "Editor view" }, tabs),
-        h("div", { class: "row" }, tidy, h("a", { class: "btn", href: `#/${slug}`, text: "Done" }))),
+        h("div", { class: "row" }, tidy, glossaryBtn, h("a", { class: "btn", href: `#/${slug}`, text: "Done" }))),
       panels),
+    glossaryForm,
     lintBox,
     pageSuggestions(slug, path, suggestions, titlesFrom(index?.text)),
     h("p", { class: "row spaced small" },

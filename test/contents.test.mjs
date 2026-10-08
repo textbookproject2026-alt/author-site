@@ -55,3 +55,22 @@ test("the chapter's title: its # heading (not one in code), and a front matter t
   assert.equal(retitledChapter("---\ntitle: Old\ntopic: x\n---\n\n```\n# not this\n```\n\n# Old\n", "New"), '---\ntitle: "New"\ntopic: x\n---\n\n```\n# not this\n```\n\n# New\n');
   assert.equal(retitledChapter("Text only.\n", "New"), "# New\n\nText only.\n");
 });
+
+import { withGlossaryTerm, nextChapterPath, pageFileName } from "../site/lib/contents.js";
+
+test("withGlossaryTerm: in A–Z order, in the glossary run's format; a new glossary; no term twice", () => {
+  const g = "# Glossary\n\nIntro.\n\n## Agency\n\nThe capacity to act.\n\n## Structure\n\nWhat endures.\n";
+  assert.equal(withGlossaryTerm(g, "emergence", "properties of wholes"),
+    "# Glossary\n\nIntro.\n\n## Agency\n\nThe capacity to act.\n\n## emergence\n\nProperties of wholes.\n\n## Structure\n\nWhat endures.\n");
+  assert.equal(withGlossaryTerm(g, "Zeitgeist", "Spirit of the age!"), g + "\n## Zeitgeist\n\nSpirit of the age!\n");
+  assert.equal(withGlossaryTerm(null, "Agency", "The capacity to act"), "# Glossary\n\n## Agency\n\nThe capacity to act.\n");
+  assert.throws(() => withGlossaryTerm(g, "AGENCY", "x"), (e) => /already in the glossary/.test(e.userMessage));
+  assert.throws(() => withGlossaryTerm(g, " ", "x"), (e) => /Give both/.test(e.userMessage));
+});
+
+test("nextChapterPath and pageFileName", () => {
+  assert.equal(nextChapterPath(["chapters/chapter-01.md", "chapters/chapter-11.md", "chapters/introduction.md", "chapters/Definitions/x.md"]), "chapters/chapter-12.md");
+  assert.equal(nextChapterPath([]), "chapters/chapter-01.md");
+  assert.equal(pageFileName("Structure / agency: a note?"), "Structure agency a note");
+  assert.equal(pageFileName("..."), "");
+});
