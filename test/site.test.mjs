@@ -40,6 +40,13 @@ beforeEach(async () => {
   page = await context.newPage();
   await page.addInitScript(() => {
     document.addEventListener("securitypolicyviolation", (e) => console.error(`CSP violation: ${e.violatedDirective} ${e.blockedURI}`));
+    // The first-visit privacy note sits over the window's corner: seen once, as a
+    // returning author has, except in its own test.
+    try {
+      if (!sessionStorage.getItem("show-privacy")) localStorage.setItem("tb-privacy-ok", "1");
+    } catch {
+      /* no storage */
+    }
   });
 });
 afterEach(async () => {
@@ -67,8 +74,8 @@ test("signed out: the sign-in screen; the popup signs in; the books are the auth
   await page.getByRole("link", { name: "A Book of Things" }).waitFor();
   assert.match(await page.locator("#who").textContent(), /@author-one/);
   assert.ok(stub.s.requests.every((r) => r.auth === "Bearer tok-1"));
-  // Nothing about the sign-in is kept beyond this tab.
-  assert.equal(await page.evaluate(() => localStorage.length), 0);
+  // Nothing about the sign-in is kept beyond this tab (the privacy note's "seen" is no sign-in).
+  assert.deepEqual(await page.evaluate(() => Object.keys(localStorage).filter((k) => k !== "tb-privacy-ok")), []);
 });
 
 test("sign out, and a 401 from the endpoints, both return to the sign-in screen", async () => {
@@ -694,4 +701,22 @@ test("at 375px nothing scrolls sideways", async () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     assert.ok(overflow <= 0, `${hash} overflows by ${overflow}px`);
   }
+});
+
+test("privacy: the first-visit note, OK closes it for good; the footer links Privacy", async () => {
+  await page.goto(`${origin}/`);
+  await page.evaluate(() => {
+    sessionStorage.setItem("show-privacy", "1");
+    localStorage.removeItem("tb-privacy-ok");
+  });
+  await page.reload();
+  const note = page.getByRole("region", { name: "Privacy" });
+  await note.getByText("No tracking cookies. Margin comments are provided by Hypothes.is, which may set its own cookies.").waitFor();
+  assert.equal(await note.getByRole("link", { name: "Privacy" }).getAttribute("href"), "https://confused4now.org/#privacy");
+  await note.getByRole("button", { name: "OK" }).click();
+  assert.equal(await note.count(), 0);
+  await page.reload();
+  await page.locator("footer.site-foot").waitFor();
+  assert.equal(await page.getByRole("region", { name: "Privacy" }).count(), 0);
+  assert.equal(await page.locator("footer.site-foot").getByRole("link", { name: "Privacy" }).getAttribute("href"), "https://confused4now.org/#privacy");
 });

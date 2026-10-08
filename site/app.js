@@ -27,6 +27,7 @@ import { settingsScreen } from "./lib/screens-settings.js";
 import { peopleScreen } from "./lib/screens-people.js";
 import { historyScreen, revisionScreen } from "./lib/screens-history.js";
 import { suggestionScreen } from "./lib/screens-suggestion.js";
+import { privacyNote } from "./lib/privacy.js";
 import { draftsScreen } from "./lib/screens-drafts.js";
 
 const main = document.getElementById("main");
@@ -147,3 +148,5 @@ async function route() {
 
 window.addEventListener("hashchange", route);
 route();
+
+privacyNote();
