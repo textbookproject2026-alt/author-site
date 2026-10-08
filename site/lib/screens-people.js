@@ -11,6 +11,8 @@ import { identity } from "./auth.js";
 
 const RECHECK_MS = 30_000;
 const lower = (s) => s.toLowerCase();
+/** How a change starts in a sentence: "Inviting @x", "Removing @x", … */
+const VERB = { add: "Inviting ", remove: "Removing ", "mentions-off": "Stopping suggestion emails for ", "mentions-on": "Suggestion emails again for " };
 const profile = (login) => h("a", { href: `https://github.com/${encodeURIComponent(login)}`, target: "_blank", rel: "noopener", text: `@${login}` });
 
 export async function peopleScreen(slug) {
@@ -38,13 +40,16 @@ async function draw(book, stage, said = null) {
   const out = h("div", { class: "outcome", "aria-live": "polite" });
   const act = async (action, login, button) => {
     button.disabled = true;
-    clear(out, busy(action === "add" ? `Inviting @${login}…` : `Removing @${login}…`));
+    clear(out, busy(`${VERB[action]}@${login}…`));
     try {
       const c = await changePeople(book.slug, action, login);
       await draw(book, stage, [
-        note([h("p", { text: action === "add"
-          ? `@${c.login} is invited. GitHub tells them, with a link to sign in here. They can work on the book once the change has gone through, usually a few minutes.`
-          : `@${c.login} is being removed. They keep access until the change has gone through, usually a few minutes.` })]),
+        note([h("p", { text: {
+          add: `@${c.login} is invited. GitHub tells them, with a link to sign in here. They can work on the book once the change has gone through, usually a few minutes.`,
+          remove: `@${c.login} is being removed. They keep access until the change has gone through, usually a few minutes.`,
+          "mentions-off": "Done: once the change has gone through (usually a few minutes), new reader suggestions won't mention you, so GitHub won't email you about them.",
+          "mentions-on": "Done: once the change has gone through (usually a few minutes), new reader suggestions mention you again, and GitHub emails you about them.",
+        }[action] })]),
         c.warning ? note([h("p", { text: c.warning })], "warn") : null,
       ]);
     } catch (err) {
@@ -85,6 +90,19 @@ async function draw(book, stage, said = null) {
     act("add", login, invite);
   });
 
+  // Emails about reader suggestions: each author's own choice (registry mentions_off).
+  const amAuthor = p.authors.some((a) => lower(a) === me);
+  const mutedNow = (p.mentionsOff ?? []).some((a) => lower(a) === me);
+  const mine = onWay.find((c) => lower(c.login) === me && c.action.startsWith("mentions-"));
+  const muted = mine ? mine.action === "mentions-off" : mutedNow;
+  const emails = amAuthor ? [
+    h("h2", { text: "Emails about reader suggestions" }),
+    h("p", { text: muted
+      ? "New reader suggestions don't mention you, so GitHub doesn't email you about them. They still show on Chapters, in the editor and under Drafts."
+      : "When a reader suggests a change, you're @mentioned on it, so GitHub emails you (as your GitHub notification settings allow). Every author chooses this for themselves." }),
+    open ? null : h("button", { type: "button", class: "btn", text: muted ? "Email me again" : "Stop emailing me", onclick: (e) => act(muted ? "mentions-on" : "mentions-off", identity().login, e.target) }),
+  ] : null;
+
   const words = (c) => c.state === "open"
     ? "waiting for the registry's checks, then it goes through by itself"
     : "gone through; reaching the author site, usually within a few minutes";
@@ -96,7 +114,7 @@ async function draw(book, stage, said = null) {
       h("h3", { text: "Didn't go through" }),
       h("ul", { class: "list" }, failed.map((c) => h("li", { class: "failed-change" },
         note([
-          h("p", { class: "flush" }, c.action === "add" ? "Inviting " : "Removing ", profile(c.login), c.by ? [" (by @", c.by, ")"] : null,
+          h("p", { class: "flush" }, VERB[c.action] ?? "Changing ", profile(c.login), c.by ? [" (by @", c.by, ")"] : null,
             " didn't go through, so nothing changed. ", h("a", { href: c.url, target: "_blank", rel: "noopener", text: "See it on GitHub" })),
           h("p", { class: "flush" }, "Why: "),
           h("ul", {}, (c.reasons ?? []).map((r) => h("li", { text: r }))),
@@ -106,10 +124,11 @@ async function draw(book, stage, said = null) {
     onWay.length ? [
       h("h3", { text: "On its way" }),
       h("ul", { class: "list" }, onWay.map((c) => h("li", {},
-        h("p", { class: "flush" }, c.action === "add" ? "Inviting " : "Removing ", profile(c.login), c.by ? [" (by @", c.by, ")"] : null, ": ", words(c), ". ",
+        h("p", { class: "flush" }, VERB[c.action] ?? "Changing ", profile(c.login), c.by ? [" (by @", c.by, ")"] : null, ": ", words(c), ". ",
           h("a", { href: c.url, target: "_blank", rel: "noopener", text: "See it on GitHub" })),
         c.when ? h("p", { class: "muted small below", text: `Started ${when(c.when)}.` }) : null))),
     ] : null,
+    emails,
     h("h2", { text: "Invite someone" }),
     open ? note([h("p", { text: "One change at a time: you can invite or remove someone once the change above has gone through." })]) : form,
     out);

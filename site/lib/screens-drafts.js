@@ -20,6 +20,7 @@ import { draftItems, discardOf, forgetCount, itemWords } from "./drafts.js";
 import { lintView } from "./screens-shared.js";
 import { ruleWords } from "./lint.js";
 import { PREVIEW_WORDS, draftsPreview, jobs, previewState, registryBook } from "./public.js";
+import { changeRow } from "./suggestions.js";
 
 const reload = () => window.dispatchEvent(new HashChangeEvent("hashchange"));
 /** A page readers open, as opposed to the book's machinery. */
@@ -57,45 +58,10 @@ function readerSuggestions(book, changes, written, titles) {
   const slug = book.slug;
   const list = changes.error ? null : changes.changes;
   if (!changes.error && !list.length && !written.length) return null;
-  const row = (c) => {
-    const out = h("div", { "aria-live": "polite" });
-    const view = h("div", { hidden: true });
-    const buttons = h("div", { class: "row" },
-      h("button", { type: "button", class: "btn link", text: "View changes", onclick: async () => {
-        view.hidden = !view.hidden;
-        if (view.hidden || view.childElementCount) return;
-        clear(view, busy("Reading the suggestion…"));
-        try {
-          const d = await read("change", { book: slug, number: String(c.number) });
-          clear(view, d.readable
-            ? d.pages.map((p) => [h("h4", { text: p.path ? titles.get(p.path) : p.page }), p.lines.map((l) => h("p", { class: `prose-change ${l.kind}` }, h("span", { class: "sr-only", text: l.kind === "before" ? "Before: " : "After: " }), l.text || " "))])
-            : note([h("p", { text: d.why })]));
-        } catch (err) {
-          clear(view, errorNote(err));
-        }
-      } }),
-      h("button", { type: "button", class: "btn primary", text: "Accept", onclick: (e) => answer(e.target, "change-accept", { title: c.title }) }),
-      h("button", { type: "button", class: "btn", text: "Decline", onclick: (e) => answer(e.target, "change-decline") }));
-    const answer = async (b, action, extra = {}) => {
-      b.disabled = true;
-      clear(out, busy(action === "change-accept" ? "Folding it into the drafts…" : "Declining it…"));
-      try {
-        await act(slug, action, { number: c.number, ...extra });
-        clear(out, note([h("p", { text: action === "change-accept" ? "Accepted: it is in the drafts." : "Declined, with a note thanking them." })]));
-        setTimeout(reload, 1200);
-      } catch (err) {
-        b.disabled = false;
-        clear(out, errorNote(err));
-      }
-    };
-    return h("li", {},
-      h("div", { class: "row" }, h("div", { class: "grow" }, h("strong", { text: c.title }), h("span", { class: "muted", text: ` — ${c.who}, ${when(c.when)}` })), buttons),
-      view, out);
-  };
   return [
     h("h2", { text: "Reader suggestions" }),
     changes.error ? errorNote(changes.error) : null,
-    list?.length ? [h("p", { class: "muted small", text: "Edits readers proposed on the book's site. Accept puts one into the drafts; Decline closes it with a note thanking them." }), h("ul", { class: "list" }, list.map(row))] : null,
+    list?.length ? [h("p", { class: "muted small", text: "Edits readers proposed on the book's site. Accept puts one into the drafts; Decline closes it with a note thanking them." }), h("ul", { class: "list" }, list.map((c) => changeRow(slug, c, titles, () => setTimeout(reload, 1200))))] : null,
     written.length ? [
       h("h3", { text: "Written suggestions" }),
       h("ul", { class: "list" }, written.map((s) => h("li", { class: "row" },

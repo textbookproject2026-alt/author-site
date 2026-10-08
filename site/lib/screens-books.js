@@ -10,6 +10,7 @@ import { bookBySlug, bookHeader, myBooks } from "./books.js";
 import { draftItems, forgetCount, titlesFrom } from "./drafts.js";
 import { savedAt } from "./screens-shared.js";
 import { discussionUrl, registryBook } from "./public.js";
+import { countBadge, countsByPath, openSuggestions } from "./suggestions.js";
 
 export async function booksScreen() {
   const { login, books } = await myBooks();
@@ -50,7 +51,9 @@ export const isPage = (path) =>
 
 export async function chaptersScreen(slug) {
   const book = await bookBySlug(slug);
-  const [tree, state, reg] = await Promise.all([read("tree", { book: slug }), draftItems(book, { texts: false }).catch(() => null), registryBook(slug)]);
+  const [tree, state, reg, suggestions] = await Promise.all([read("tree", { book: slug }), draftItems(book, { texts: false }).catch(() => null), registryBook(slug), openSuggestions(slug)]);
+  const counts = countsByPath(suggestions);
+  const countOf = (path) => countBadge(counts.get(path), `${edit(slug, path)}`);
   const known = new Set(tree.files.map((f) => f.path));
   const index = known.has("index.md") ? await read("file", { book: slug, path: "index.md", ref: tree.head }) : null;
   const titles = titlesFrom(state?.liveIndex, index?.text);
@@ -78,7 +81,7 @@ export async function chaptersScreen(slug) {
   // Concept folders (pages in a folder inside chapters), for the book-wide concept links.
   const folders = new Set(pages.filter((f) => f.path.startsWith("chapters/") && f.path.slice("chapters/".length).includes("/")).map((f) => f.path.slice(0, f.path.lastIndexOf("/"))));
   const pageRow = (path) => h("li", { class: "row" },
-    h("a", { class: "grow", href: edit(slug, path), text: titles.get(path) }), badge(path));
+    h("a", { class: "grow", href: edit(slug, path), text: titles.get(path) }), countOf(path), badge(path));
 
   const saved = savedAt();
   return [
@@ -88,7 +91,7 @@ export async function chaptersScreen(slug) {
       h("a", { class: "btn", href: book.zip, download: "", text: "Download a copy" }),
       discussionUrl(reg) ? h("a", { class: "btn link", href: discussionUrl(reg), target: "_blank", rel: "noopener", text: "Reader discussion" }) : null),
     saved.node,
-    usable ? readingOrder(book, tree, usable, titles, badge, saved, new Set(missing.map((f) => f.path))) : [
+    usable ? readingOrder(book, tree, usable, titles, badge, saved, new Set(missing.map((f) => f.path)), countOf) : [
       h("h2", { text: "Chapters" }),
       parsed?.problem ? note([h("p", { text: parsed.problem })]) : null,
       pages.length ? null : h("p", { class: "muted", text: "No chapters yet. Bring one in from a document." }),
@@ -118,7 +121,7 @@ export async function chaptersScreen(slug) {
  * drag a row, or use its ↑ and ↓; Rename; Remove. Each is saved to the drafts as one
  * change, in turn (a move a second after the last one).
  */
-function readingOrder(book, tree, parsed, titles, badge, saved, missing) {
+function readingOrder(book, tree, parsed, titles, badge, saved, missing, countOf) {
   const slug = book.slug;
   let base = tree.head;
   let current = parsed;
@@ -172,6 +175,7 @@ function readingOrder(book, tree, parsed, titles, badge, saved, missing) {
       const li = h("li", { class: "row reorder-item", draggable: "true" },
         h("span", { class: "drag-handle", "aria-hidden": "true", text: "⠿" }),
         h("a", { class: "grow", href: edit(slug, it.path), text: name }),
+        countOf(it.path),
         badge(it.path),
         missing.has(it.path) ? h("span", { class: "badge status-missing", text: "Not in the Contents" }) : null,
         h("button", { type: "button", class: "btn link", "data-move": "up", "aria-label": `Move ${name} up`, text: "↑", disabled: pos === 0, onclick: () => move(pos, pos - 1, "up") }),

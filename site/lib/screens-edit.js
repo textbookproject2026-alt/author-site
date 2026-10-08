@@ -19,6 +19,7 @@
 import { h, clear, busy, note, errorNote, when } from "./dom.js";
 import { read, send } from "./api.js";
 import { bookBySlug, bookHeader, pageSlug, rawUrl } from "./books.js";
+import { openSuggestions, pageSuggestions } from "./suggestions.js";
 import { renderChapter } from "./preview.js";
 import { renderDiff } from "./diff.js";
 import { goToLine, lintView, savedAt } from "./screens-shared.js";
@@ -63,10 +64,11 @@ window.addEventListener("hashchange", () => {
 export async function editScreen(slug, path, line = null) {
   const book = await bookBySlug(slug);
   const tree = await read("tree", { book: slug });
-  const [file, index, reg] = await Promise.all([
+  const [file, index, reg, suggestions] = await Promise.all([
     read("file", { book: slug, path, ref: tree.head }),
     path !== "index.md" && tree.files.some((f) => f.path === "index.md") ? read("file", { book: slug, path: "index.md", ref: tree.head }).catch(() => null) : null,
     registryBook(slug),
+    openSuggestions(slug),
   ]);
   if (typeof file.text !== "string") throw Object.assign(new Error("not text"), { userMessage: "This page isn't text, so it can't be edited here." });
   const title = titlesFrom(index?.text).get(path, file.text);
@@ -254,6 +256,7 @@ export async function editScreen(slug, path, line = null) {
         h("div", { class: "row" }, tidy, h("a", { class: "btn", href: `#/${slug}`, text: "Done" }))),
       panels),
     lintBox,
+    pageSuggestions(slug, path, suggestions, titlesFrom(index?.text)),
     h("p", { class: "row spaced small" },
       h("a", { href: `#/${slug}/history/${encodeURIComponent(path)}`, text: "History of this page" })),
   ];
