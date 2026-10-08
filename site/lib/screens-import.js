@@ -1,115 +1,89 @@
-// Bringing a Word document in. The conversion is the desktop app's own (convert.py,
-// contents.py), run by book-requests' private import-chapter workflow; nothing reaches
-// the book until the author has read the whole converted chapter and pressed Send.
+// Bringing a document in: a Word document (.docx, .doc), an OpenDocument text (.odt)
+// or a Rich Text file (.rtf). book-requests' private import-chapter workflow turns
+// anything but .docx into .docx (LibreOffice) and converts it with the desktop app's
+// own converter (convert.py, contents.py). The author sees the chapter as it will be,
+// then adds it to the drafts as a new chapter (the next chapter-NN, in the reading
+// order) or in place of the chapter it was before; uploads of the same document in
+// the book go in the same change. Readers see it when the author publishes.
 //
-//   choose  -> upload (parts) -> converting (poll) -> read it -> send -> done
-//                                     ^                         |
-//                                     +---- convert again <-----+ (drafts moved)
+//   choose  -> upload (parts) -> converting (poll) -> look at it -> add -> done
+//                                     ^                              |
+//                                     +---- convert again <----------+ (drafts moved)
 
 import { h, clear, busy, note, errorNote, when, plural } from "./dom.js";
-import { read, send, importStart, importAgain, importStatus } from "./api.js";
+import { importStart, importAgain, importStatus, send } from "./api.js";
 import { bookBySlug, bookHeader, rawUrl } from "./books.js";
 import { renderChapter } from "./preview.js";
-import { fileProblem, uploadParts } from "./upload.js";
-import { conflictView, sentView } from "./screens-shared.js";
+import { ACCEPT, fileProblem, uploadParts } from "./upload.js";
+import { lintPage } from "./lint.js";
+import { forgetCount } from "./drafts.js";
 
 const POLL_MS = 3000;
 const GIVE_UP_MS = 6 * 60 * 1000;
 
-const HOW = {
-  new: "It's a Word file this book hasn't seen, so it becomes the next free chapter number.",
-  recorded: "This Word file became this chapter last time, so bringing it in again replaces that chapter.",
-  existing: "A chapter already has this Word file's name (the book went live before the chapter-NN rule), so it is replaced and keeps its name.",
-};
-
-/** Word's name for the file, as a chapter name outside chapters/ (convert.suggest_name). */
-const suggestName = (docx) => (docx.replace(/\.docx$/i, "").trim().replace(/^\.+|\.+$/g, "").replace(/[/\\:*?"<>|]/g, "-").replace(/\s+/g, " ").trim() || "Untitled chapter");
-
 export async function importScreen(slug) {
   const book = await bookBySlug(slug);
-  const tree = await read("tree", { book: slug });
-  const folders = [...new Set(tree.files
-    .filter((f) => /^chapters\/.+\/[^/]+\.md$/i.test(f.path))
-    .map((f) => f.path.slice(0, f.path.lastIndexOf("/"))))].sort();
   const stage = h("div", { "aria-live": "polite" });
-  const root = [...bookHeader(book, "import", "Bring in a Word document"), stage];
-  choose(book, folders, stage);
-  return root;
+  choose(book, stage);
+  return [...bookHeader(book, "chapters", "Bring in a document"), stage];
 }
 
-function choose(book, folders, stage, problem) {
-  const input = h("input", { type: "file", accept: ".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document", id: "docx" });
-  const where = h("select", { id: "where" },
-    h("option", { value: "chapters", text: "chapters: a chapter (named chapter-01, chapter-02…)" }),
-    folders.map((f) => h("option", { value: f, text: `${f}: keeps a name you choose` })));
-  const name = h("input", { type: "text", id: "chapter-name", autocomplete: "off" });
-  const nameField = h("label", { class: "field", hidden: true }, "What it should be called", name);
+function choose(book, stage, problem) {
+  const input = h("input", { type: "file", accept: ACCEPT, id: "docx" });
   const said = h("div");
-  const go = h("button", { type: "submit", class: "btn primary", text: "Convert it" });
-  const syncName = () => {
-    nameField.hidden = where.value === "chapters";
-    if (!nameField.hidden && !name.value && input.files[0]) name.value = suggestName(input.files[0].name);
-  };
-  where.addEventListener("change", syncName);
   input.addEventListener("change", () => {
-    clear(said);
-    name.value = "";
-    syncName();
     const p = fileProblem(input.files[0]);
-    if (p) clear(said, note([h("p", { text: p })], "warn"));
+    clear(said, p ? note([h("p", { text: p })], "warn") : null);
   });
   const form = h("form", { novalidate: true },
-    h("p", { text: "Choose the Word document. You'll see the whole converted chapter, and a list of anything worth checking, before anything reaches your book. Your Word document is never changed." }),
-    h("label", { class: "file-drop" }, h("span", { class: "sr-only", text: "Word document" }), input),
-    h("p", { class: "muted small", text: "A .docx, up to 20 MB." }),
-    folders.length ? h("label", { class: "field" }, "Where it goes", where) : null,
-    nameField,
+    h("p", { text: "Choose the document. You'll see the whole chapter as readers will, and anything worth checking, before it goes into your drafts. Your document itself is never changed." }),
+    h("label", { class: "file-drop" }, h("span", { class: "sr-only", text: "Document" }), input),
+    h("p", { class: "muted small", text: "Word (.docx or .doc), OpenDocument (.odt) or Rich Text (.rtf), up to 20 MB. A document you brought in before replaces the chapter it became." }),
     said,
     problem ? errorNote(problem) : null,
-    h("div", { class: "actions" }, go));
+    h("div", { class: "actions" }, h("button", { type: "submit", class: "btn primary", text: "Convert it" }), h("a", { class: "btn", href: `#/${book.slug}`, text: "Back to the chapters" })));
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const file = input.files[0];
     const p = fileProblem(file);
     if (p) return clear(said, note([h("p", { text: p })], "warn"));
-    if (!nameField.hidden && !name.value.trim()) return clear(said, note([h("p", { text: "Please give the chapter a name." })], "warn"));
-    await upload(book, folders, stage, file, where.value, nameField.hidden ? null : name.value.trim());
+    await upload(book, stage, file);
   });
   clear(stage, form);
 }
 
-async function upload(book, folders, stage, file, folder, chapterName) {
+async function upload(book, stage, file) {
   const bar = h("span");
   bar.style.width = "0%";
-  clear(stage, h("p", { class: "busy", text: `Uploading ${file.name}…` }), h("div", { class: "progress", role: "progressbar", "aria-label": "Upload" }, bar));
+  clear(stage, h("p", { class: "busy", text: "Uploading your document…" }), h("div", { class: "progress", role: "progressbar", "aria-label": "Upload" }, bar));
   let started;
   try {
     const receipts = await uploadParts(file, (f) => {
       bar.style.width = `${Math.round(f * 100)}%`;
     });
     clear(stage, busy("Starting the conversion…"));
-    started = await importStart({ book: book.slug, name: file.name, parts: receipts, folder, chapterName });
+    started = await importStart({ book: book.slug, name: file.name, parts: receipts, folder: "chapters" });
   } catch (err) {
-    return choose(book, folders, stage, err);
+    return choose(book, stage, err);
   }
-  await wait(book, folders, stage, started.id, file.name);
+  await wait(book, stage, started.id);
 }
 
 /** Polls until this attempt of the import is converted (or failed). */
-async function wait(book, folders, stage, id, docxName) {
+async function wait(book, stage, id) {
   const began = Date.now();
-  clear(stage, busy(`Converting ${docxName}… This usually takes about a minute.`));
+  clear(stage, busy("Converting your document… This usually takes about a minute (two for a .doc, .odt or .rtf)."));
   for (;;) {
     let s;
     try {
       s = await importStatus(book.slug, id);
     } catch (err) {
-      return choose(book, folders, stage, err);
+      return choose(book, stage, err);
     }
-    if (s.state === "done") return review(book, folders, stage, id, docxName, s);
-    if (s.state === "failed") return choose(book, folders, stage, { userMessage: s.error });
+    if (s.state === "done") return review(book, stage, id, s);
+    if (s.state === "failed") return choose(book, stage, { userMessage: s.error });
     if (Date.now() - began > GIVE_UP_MS) {
-      return choose(book, folders, stage, { userMessage: "The conversion is taking much longer than it should. Nothing has changed in your book. Please try again; if it happens again, tell the platform's technical contact." });
+      return choose(book, stage, { userMessage: "The conversion is taking much longer than it should. Nothing has changed in your book. Please try again; if it happens again, tell the platform's technical contact." });
     }
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
@@ -117,11 +91,10 @@ async function wait(book, folders, stage, id, docxName) {
 
 const picked = new Map(); // staged picture path -> blob URL, for this page's life
 
-async function review(book, folders, stage, id, docxName, s) {
+async function review(book, stage, id, s) {
   const { result, chapter } = s;
   const c = result.chapter;
   const staged = new Set(result.writes.filter((w) => w.kind === "picture").map((w) => w.path));
-  const raw = (p) => rawUrl(book.repo, result.base, p);
   const pictureUrl = async (p) => {
     if (staged.has(p)) {
       const key = `${id}:${s.attempt}:${p}`;
@@ -133,25 +106,52 @@ async function review(book, folders, stage, id, docxName, s) {
       }
       return picked.get(key);
     }
-    return p.startsWith(`${c.media_dir}/`) ? raw(p) : null;
+    return p.startsWith(`${c.media_dir}/`) ? rawUrl(book.repo, result.base, p) : null;
   };
-
-  const read_ = h("input", { type: "checkbox", id: "read-it" });
-  const replaceTick = h("input", { type: "checkbox", id: "replace-it" });
-  const sendBtn = h("button", { type: "button", class: "btn primary", text: "Send to drafts", disabled: true });
-  const sync = () => {
-    sendBtn.disabled = !read_.checked || (!c.new && !replaceTick.checked) || !result.writes.length && !result.deletes.length;
-  };
-  read_.addEventListener("change", sync);
-  replaceTick.addEventListener("change", sync);
+  const title = c.title || "the chapter";
   const out = h("div", { class: "outcome", "aria-live": "polite" });
-  const confirmBox = h("div", {},
-    h("p", { class: "muted small", text: "The drafts area isn't what readers see. It goes to them when you publish, under Waiting for you." }),
-    h("div", { class: "actions" }, sendBtn, h("button", { type: "button", class: "btn", text: "Start again", onclick: () => choose(book, folders, stage) })));
+  const nothing = !result.writes.length && !result.deletes.length;
+  const add = h("button", { type: "button", class: "btn primary", text: c.new ? `Add “${title}” to the drafts` : `Replace “${title}” in the drafts` });
+  add.addEventListener("click", async () => {
+    add.disabled = true;
+    clear(out, busy("Adding it to the drafts…"));
+    try {
+      // What the book's formatting rules can put right is put right on the way in; the
+      // rest shows in the editor and on Drafts.
+      const fixed = await lintPage(book, result.base, c.path, chapter.text).catch(() => null);
+      const files = fixed && fixed.text !== chapter.text ? [{ path: c.path, text: fixed.text }] : undefined;
+      await send({ book: book.slug, base: result.base, import: id, files, replace: !c.new || undefined, message: c.new ? `Bring in “${title}”` : `Bring in “${title}” again` });
+      forgetCount(book.slug);
+      clear(stage,
+        h("h2", { class: "flush-top", text: c.new ? `“${title}” is in the drafts` : `“${title}” was replaced in the drafts` }),
+        h("p", { text: c.new ? "It is at the end of the reading order; move it on Chapters if it belongs elsewhere." : "Its place in the reading order is unchanged." }),
+        fixed?.problems.length ? note([h("p", { text: `${plural(fixed.problems.length, "formatting thing")} to put right before you publish: the editor lists ${fixed.problems.length === 1 ? "it" : "them"}, with the line.` })], "warn") : null,
+        h("p", { class: "muted", text: "Readers see it when you publish, from Drafts." }),
+        h("div", { class: "actions" },
+          h("a", { class: "btn primary", href: `#/${book.slug}/edit/${encodeURIComponent(c.path)}`, text: "Open it in the editor" }),
+          h("a", { class: "btn", href: `#/${book.slug}`, text: "Back to the chapters" })));
+    } catch (err) {
+      if (err.status === 409 && (err.body?.error === "conflict" || err.body?.error === "import base")) {
+        const again = h("button", { type: "button", class: "btn primary", text: "Convert it again" });
+        again.addEventListener("click", async () => {
+          again.disabled = true;
+          try {
+            await importAgain(book.slug, id);
+            await wait(book, stage, id);
+          } catch (e) {
+            clear(out, errorNote(e));
+          }
+        });
+        clear(out, note([h("p", { text: "Nothing was added: the drafts changed while this was converting. Your document is kept. Convert it again and it is checked against the drafts as they are now." })], "warn"), h("div", { class: "actions" }, again));
+      } else {
+        clear(out, errorNote(err));
+        add.disabled = false;
+      }
+    }
+  });
 
   const shown = h("div", {}, busy("Formatting the chapter…"));
   renderChapter(chapter.text, c.path, pictureUrl).then((node) => shown.replaceChildren(node));
-
   const report = result.report ?? [];
   const counts = result.counts ?? {};
   const tables = (counts.pipe_tables ?? 0) + (counts.html_tables ?? 0);
@@ -163,51 +163,18 @@ async function review(book, folders, stage, id, docxName, s) {
     counts.pictures ? plural(counts.pictures, "picture") : null,
   ].filter(Boolean);
   const LEVEL = { ok: "ok", look: "look", warn: "warn" };
-  const pictures = result.writes.filter((w) => w.kind === "picture");
-
-  sendBtn.addEventListener("click", async () => {
-    sendBtn.disabled = true;
-    clear(out, busy("Sending it to the drafts area…"));
-    try {
-      const sent = await send({ book: book.slug, base: result.base, import: id, replace: !c.new || undefined, message: `Bring in ${c.path.split("/").pop()} from Word (“${docxName}”)` });
-      clear(stage, ...sentView(book, sent, c.new ? "The chapter is in the drafts area" : "The chapter was replaced in the drafts area",
-        [c.new && result.contents_line ? "Its line is on the front page, under “Contents”." : null],
-        h("a", { class: "btn primary", href: `#/${book.slug}/tidy/${encodeURIComponent(c.path)}`, text: "Go through this chapter now" })));
-    } catch (err) {
-      if (err.status === 409 && (err.body?.error === "conflict" || err.body?.error === "import base")) {
-        const again = h("button", { type: "button", class: "btn primary", text: "Convert it again" });
-        again.addEventListener("click", async () => {
-          again.disabled = true;
-          try {
-            await importAgain(book.slug, id);
-            await wait(book, folders, stage, id, docxName);
-          } catch (e) {
-            clear(out, errorNote(e));
-          }
-        });
-        confirmBox.hidden = true;
-        clear(out, conflictView(err.body.conflict), note([h("p", { text: "Your Word document is kept. Convert it again and it is checked against the drafts area as it is now; then read it and send it." })]), h("div", { class: "actions" }, again));
-        out.scrollIntoView({ block: "start" });
-      } else {
-        clear(out, errorNote(err));
-        sync();
-      }
-    }
-  });
+  const gone = (result.removed_pictures ?? []).length;
 
   clear(stage,
-    h("h2", { class: "flush-top", text: c.new ? `It becomes ${c.path}` : `It replaces ${c.path}` }),
-    c.how && HOW[c.how] ? h("p", { class: "muted", text: HOW[c.how] }) : null,
+    h("h2", { class: "flush-top", text: c.new ? `A new chapter: “${title}”` : `It replaces “${title}”` }),
+    summary.length ? h("p", { text: `A chapter of ${summary.join(", ")}.` }) : null,
     !c.new && c.replaces ? note([
-      h("p", {}, "The drafts area already has this chapter",
-        c.replaces.who ? [", last changed by ", h("strong", { text: c.replaces.who }), c.replaces.when ? ` ${when(c.replaces.when)}` : "", c.replaces.message ? ` (“${c.replaces.message}”)` : ""] : null,
+      h("p", {}, "The drafts already have this chapter",
+        c.replaces.who ? [", last changed by ", h("strong", { text: c.replaces.who }), c.replaces.when ? ` ${when(c.replaces.when)}` : ""] : null,
         ". ", c.replaces.lines_differ ? `${plural(c.replaces.lines_differ.removed, "line")} would go and ${plural(c.replaces.lines_differ.added, "line")} would come in.` : ""),
-      result.removed_pictures?.length ? h("p", {}, "These pictures are no longer in the Word document, so they are taken out: ", result.removed_pictures.join(", "), ".") : null,
+      gone ? h("p", { text: `${plural(gone, "picture")} no longer in the document ${gone === 1 ? "goes" : "go"} too.` }) : null,
     ], "warn") : null,
-    result.contents_line ? h("p", {}, "A line is added to the front page, under “Contents”: ", h("code", { text: result.contents_line })) : null,
-    (result.notes ?? []).map((n) => h("p", { class: "muted", text: n })),
-    pictures.length ? h("p", { class: "muted small", text: `${plural(pictures.length, "picture")} ${pictures.length === 1 ? "goes" : "go"} into ${c.media_dir}/.` }) : null,
-    summary.length ? h("p", {}, h("code", { text: docxName }), ` became a chapter of ${summary.join(", ")}.`) : null,
+    (result.removed_word_files ?? []).length ? h("p", { class: "muted", text: "Copies of this document that were uploaded into the book come out in the same change: readers never see documents, only chapters." }) : null,
     h("h3", { text: "What to check" }),
     report.length
       ? h("ul", { class: "report" }, report.map((n) => h("li", { class: `level-${LEVEL[n.level] ?? "look"}` },
@@ -217,11 +184,7 @@ async function review(book, folders, stage, id, docxName, s) {
       : h("p", { class: "muted", text: "Nothing in this document needs checking." }),
     h("h3", { text: "The chapter, as it will be" }),
     shown,
-    !result.writes.length && !result.deletes.length ? note([h("p", { text: "The drafts area already has exactly this, so there is nothing to send." })]) : [
-      h("label", { class: "confirm" }, read_, h("span", { text: "I've read the converted chapter and want it in the drafts area." })),
-      c.new ? null : h("label", { class: "confirm" }, replaceTick, h("span", { text: `Replace the ${c.path} that is there now.` })),
-    ],
-    confirmBox,
+    nothing ? note([h("p", { text: "The drafts already have exactly this, so there is nothing to add." })])
+      : h("div", { class: "actions" }, add, h("button", { type: "button", class: "btn", text: "Start again", onclick: () => choose(book, stage) })),
     out);
-  sync();
 }

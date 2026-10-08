@@ -1,28 +1,31 @@
 /* ==========================================================================
    styles.css — the author site
-   Palette and type: Brandon's "Confused4Now fonts and colours", v1 warm
-   (28 Sep 2026), with the token names the portal uses (--portal-*), so the two
-   read as one platform and a change to one is a copy to the other. Values as
-   brief-palette-darkmode.md gives them for the portal.
+   Palette and type: visual direction v3 (Brandon's landing-page draft, 2 Oct
+   2026), the values textbook-portal/src/styles.css and the books' design.yaml
+   use, with the portal's token names (--portal-*), so the three read as one
+   platform and a change to one is a copy to the others: white, near-black ink,
+   grey, a light hairline, deep olive for links and buttons, light olive for
+   decoration only (3.0:1 on white, never text); dark is the olives lifted on
+   #17181C.
 
    Dark mode follows the system until the author uses the toggle; the choice is
    kept in localStorage "theme" and applied before first paint (theme-init.js).
    ========================================================================== */
 
 :root {
-  --portal-accent:       #4E3E7A;
-  --portal-accent-hover: #211F29;
-  --portal-accent-soft:  #9C82D6; /* decoration only: 2.8:1, never text */
-  --portal-wash:         #F3ECFB;
-  --portal-ink:          #211F29;
-  --portal-muted:        #6E6A78;
-  --portal-faint:        #9A96A4;
-  --portal-border:       #E5E0D5;
-  --portal-bg:           #F3F0EA;
-  --portal-bg-soft:      #FFFFFF;
-  --portal-ok:           #4E3E7A;
+  --portal-accent:       #52562F;
+  --portal-accent-hover: #353820;
+  --portal-accent-soft:  #9B9569; /* decoration only: 2.8:1, never text */
+  --portal-wash:         #F0EFE8;
+  --portal-ink:          #202124;
+  --portal-muted:        #5F6368;
+  --portal-faint:        #9AA0A6;
+  --portal-border:       #DADCE0;
+  --portal-bg:           #FFFFFF;
+  --portal-bg-soft:      #F1F3F4;
+  --portal-ok:           #52562F;
   --portal-mark:         #FDF2B3;
-  --portal-danger:       #A1261B;
+  --portal-danger:       #B3261E;
   --portal-del:          #FBE3E0;
   --portal-del-strong:   #F2B8B1;
   --portal-add:          #E3F1E4;
@@ -42,19 +45,19 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --portal-accent:       #9C82D6;
-    --portal-accent-hover: #F3ECFB;
-    --portal-accent-soft:  #7C66B0;
-    --portal-wash:         rgba(156, 130, 214, 0.16);
-    --portal-ink:          #E5E0D5;
-    --portal-muted:        #ACA8B7;
-    --portal-faint:        #5F5B69;
-    --portal-border:       #3F3D48;
-    --portal-bg:           #211F29;
-    --portal-bg-soft:      #2B2933;
-    --portal-ok:           #9C82D6;
+    --portal-accent:       #A7A374;
+    --portal-accent-hover: #D6D3B5;
+    --portal-accent-soft:  #C7C39B;
+    --portal-wash:         rgba(167, 163, 116, 0.16);
+    --portal-ink:          #E8EAED;
+    --portal-muted:        #9AA0A6;
+    --portal-faint:        #5F6368;
+    --portal-border:       #3C4043;
+    --portal-bg:           #17181C;
+    --portal-bg-soft:      #202124;
+    --portal-ok:           #A7A374;
     --portal-mark:         rgba(253, 242, 179, 0.22);
-    --portal-danger:       #F2A69D;
+    --portal-danger:       #F2B8B5;
     --portal-del:          rgba(242, 166, 157, 0.14);
     --portal-del-strong:   rgba(242, 166, 157, 0.34);
     --portal-add:          rgba(129, 201, 149, 0.14);
@@ -63,19 +66,19 @@
   }
 }
 :root[data-theme="dark"] {
-  --portal-accent:       #9C82D6;
-  --portal-accent-hover: #F3ECFB;
-  --portal-accent-soft:  #7C66B0;
-  --portal-wash:         rgba(156, 130, 214, 0.16);
-  --portal-ink:          #E5E0D5;
-  --portal-muted:        #ACA8B7;
-  --portal-faint:        #5F5B69;
-  --portal-border:       #3F3D48;
-  --portal-bg:           #211F29;
-  --portal-bg-soft:      #2B2933;
-  --portal-ok:           #9C82D6;
+  --portal-accent:       #A7A374;
+  --portal-accent-hover: #D6D3B5;
+  --portal-accent-soft:  #C7C39B;
+  --portal-wash:         rgba(167, 163, 116, 0.16);
+  --portal-ink:          #E8EAED;
+  --portal-muted:        #9AA0A6;
+  --portal-faint:        #5F6368;
+  --portal-border:       #3C4043;
+  --portal-bg:           #17181C;
+  --portal-bg-soft:      #202124;
+  --portal-ok:           #A7A374;
   --portal-mark:         rgba(253, 242, 179, 0.22);
-  --portal-danger:       #F2A69D;
+  --portal-danger:       #F2B8B5;
   --portal-del:          rgba(242, 166, 157, 0.14);
   --portal-del-strong:   rgba(242, 166, 157, 0.34);
   --portal-add:          rgba(129, 201, 149, 0.14);
@@ -250,3 +253,38 @@ textarea.editor-text:focus-visible { outline: none; box-shadow: inset 0 0 0 2px 
 .editor-panel { padding: 1rem; }
 .editor-panel .preview { border: 0; padding: 0; }
 .editor-panel .diff { border: 0; }
+
+/* The book's lint before Send / Publish */
+.lint-list { padding-left: 1.4rem; }
+.lint-list > li { margin-bottom: 0.4rem; }
+
+/* Chapters in reading order: drag, or ↑ ↓ */
+ol.reorder { list-style: none; padding-left: 0; }
+.reorder-item { align-items: center; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--portal-border); }
+.reorder-item.dragging { opacity: 0.5; }
+.drag-handle { cursor: grab; color: var(--portal-muted, inherit); padding: 0 0.25rem; user-select: none; }
+.reorder-item .btn.link { min-width: 2.2rem; }
+form.retitle { width: 100%; }
+
+/* Chapters and Drafts (08 Oct) */
+.saved { min-height: 1.5em; margin: 0.25rem 0 0.75rem; color: var(--portal-muted); font-size: 0.95rem; }
+.saved.not-saved { color: var(--portal-danger); }
+.busy-dot { display: inline-block; width: 0.5em; height: 0.5em; margin-right: 0.4em; border-radius: 50%; background: var(--portal-accent-soft); vertical-align: 0.1em; }
+.badge.status-published { background: var(--portal-bg-soft); color: var(--portal-muted); }
+.badge.status-edited { background: var(--portal-wash); color: var(--portal-accent); }
+.badge.status-new { background: var(--portal-accent); color: var(--portal-bg); }
+.badge.status-removed { background: var(--portal-del); color: var(--portal-danger); }
+.btn.link.danger { color: var(--portal-danger); }
+.btn.danger-solid { background: var(--portal-danger); border-color: var(--portal-danger); color: var(--portal-bg); }
+.confirm-remove p { margin: 0 0 0.5rem; }
+.lint-live { margin-top: 1rem; }
+.small-heading { font-size: 1rem; margin: 0 0 0.5rem; }
+.list.drafts > li .draft-diff { margin-top: 0.5rem; }
+.check { margin: 0 0 1rem; }
+.check.ok { color: var(--portal-ok); }
+.check.bad h3 { color: var(--portal-danger); }
+.publish { margin: 1.5rem 0 1rem; padding: 1rem; border: 1px solid var(--portal-border); border-radius: 8px; background: var(--portal-bg-soft); }
+.publish-reason { margin: 0 0 0.75rem; font-weight: 600; color: var(--portal-danger); }
+.btn.big { font-size: 1.15rem; padding: 0.8rem 1.6rem; width: 100%; }
+.published h3 { margin-top: 0; }
+details.jobs { margin-top: 2rem; }

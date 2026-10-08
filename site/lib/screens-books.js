@@ -1,10 +1,14 @@
-// Your books, a book's chapters, and one chapter as readers will see it.
+// Your books, and a book's Chapters: the chapters in reading order, each with where
+// it stands (Published, Draft changes, New, To be removed). Reordering, retitling and
+// removing happen here and are saved to the drafts as they are made, one change each;
+// nothing reaches readers until Publish, under Drafts.
 
-import { h, busy, note, when } from "./dom.js";
-import { read } from "./api.js";
-import { bookBySlug, bookHeader, rawUrl, myBooks, pageSlug } from "./books.js";
-import { renderChapter } from "./preview.js";
-import { discussionUrl, draftsPreview, registryBook } from "./public.js";
+import { h, clear, busy, note } from "./dom.js";
+import { read, send } from "./api.js";
+import { parseContents, retitledChapter, withLabel, withOrder, withoutPath } from "./contents.js";
+import { bookBySlug, bookHeader, myBooks } from "./books.js";
+import { draftItems, forgetCount, titlesFrom } from "./drafts.js";
+import { savedAt } from "./screens-shared.js";
 
 export async function booksScreen() {
   const { login, books } = await myBooks();
@@ -25,71 +29,209 @@ export async function booksScreen() {
           h("div", { class: "grow" },
             h("h2", { class: "flush" }, h("a", { href: `#/${b.slug}`, text: b.title })),
             b.status === "preview" ? h("span", { class: "badge", text: "Preview: not listed for readers" }) : null,
-            b.domain ? h("p", { class: "muted small below" }, h("a", { href: `https://${b.domain}/`, target: "_blank", rel: "noopener", text: b.domain })) : null),
-          h("a", { class: "btn", href: `#/${b.slug}/waiting`, text: "Waiting for you" }))))),
+            b.domain ? h("p", { class: "muted small below" }, h("a", { href: `https://${b.domain}/`, target: "_blank", rel: "noopener", text: "The book as readers see it" })) : null),
+          h("a", { class: "btn", href: `#/${b.slug}/drafts`, text: "Drafts" }))))),
   ];
 }
 
 const natural = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+const STATUS = { published: "Published", edited: "Draft changes", new: "New", removed: "To be removed" };
+const edit = (slug, path) => `#/${slug}/edit/${encodeURIComponent(path)}`;
 
 export async function chaptersScreen(slug) {
   const book = await bookBySlug(slug);
-  const [tree, reg] = await Promise.all([read("tree", { book: slug }), registryBook(slug)]);
-  const pages = tree.files.filter((f) => /\.md$/i.test(f.path));
-  const chapters = pages.filter((f) => /^chapters\/[^/]+$/.test(f.path)).sort((a, b) => natural.compare(a.path, b.path));
-  const folders = new Map();
-  for (const f of pages.filter((p) => /^chapters\/.+\/.+$/.test(p.path))) {
-    const folder = f.path.slice("chapters/".length, f.path.lastIndexOf("/"));
-    folders.set(folder, [...(folders.get(folder) ?? []), f]);
-  }
-  const top = pages.filter((f) => f.path === "index.md" || f.path === "glossary.md");
-  const link = (f, label) => h("li", {}, h("a", { href: `#/${slug}/chapter/${encodeURIComponent(f.path)}`, text: label ?? f.path.split("/").pop().replace(/\.md$/i, "") }));
-  const preview = draftsPreview(reg);
+  const [tree, state] = await Promise.all([read("tree", { book: slug }), draftItems(book, { texts: false }).catch(() => null)]);
+  const known = new Set(tree.files.map((f) => f.path));
+  const index = known.has("index.md") ? await read("file", { book: slug, path: "index.md", ref: tree.head }) : null;
+  const titles = titlesFrom(state?.liveIndex, index?.text);
+  const status = new Map((state?.items ?? []).filter((i) => i.path && ["new", "edited", "removed"].includes(i.kind)).map((i) => [i.path, i.kind]));
+  const statusOf = (path) => status.get(path) ?? "published";
+  const badge = (path) => h("span", { class: `badge status-${statusOf(path)}`, text: STATUS[statusOf(path)] });
+  const removed = (state?.items ?? []).filter((i) => i.kind === "removed" && i.path.startsWith("chapters/"));
 
+  const pages = tree.files.filter((f) => /\.md$/i.test(f.path) && f.path.startsWith("chapters/")).sort((a, b) => natural.compare(a.path, b.path));
+  const parsed = typeof index?.text === "string" ? parseContents(index.text) : null;
+  const usable = parsed && !parsed.problem && parsed.items.length ? parsed : null;
+  const listed = new Set(usable?.items.map((i) => i.path) ?? []);
+  const rest = pages.filter((f) => !listed.has(f.path));
+  const pageRow = (path) => h("li", { class: "row" },
+    h("a", { class: "grow", href: edit(slug, path), text: titles.get(path) }), badge(path));
+
+  const saved = savedAt();
   return [
     ...bookHeader(book, "chapters"),
-    h("div", { class: "row" },
-      h("a", { class: "btn", href: book.zip, download: "", text: "Download a copy" }),
-      preview ? h("a", { class: "btn", href: preview, target: "_blank", rel: "noopener", text: "See the drafts preview" }) : null,
-      h("a", { class: "btn link", href: `#/${slug}/history`, text: "History" }),
-      discussionUrl(reg) ? h("a", { class: "btn link", href: discussionUrl(reg), target: "_blank", rel: "noopener", text: "Reader discussion" }) : null),
-    h("p", { class: "muted small", text: "Download a copy is every file of the book as the drafts area holds it, in one .zip, from GitHub." }),
-    h("h2", { text: "Chapters" }),
-    chapters.length ? h("ul", { class: "list" }, chapters.map((f) => link(f))) : h("p", { class: "muted", text: "No chapters yet. Bring one in from a Word document." }),
-    [...folders].map(([folder, list]) => [
-      h("h3", { text: folder }),
-      h("ul", { class: "list" }, list.sort((a, b) => natural.compare(a.path, b.path)).map((f) => link(f))),
-    ]),
-    top.length ? [h("h2", { text: "The rest of the book" }), h("ul", { class: "list" }, top.map((f) => link(f, f.path === "index.md" ? "Front page (index.md)" : "Glossary (glossary.md)")))] : null,
-    note([
-      h("p", {}, "A chapter that still lives in Word can be ", h("a", { href: `#/${slug}/import`, text: "brought in again" }), " to replace it."),
-    ]),
-  ];
-}
-
-export async function chapterScreen(slug, path) {
-  const book = await bookBySlug(slug);
-  const [tree, reg] = await Promise.all([read("tree", { book: slug }), registryBook(slug)]);
-  const file = await read("file", { book: slug, path, ref: tree.head });
-  const name = path.split("/").pop().replace(/\.md$/i, "");
-  const known = new Set(tree.files.map((f) => f.path));
-  const shown = h("div", {}, busy("Formatting the chapter…"));
-  if (typeof file.text === "string") {
-    renderChapter(file.text, path, async (p) => (known.has(p) ? rawUrl(book.repo, tree.head, p) : null)).then((node) => shown.replaceChildren(node));
-  } else shown.replaceChildren(h("p", { class: "muted", text: "This file isn't text, so it can't be shown here." }));
-  const preview = draftsPreview(reg);
-  const slugPath = pageSlug(path === "index.md" ? "" : path);
-
-  return [
-    ...bookHeader(book, "chapters", name),
-    h("p", { class: "muted small" }, h("code", { text: path }),
-      file.last ? [" · last changed by ", h("strong", { text: file.last.who }), ` ${when(file.last.when)}`, file.last.message ? ` (“${file.last.message}”)` : ""] : null),
     h("div", { class: "row spaced" },
-      typeof file.text === "string" ? h("a", { class: "btn primary", href: `#/${slug}/edit/${encodeURIComponent(path)}`, text: "Edit" }) : null,
-      h("a", { class: "btn", href: `#/${slug}/history/${encodeURIComponent(path)}`, text: "History" }),
-      /\.md$/i.test(path) && path.startsWith("chapters/") ? h("a", { class: "btn", href: `#/${slug}/tidy/${encodeURIComponent(path)}`, text: "Citations, concept links and glossary" }) : null,
-      preview ? h("a", { class: "btn", href: `${preview}${slugPath}`, target: "_blank", rel: "noopener", text: "In the drafts preview" }) : null,
-      book.domain ? h("a", { class: "btn", href: `https://${book.domain}/${slugPath}`, target: "_blank", rel: "noopener", text: "On the live site" }) : null),
-    shown,
+      h("a", { class: "btn primary", href: `#/${slug}/import`, text: "Bring in a document" }),
+      h("a", { class: "btn", href: book.zip, download: "", text: "Download a copy" })),
+    saved.node,
+    usable ? readingOrder(book, tree, usable, titles, badge, saved) : [
+      h("h2", { text: "Chapters" }),
+      parsed?.problem ? note([h("p", { text: parsed.problem })]) : null,
+      pages.length ? null : h("p", { class: "muted", text: "No chapters yet. Bring one in from a document." }),
+    ],
+    removed.length ? [
+      h("h3", { text: "To be removed when you publish" }),
+      h("ul", { class: "list" }, removed.map((i) => h("li", { class: "row" }, h("span", { class: "grow muted", text: i.title }), badge(i.path)))),
+      h("p", { class: "muted small" }, "Changed your mind? Discard it under ", h("a", { href: `#/${slug}/drafts`, text: "Drafts" }), ", or bring it back from History."),
+    ] : null,
+    rest.length ? [h("h3", { text: usable ? "Other pages" : "Pages" }), h("ul", { class: "list" }, rest.map((f) => pageRow(f.path)))] : null,
+    h("h3", { text: "The rest of the book" }),
+    h("ul", { class: "list" },
+      known.has("index.md") ? pageRow("index.md") : null,
+      known.has("glossary.md") ? pageRow("glossary.md") : null),
   ];
 }
+
+/**
+ * The Contents (index.md's list, which the site builds its order from) as rows:
+ * drag a row, or use its ↑ and ↓; Rename; Remove. Each is saved to the drafts as one
+ * change, in turn (a move a second after the last one).
+ */
+function readingOrder(book, tree, parsed, titles, badge, saved) {
+  const slug = book.slug;
+  let base = tree.head;
+  let current = parsed;
+  let order = parsed.items.map((_, k) => k);
+  let queue = Promise.resolve();
+  const list = h("ol", { class: "list reorder", "aria-label": "Chapters in reading order" });
+
+  /** One change on the drafts, after any before it; the screen shows Saving… and then when. */
+  const save = (files, deletes, message) => {
+    queue = queue.then(async () => {
+      saved.saving();
+      try {
+        const sent = await send({ book: slug, base, files, deletes, message });
+        base = sent.sha;
+        forgetCount(slug);
+        saved.done();
+        return true;
+      } catch (err) {
+        saved.failed(err, () => save(files, deletes, message));
+        return false;
+      }
+    });
+    return queue;
+  };
+
+  let moveTimer = null;
+  const saveOrder = () => {
+    clearTimeout(moveTimer);
+    moveTimer = setTimeout(() => {
+      const text = withOrder(current, order);
+      current = parseContents(text);
+      order = current.items.map((_, k) => k);
+      save([{ path: "index.md", text }], [], "Change the chapter order");
+    }, 1000);
+  };
+
+  const move = (from, to, focus) => {
+    if (to < 0 || to >= order.length || from === to) return;
+    const [k] = order.splice(from, 1);
+    order.splice(to, 0, k);
+    draw();
+    if (focus) list.children[to]?.querySelector(`[data-move="${focus}"]`)?.focus();
+    saveOrder();
+  };
+
+  let dragging = null;
+  const draw = () => {
+    clear(list, order.map((k, pos) => {
+      const it = current.items[k];
+      const name = it.label || titles.get(it.path);
+      const li = h("li", { class: "row reorder-item", draggable: "true" },
+        h("span", { class: "drag-handle", "aria-hidden": "true", text: "⠿" }),
+        h("a", { class: "grow", href: edit(slug, it.path), text: name }),
+        badge(it.path),
+        h("button", { type: "button", class: "btn link", "data-move": "up", "aria-label": `Move ${name} up`, text: "↑", disabled: pos === 0, onclick: () => move(pos, pos - 1, "up") }),
+        h("button", { type: "button", class: "btn link", "data-move": "down", "aria-label": `Move ${name} down`, text: "↓", disabled: pos === order.length - 1, onclick: () => move(pos, pos + 1, "down") }),
+        h("button", { type: "button", class: "btn link", text: "Rename", "aria-label": `Rename ${name}`, onclick: () => rename(li, k) }),
+        h("button", { type: "button", class: "btn link danger", text: "Remove", "aria-label": `Remove ${name}`, onclick: () => remove(li, k) }));
+      li.addEventListener("dragstart", (e) => {
+        dragging = pos;
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", String(pos));
+        li.classList.add("dragging");
+      });
+      li.addEventListener("dragend", () => li.classList.remove("dragging"));
+      li.addEventListener("dragover", (e) => e.preventDefault());
+      li.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const from = dragging ?? Number(e.dataTransfer.getData("text/plain"));
+        dragging = null;
+        move(from, pos);
+      });
+      return li;
+    }));
+  };
+
+  /** Pending moves go first, so what follows is made on the order the author sees. */
+  const flush = async () => {
+    if (!moveTimer) return;
+    clearTimeout(moveTimer);
+    moveTimer = null;
+    if (order.some((k, i) => k !== i)) {
+      const text = withOrder(current, order);
+      current = parseContents(text);
+      order = current.items.map((_, k) => k);
+      await save([{ path: "index.md", text }], [], "Change the chapter order");
+    }
+  };
+  const reload = () => window.dispatchEvent(new HashChangeEvent("hashchange"));
+
+  const rename = (li, k) => {
+    li.draggable = false; // so the title can be selected with the mouse
+    const it = current.items[k];
+    const input = h("input", { type: "text", id: "retitle", value: it.label ?? "", autocomplete: "off" });
+    const form = h("form", { class: "retitle" },
+      h("label", { class: "field", for: "retitle" }, "What it should be called", input),
+      h("p", { class: "muted small", text: "This changes the chapter's title at the top of its page and in the reading order. Links to it keep working." }),
+      h("div", { class: "row" }, h("button", { type: "submit", class: "btn primary", text: "Save the title" }), h("button", { type: "button", class: "btn", text: "Cancel", onclick: () => draw() })));
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const title = input.value.replace(/\s+/g, " ").trim();
+      if (!title) return void input.focus();
+      form.querySelector("button[type=submit]").disabled = true;
+      await flush();
+      try {
+        const chapter = await read("file", { book: slug, path: it.path, ref: base });
+        const pos = current.items.findIndex((x) => x.path === it.path);
+        if (await save([{ path: it.path, text: retitledChapter(chapter.text, title) }, { path: "index.md", text: withLabel(current, pos, title) }], [], `Retitle “${it.label}” as “${title}”`)) reload();
+      } catch (err) {
+        saved.failed(err);
+      }
+    });
+    clear(li, form);
+    input.focus();
+    input.select();
+  };
+
+  const remove = (li, k) => {
+    li.draggable = false;
+    const it = current.items[k];
+    const name = it.label || titles.get(it.path);
+    const yes = h("button", { type: "button", class: "btn danger-solid", text: `Remove “${name}”` });
+    yes.addEventListener("click", async () => {
+      yes.disabled = true;
+      await flush();
+      if (await save([{ path: "index.md", text: withoutPath(current, it.path) }], [it.path], `Remove “${name}”`)) reload();
+    });
+    clear(li, h("div", { class: "grow confirm-remove", role: "alertdialog", "aria-label": `Remove ${name}?` },
+      h("p", {}, h("strong", { text: `Remove “${name}” from the book?` })),
+      h("p", { class: "muted small", text: "It comes out of the drafts now. Readers keep it until you publish, and you can bring it back from History (or Discard it under Drafts) at any time." }),
+      h("div", { class: "row" }, yes, h("button", { type: "button", class: "btn", text: "Keep it", onclick: () => draw() }))));
+    yes.focus();
+  };
+
+  draw();
+  return [
+    h("h2", { text: "Chapters, in reading order" }),
+    h("p", { class: "muted small", text: "Drag a chapter, or use ↑ and ↓, to change the order. Every change is saved to the drafts as you make it; readers see it when you publish." }),
+    list,
+  ];
+}
+
+/** Old links (#/<book>/chapter/<path>) open the chapter in the editor. */
+export const chapterScreen = (slug, path) => {
+  location.replace(edit(slug, path));
+  return busy("Opening the chapter…");
+};

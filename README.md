@@ -18,7 +18,8 @@ site/                    what Cloudflare Pages serves (the output directory)
   lib/api.js             the author endpoints; the identity token on every call
   lib/auth.js            GitHub sign-in (popup), kept in sessionStorage only
   lib/books.js           the author's books, and the book header and tabs
-  lib/screens-*.js       books and chapters, Word import, Waiting for you
+  lib/screens-*.js       Chapters, the editor, Bring in a document, Drafts, People, History
+  lib/drafts.js          drafts vs live as one line per chapter, and Discard for each
   lib/preview.js         a chapter as readers see it (copied from the in-site editor)
   lib/diff.js            differences (copied from the in-site editor)
   lib/public.js          reads that need no sign-in: registry, jobs, drafts preview
@@ -44,13 +45,11 @@ test/screenshots.mjs     every screen, light and dark, desktop and phone
 |---|---|---|
 | signs in with GitHub | sign-in | `github-auth` (the author site is a `github-auth` page in the registry's `platform.pages`) |
 | sees their books | `#/` | `author-read?what=books`: the books whose registry `authors` include them |
-| reads a chapter, downloads a copy | `#/<book>`, `#/<book>/chapter/<path>` | `author-read` tree and file; the drafts zip from GitHub |
-| edits a page: Edit, Preview, Changes | `#/<book>/edit/<path>` | `author-read` file; `author-send`, on the drafts commit it was read at |
-| brings in a Word document | `#/<book>/import` | `author-import` (parts, start, status, again); book-requests' private `import-chapter` converts; `author-send` sends |
-| answers readers' suggestions | `#/<book>/suggestion/<n>` | `author-act` suggestion-accept, -decline, -made |
-| accepts or declines draft changes | `#/<book>/change/<n>` | `author-act` change-accept, -decline |
-| sends the drafts to readers | `#/<book>/publish` | `author-act` publish-prepare, publish |
-| sees the jobs and the drafts preview | `#/<book>/waiting` | none: public reads from the browser |
+| sees the chapters in reading order, each Published / Draft changes / New / To be removed; reorders (drag, ↑/↓), renames, removes | `#/<book>` (Chapters) | `author-read` tree, file, drafts; each change one `author-send` on drafts, saved as it is made |
+| edits a page; it saves itself to the drafts ("Saving…", "Draft saved 14:32"); the book's markdownlint runs as they type | `#/<book>/edit/<path>[/line/<n>]` | `author-send`, at most every 20 s while typing |
+| brings in a document (.docx, .doc, .odt, .rtf) as a new or replaced chapter | `#/<book>/import` | `author-import`; book-requests' private `import-chapter` converts (LibreOffice first for non-docx); `author-send` |
+| sees what the drafts hold beyond live (one line per chapter, who, when, View changes, Discard), reader suggestions, the checks, and publishes | `#/<book>/drafts` (Drafts) | `author-read` drafts, publish, changes, suggestions; `author-act` change-accept/-decline, publish-prepare + publish |
+| answers a written suggestion | `#/<book>/suggestion/<n>` | `author-act` suggestion-accept, -decline, -made |
 | invites or removes the book's authors | `#/<book>/people` | `author-people`, `author-people-change`: a registry pull request with auto-merge; pending until the function runs it |
 | reads the drafts' history, of the book or one page; one change's difference and the page as it was; restores an old version as a new change | `#/<book>/history[/<path>]`, `#/<book>/revision/<sha>[/<path>]` | `author-history` (as the App, not GitHub's unauthenticated API); Restore sends through `author-send` like any edit |
 | keeps a DeepSeek key for the optional checks | `#/settings` | none: the key stays in the browser and goes only to DeepSeek |

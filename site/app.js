@@ -4,19 +4,17 @@
 //
 // Routes (the hash, so a static host serves one page):
 //   #/                          your books
-//   #/<book>                    its chapters
-//   #/<book>/chapter/<path>     one chapter
-//   #/<book>/edit/<path>        edit it
-//   #/<book>/tidy/<path>        its citations, concept links and glossary questions
-//   #/<book>/import             bring in a Word document
-//   #/<book>/waiting            suggestions, draft changes, going live, jobs
-//   #/<book>/suggestion/<n>     one reader suggestion
-//   #/<book>/change/<n>         one draft change
-//   #/<book>/publish            send the drafts to the live book
+//   #/<book>                    Chapters: the reading order, each chapter's status
+//   #/<book>/edit/<path>[/line/<n>]  the editor (at line n); saves to the drafts as you type
+//   #/<book>/import             bring in a document
+//   #/<book>/drafts             Drafts: reader suggestions, what's changed, Publish
+//   #/<book>/suggestion/<n>     one written reader suggestion
+//   #/<book>/tidy/<path>        a chapter's citations, concept links and glossary questions
 //   #/<book>/people             who can work on it; invite, remove
 //   #/<book>/history[/<path>]   the drafts' history, of the book or one page
-//   #/<book>/revision/<sha>[/<path>]  one change; one page at it, and Restore
+//   #/<book>/revision/<sha>[/<path>]  one change; one page at it, Restore, Bring it back
 //   #/settings                  the author's own DeepSeek key, in this browser
+// Older links (#/<book>/waiting, /publish, /change/<n>, /chapter/<path>) still land.
 
 import { h, clear, busy, errorNote } from "./lib/dom.js";
 import { identity, onChange, signIn, signOut } from "./lib/auth.js";
@@ -27,7 +25,8 @@ import { editScreen } from "./lib/screens-edit.js";
 import { settingsScreen } from "./lib/screens-settings.js";
 import { peopleScreen } from "./lib/screens-people.js";
 import { historyScreen, revisionScreen } from "./lib/screens-history.js";
-import { waitingScreen, suggestionScreen, changeScreen, publishScreen } from "./lib/screens-waiting.js";
+import { suggestionScreen } from "./lib/screens-suggestion.js";
+import { draftsScreen } from "./lib/screens-drafts.js";
 
 const main = document.getElementById("main");
 
@@ -94,7 +93,7 @@ function signInScreen() {
   });
   return [
     h("h1", { text: "Work on your textbook" }),
-    h("p", { text: "Bring chapters in from Word, answer readers' suggestions, accept draft changes, and send the drafts to your readers when they're ready. It all happens here, in the browser, on any computer." }),
+    h("p", { text: "Bring chapters in from your documents, edit them, answer readers' suggestions, and publish to your readers when you're ready. It all happens here, in the browser, on any computer." }),
     h("p", { text: "Sign in with the GitHub account the book was set up for. The author site learns only who you are: it gets no access to your GitHub account, and keeps nothing on this computer after you close the tab." }),
     h("div", { class: "actions" }, go),
     status,
@@ -106,13 +105,11 @@ const ROUTES = [
   [/^settings$/, () => settingsScreen()],
   [/^([a-z0-9-]+)$/, (book) => chaptersScreen(book)],
   [/^([a-z0-9-]+)\/chapter\/(.+)$/, (book, path) => chapterScreen(book, decodeURIComponent(path))],
-  [/^([a-z0-9-]+)\/edit\/(.+)$/, (book, path) => editScreen(book, decodeURIComponent(path))],
+  [/^([a-z0-9-]+)\/edit\/([^/]+)(?:\/line\/(\d+))?$/, (book, path, line) => editScreen(book, decodeURIComponent(path), line ? Number(line) : null)],
   [/^([a-z0-9-]+)\/tidy\/(.+)$/, (book, path) => tidyScreen(book, decodeURIComponent(path))],
   [/^([a-z0-9-]+)\/import$/, (book) => importScreen(book)],
-  [/^([a-z0-9-]+)\/waiting$/, (book) => waitingScreen(book)],
+  [/^([a-z0-9-]+)\/(?:drafts|waiting|publish|change\/\d+)$/, (book) => draftsScreen(book)],
   [/^([a-z0-9-]+)\/suggestion\/(\d+)$/, (book, n) => suggestionScreen(book, Number(n))],
-  [/^([a-z0-9-]+)\/change\/(\d+)$/, (book, n) => changeScreen(book, Number(n))],
-  [/^([a-z0-9-]+)\/publish$/, (book) => publishScreen(book)],
   [/^([a-z0-9-]+)\/people$/, (book) => peopleScreen(book)],
   [/^([a-z0-9-]+)\/history(?:\/(.+))?$/, (book, path) => historyScreen(book, path ? decodeURIComponent(path) : "")],
   [/^([a-z0-9-]+)\/revision\/([0-9a-f]{40})(?:\/(.+))?$/, (book, sha, path) => revisionScreen(book, sha, path ? decodeURIComponent(path) : "")],

@@ -30,17 +30,22 @@ export async function bookBySlug(slug) {
   return book;
 }
 
-/** "Your books › Title", the book's name, and its tabs. */
+/** "Your books › Title", the book's name, and its tabs: Chapters, Drafts (N), People, History. */
 export function bookHeader(book, current, title = book.title) {
   const tab = (key, href, text) => h("a", { href, text, "aria-current": key === current ? "page" : null });
+  const drafts = tab("drafts", `#/${book.slug}/drafts`, "Drafts");
+  // The count comes when it comes; the tab works without it.
+  import("./drafts.js").then(({ draftCount }) => draftCount(book)).then((n) => {
+    if (typeof n === "number") drafts.textContent = `Drafts (${n})`;
+  }).catch(() => {});
   return [
     h("p", { class: "crumbs" }, h("a", { href: "#/", text: "Your books" }), " › ", current === "chapters" && title === book.title ? book.title : h("a", { href: `#/${book.slug}`, text: book.title })),
     h("h1", { text: title }),
     h("nav", { class: "tabs", "aria-label": "This book" },
       tab("chapters", `#/${book.slug}`, "Chapters"),
-      tab("import", `#/${book.slug}/import`, "Bring in a Word document"),
-      tab("waiting", `#/${book.slug}/waiting`, "Waiting for you"),
-      tab("people", `#/${book.slug}/people`, "People")),
+      drafts,
+      tab("people", `#/${book.slug}/people`, "People"),
+      tab("history", `#/${book.slug}/history`, "History")),
   ];
 }
 

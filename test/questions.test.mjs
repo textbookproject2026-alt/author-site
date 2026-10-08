@@ -132,11 +132,11 @@ test("the questions, one at a time, then exactly what changes, sent as one chang
   await page.getByRole("heading", { name: "Here is exactly what will change" }).waitFor();
   await page.getByText("You chose: 1 citation linked, 1 mention linked to concept pages, 1 glossary entry added.", { exact: false }).waitFor();
   await page.getByText("Ontology", { exact: true }).waitFor();
-  const go = page.getByRole("button", { name: "Send to drafts" });
+  const go = page.getByRole("button", { name: "Save to drafts" });
   assert.equal(await go.isDisabled(), true);
   await page.getByLabel("I have read the changes above").check();
   await go.click();
-  await page.getByRole("heading", { name: "Sent to the drafts area" }).waitFor();
+  await page.getByRole("heading", { name: "Saved to the drafts" }).waitFor();
 
   const sent = lastSend();
   assert.equal(sent.base, HEAD);
@@ -160,13 +160,13 @@ test("yes to every mention of a concept, and the drafts moving on: the same choi
   await page.getByRole("button", { name: "No, leave it alone" }).click();
   await page.getByLabel("I have read the changes above").check();
   stub.s.sendAnswers = [[409, { error: "conflict", conflict: { head: "b".repeat(40), commits: [{ who: "x", message: "An unrelated edit", url: "" }], files: [{ path: "index.md", status: "modified", patch: "@@ -1 +1 @@\n-a\n+b" }] } }], [201, { sha: "c".repeat(40), url: "https://github.com/c", steps: ["The change is in the drafts area, as one change made by you."] }]];
-  await page.getByRole("button", { name: "Send to drafts" }).click();
+  await page.getByRole("button", { name: "Save to drafts" }).click();
   await page.getByText("your choices still stand").waitFor();
   await page.getByRole("button", { name: "Look at the changes again" }).click();
   await page.getByRole("heading", { name: "Here is exactly what will change" }).waitFor({ timeout: PYODIDE_TIMEOUT });
   await page.getByLabel("I have read the changes above").check();
-  await page.getByRole("button", { name: "Send to drafts" }).click();
-  await page.getByRole("heading", { name: "Sent to the drafts area" }).waitFor();
+  await page.getByRole("button", { name: "Save to drafts" }).click();
+  await page.getByRole("heading", { name: "Saved to the drafts" }).waitFor();
   const byPath = Object.fromEntries(lastSend().files.map((f) => [f.path, f.text]));
   assert.deepEqual(byPath, desktop(["t0"], ["Critical realism"], { analyses: ["terms"], first_mention_only: true, anchor_style: "obsidian" }));
 });
@@ -223,8 +223,8 @@ test("DeepSeek, with the author's own key from this browser: glossary suggestion
   await page.getByText("A proposed formatting change to line 3 was thrown away", { exact: false }).waitFor();
   await page.getByText("DeepSeek suggested 1 extra term on top of the plain checks.").waitFor();
   await page.getByLabel("I have read the changes above").check();
-  await page.getByRole("button", { name: "Send to drafts" }).click();
-  await page.getByRole("heading", { name: "Sent to the drafts area" }).waitFor();
+  await page.getByRole("button", { name: "Save to drafts" }).click();
+  await page.getByRole("heading", { name: "Saved to the drafts" }).waitFor();
 
   const options = { analyses: ["glossary", "format"], first_mention_only: true, anchor_style: "obsidian", use_deepseek: true };
   const byPath = Object.fromEntries(lastSend().files.map((f) => [f.path, f.text]));

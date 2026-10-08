@@ -1,26 +1,29 @@
-// Editing a whole page of the book: the books' in-site editor (quartz-edition-extras
+// Editing a page of the book: the books' in-site editor (quartz-edition-extras
 // edit-on-github editor.ts) laid out as a screen of this site: Edit | Preview |
-// Changes, with Cancel and Send beside the tabs. The Preview is the chapter view's
-// (preview.js) and Changes is the editor's word-level diff (diff.js), both copied
-// from it already.
+// Changes. There is no Send: the text is saved to the drafts as the author types
+// (a second and a half after they stop, and at most every 20 seconds while they
+// keep going), each save one change made by them through author-send, and the line
+// under the title says so: "Saving…", "Draft saved 14:32", or what went wrong.
 //
-// Sending is one commit on the drafts area through author-send, made by the signed-in
-// author, on the drafts commit the page was read at. If the drafts moved meanwhile,
-// nothing is written (409): when this page wasn't among what moved, the edit is
-// offered again on the drafts as they are now; when it was, the author's text is
-// kept for them to copy and the page has to be opened again.
+// The book's own lint runs as they type (lint.js): what markdownlint can put right
+// it does, away from the line being typed; the rest is listed with Go to line.
 //
-// The unsent text is kept in sessionStorage (this tab only) under the page and the
-// blob it was edited from, so moving to another screen and back doesn't lose it.
-// History's "Restore this version" leaves an older text there as `restored`: the box
-// starts from it, and it is sent like any edit, on the drafts as they are now.
+// Changes compares with the page as readers have it. History's "Restore this version"
+// leaves an older text in sessionStorage as `restored`: the box starts from it and
+// it is saved like any edit. Text that couldn't be saved is kept there too, so a
+// reload doesn't lose it.
 
 import { h, clear, busy, note, errorNote, when } from "./dom.js";
 import { read, send } from "./api.js";
 import { bookBySlug, bookHeader, rawUrl } from "./books.js";
 import { renderChapter } from "./preview.js";
 import { renderDiff } from "./diff.js";
-import { conflictView, sentView } from "./screens-shared.js";
+import { goToLine, lintView, savedAt } from "./screens-shared.js";
+import { fixedWords, lintLive } from "./lint.js";
+import { forgetCount, rawText, titlesFrom } from "./drafts.js";
+
+const IDLE_MS = 1500;
+const MIN_GAP_MS = 20_000;
 
 const store = {
   get(key) {
@@ -40,35 +43,46 @@ const store = {
   },
 };
 
-let leaving = null; // the open editor's beforeunload guard
+let leaving = null; // the open editor's beforeunload guard, while something is unsaved
 const guard = (on) => {
   if (leaving) window.removeEventListener("beforeunload", leaving);
   leaving = on ? (e) => e.preventDefault() : null;
   if (leaving) window.addEventListener("beforeunload", leaving);
 };
-window.addEventListener("hashchange", () => guard(false));
+let onLeave = null; // the open editor's last save, when the author moves to another screen
+window.addEventListener("hashchange", () => {
+  onLeave?.();
+  onLeave = null;
+  guard(false);
+});
 
-export async function editScreen(slug, path) {
+export async function editScreen(slug, path, line = null) {
   const book = await bookBySlug(slug);
   const tree = await read("tree", { book: slug });
-  const file = await read("file", { book: slug, path, ref: tree.head });
-  const name = path.split("/").pop();
-  if (typeof file.text !== "string") throw Object.assign(new Error("not text"), { userMessage: "This file isn't text, so it can't be edited here." });
+  const [file, index] = await Promise.all([
+    read("file", { book: slug, path, ref: tree.head }),
+    path !== "index.md" && tree.files.some((f) => f.path === "index.md") ? read("file", { book: slug, path: "index.md", ref: tree.head }).catch(() => null) : null,
+  ]);
+  if (typeof file.text !== "string") throw Object.assign(new Error("not text"), { userMessage: "This page isn't text, so it can't be edited here." });
+  const title = titlesFrom(index?.text).get(path, file.text);
+  const known = new Set(tree.files.map((f) => f.path));
+  const live = rawText(book.repo, book.live_branch, path).catch(() => undefined);
 
   // A textarea only knows "\n": a page written with "\r\n" goes back with it.
   const crlf = file.text.includes("\r\n");
   const original = crlf ? file.text.replace(/\r\n/g, "\n") : file.text;
   const key = `tb-edit:${slug}:${path}`;
   const kept = store.get(key);
-  const known = new Set(tree.files.map((f) => f.path));
-  const back = `#/${slug}/chapter/${encodeURIComponent(path)}`;
-  let base = tree.head;
   const restored = kept?.restored ? kept : null;
+  const unsaved = !restored && kept?.base === tree.head ? kept.text : null;
 
-  const textarea = h("textarea", { class: "editor-text", id: "editor-text", spellcheck: "true", "aria-label": `${name}, as Markdown` });
-  textarea.value = restored || kept?.sha === file.sha ? kept.text : original;
-  const current = () => textarea.value;
-  const dirty = () => current() !== original;
+  const textarea = h("textarea", { class: "editor-text", id: "editor-text", spellcheck: "true", "aria-label": `${title}, as Markdown` });
+  textarea.value = restored?.text ?? unsaved ?? original;
+  let base = tree.head;
+  let lastSaved = original;
+  let lastSaveAt = 0;
+  const status = savedAt();
+  status.idle("Your changes are saved to the drafts as you type.");
 
   // --- tabs, as editor.ts: arrow keys move between them ---
   const names = ["Edit", "Preview", "Changes"];
@@ -82,7 +96,7 @@ export async function editScreen(slug, path) {
     h("div", { role: "tabpanel", id: "ed-panel-2", "aria-labelledby": "ed-tab-2", tabindex: 0, hidden: true, class: "editor-panel" }),
   ];
   let previewSeq = 0;
-  const select = (i) => {
+  const select = async (i) => {
     tabs.forEach((t, k) => {
       t.setAttribute("aria-selected", String(k === i));
       t.tabIndex = k === i ? 0 : -1;
@@ -91,10 +105,18 @@ export async function editScreen(slug, path) {
     if (i === 1) {
       const seq = ++previewSeq;
       clear(panels[1], busy("Formatting the page…"));
-      renderChapter(current(), path, async (p) => (known.has(p) ? rawUrl(book.repo, tree.head, p) : null))
+      renderChapter(textarea.value, path, async (p) => (known.has(p) ? rawUrl(book.repo, tree.head, p) : null))
         .then((node) => seq === previewSeq && clear(panels[1], node));
     }
-    if (i === 2) clear(panels[2], dirty() ? renderDiff(original, current(), path) : h("p", { class: "muted", text: "No changes yet." }));
+    if (i === 2) {
+      clear(panels[2], busy("Comparing with the page readers have…"));
+      const was = await live;
+      if (was === undefined) return clear(panels[2], errorNote({ userMessage: "The page as readers have it couldn't be read just now." }));
+      const now = textarea.value;
+      clear(panels[2],
+        was === null ? note([h("p", { text: "Readers don't have this page yet: all of it is new." })]) : null,
+        (was ?? "").replace(/\r\n/g, "\n") === now ? h("p", { class: "muted", text: "No changes from what readers have." }) : renderDiff((was ?? "").replace(/\r\n/g, "\n"), now, title));
+    }
   };
   tabs.forEach((t, i) => {
     t.addEventListener("click", () => select(i));
@@ -108,102 +130,116 @@ export async function editScreen(slug, path) {
     });
   });
 
-  // --- Cancel, Send ---
-  const sendBtn = h("button", { type: "button", class: "btn primary", text: "Send to drafts" });
-  const cancel = h("button", { type: "button", class: "btn", text: "Cancel" });
-  const discard = h("div", { class: "note warn", role: "alert", hidden: true },
-    h("p", { text: "Discard your changes to this page?" }),
-    h("div", { class: "row" },
-      h("button", { type: "button", class: "btn", text: "Discard", onclick: () => {
-        store.set(key, null);
-        guard(false);
-        location.hash = back;
-      } }),
-      h("button", { type: "button", class: "btn primary", text: "Keep editing", onclick: () => {
-        discard.hidden = true;
-        textarea.focus();
-      } })));
-  cancel.addEventListener("click", () => {
-    if (!dirty()) return void (location.hash = back);
-    discard.hidden = false;
-    discard.querySelector(".btn.primary").focus();
-  });
-  const message = h("input", { type: "text", id: "edit-message", maxlength: 150, autocomplete: "off", placeholder: `Edit ${name}` });
-  if (restored) message.value = `Restore ${name} as of ${new Date(restored.restored.when).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
-  const outcome = h("div", { class: "outcome", "aria-live": "polite" });
-  const sync = () => {
-    sendBtn.disabled = !dirty();
-    guard(dirty());
-    store.set(key, dirty() ? { sha: file.sha, text: current(), restored: restored?.restored } : null);
+  // --- the live check ---
+  const lintBox = h("section", { class: "lint-live", "aria-label": "Formatting", "aria-live": "polite" });
+  const toLine = (n) => {
+    select(0);
+    goToLine(textarea, n);
   };
-  textarea.addEventListener("input", sync);
-
-  const stage = h("div");
-  const go = async () => {
-    sendBtn.disabled = true;
-    clear(outcome, busy("Sending it to the drafts area…"));
-    const text = crlf ? current().replace(/\n/g, "\r\n") : current();
+  const check = async () => {
+    const before = textarea.value;
+    let r;
     try {
-      const sent = await send({ book: slug, base, files: [{ path, text }], message: message.value.trim() || `Edit ${name}` });
-      store.set(key, null);
-      guard(false);
-      clear(stage, ...sentView(book, sent, "Sent to the drafts area", [],
-        h("a", { class: "btn primary", href: back, text: "Back to the page" })));
+      r = await lintLive(book, tree.head, path, before, textarea.selectionStart);
     } catch (err) {
-      sendBtn.disabled = false;
-      if (err.status !== 409 || err.body?.error !== "conflict") return clear(outcome, errorNote(err));
-      const conflict = err.body.conflict ?? {};
-      const moved = (conflict.files ?? []).some((f) => f.path === path);
-      if (!moved && conflict.head) {
-        // Nobody else touched this page: the edit is the same on the drafts as they are now.
-        const again = h("button", { type: "button", class: "btn primary", text: "Send it on the drafts as they are now" });
-        again.addEventListener("click", () => {
-          base = conflict.head;
-          go();
-        });
-        clear(outcome, conflictView(conflict),
-          note([h("p", { text: `${name} isn't among the changes, so your edit applies to the drafts as they are now exactly as it is.` })]),
-          h("div", { class: "actions" }, again));
-      } else {
-        sendBtn.disabled = true;
-        clear(outcome, conflictView(conflict),
-          note([h("p", { text: `${name} itself was changed meanwhile, shown above. Your text is still in the box: copy what you need, then open the page again to start from it as it is now, and put your changes back in.` })], "warn"),
-          h("div", { class: "actions" }, h("button", { type: "button", class: "btn", text: "Open the page again", onclick: () => {
-            guard(false);
-            window.dispatchEvent(new HashChangeEvent("hashchange"));
-          } })));
+      clear(lintBox, errorNote(err));
+      return;
+    }
+    // Typed meanwhile: this answer is for older text; the next check has the new.
+    if (textarea.value !== before) return;
+    if (r.text !== before) {
+      const focused = document.activeElement === textarea;
+      const scroll = textarea.scrollTop;
+      textarea.value = r.text;
+      if (focused) textarea.setSelectionRange(r.caret, r.caret);
+      textarea.scrollTop = scroll;
+    }
+    const fixed = fixedWords(r.fixed);
+    clear(lintBox,
+      r.problems.length
+        ? [h("h2", { class: "small-heading", text: `Formatting: ${r.problems.length === 1 ? "1 thing" : `${r.problems.length} things`} to put right before you publish` }), lintView(r.problems, { go: toLine })]
+        : h("p", { class: "muted small", text: "Formatting: nothing to put right." }),
+      fixed ? h("p", { class: "muted small", text: fixed }) : null);
+  };
+
+  // --- saving ---
+  let queue = Promise.resolve();
+  let timer = null;
+  const save = () => {
+    queue = queue.then(async () => {
+      const text = textarea.value;
+      if (text === lastSaved) return;
+      const wait = lastSaveAt + MIN_GAP_MS - Date.now();
+      if (wait > 0) {
+        clearTimeout(timer);
+        timer = setTimeout(tick, wait);
+        return;
       }
-      outcome.scrollIntoView({ block: "start" });
+      status.saving();
+      const body = { book: slug, base, files: [{ path, text: crlf ? text.replace(/\n/g, "\r\n") : text }], message: `Edit “${title}”` };
+      try {
+        let sent;
+        try {
+          sent = await send(body);
+        } catch (err) {
+          // Something else moved the drafts, not this page: the same text on the drafts as they are now.
+          const c = err.status === 409 && err.body?.error === "conflict" ? err.body.conflict : null;
+          if (!c?.head || (c.files ?? []).some((f) => f.path === path)) throw err;
+          sent = await send({ ...body, base: c.head });
+        }
+        base = sent.sha;
+        lastSaved = text;
+        lastSaveAt = Date.now();
+        forgetCount(slug);
+        store.set(key, textarea.value === lastSaved ? null : { base, text: textarea.value });
+        guard(textarea.value !== lastSaved);
+        status.done();
+      } catch (err) {
+        store.set(key, { base, text });
+        status.failed(err, save);
+      }
+    });
+    return queue;
+  };
+  const tick = async () => {
+    timer = null;
+    await check();
+    await save();
+  };
+  textarea.addEventListener("input", () => {
+    guard(true);
+    store.set(key, { base, text: textarea.value });
+    clearTimeout(timer);
+    timer = setTimeout(tick, IDLE_MS);
+  });
+  onLeave = () => {
+    clearTimeout(timer);
+    if (textarea.value !== lastSaved) {
+      lastSaveAt = 0;
+      save();
     }
   };
-  sendBtn.addEventListener("click", go);
 
-  const older = kept && !restored && kept.sha !== file.sha ? kept.text : null;
-  clear(stage,
-    restored ? note([h("p", { text: `This is ${name} as it was ${when(restored.restored.when)}, from its history. Look at Changes to see what restoring it does to the page as it is now, then send it as a new change, or Cancel.` })]) : null,
-    !restored && kept?.sha === file.sha && dirty() ? note([h("p", { text: "Your unsent changes from earlier are back. Send them, or Cancel to discard them." })]) : null,
-    older ? note([
-      h("p", { text: "You had unsent changes to an earlier version of this page, which has changed since. They are below to copy from; the box starts from the page as it is now." }),
-      h("details", {}, h("summary", { text: "Your earlier text" }), h("textarea", { class: "editor-text short", readonly: true, "aria-label": "Your earlier text" }, older)),
-      h("button", { type: "button", class: "btn link", text: "Forget the earlier text", onclick: (e) => {
-        store.set(key, null);
-        e.target.closest(".note").remove();
-      } }),
-    ], "warn") : null,
-    discard,
+  const chapter = path.startsWith("chapters/");
+  const stage = [
+    status.node,
+    restored ? note([h("p", { text: `This is the page as it was ${when(restored.restored.when)}, from its history. It is being saved to the drafts as a new change; Changes shows what it does to the page readers have.` })]) : null,
+    unsaved ? note([h("p", { text: "Your changes from before weren't saved yet. They are back in the box and are being saved now." })]) : null,
     h("div", { class: "editor" },
       h("div", { class: "editor-bar" },
         h("div", { role: "tablist", "aria-label": "Editor view" }, tabs),
-        h("div", { class: "row" }, cancel, sendBtn)),
+        h("a", { class: "btn", href: `#/${slug}`, text: "Done" })),
       panels),
-    h("label", { class: "field" }, "What did you change? ", h("span", { class: "muted", text: "(optional, one line)" }), message),
-    h("p", { class: "muted small", text: "Send makes one change of its own on the drafts area, made by you. Readers see it once the drafts are published, under Waiting for you. If anything else changed the drafts area since you opened this page, nothing is sent and you are shown it." }),
-    outcome);
-  sync();
-
-  return [
-    ...bookHeader(book, "chapters", `Edit ${name.replace(/\.md$/i, "")}`),
-    h("p", { class: "muted small" }, h("code", { text: path }), " · the drafts area, as it was when you opened it"),
-    stage,
+    lintBox,
+    h("p", { class: "row spaced small" },
+      h("a", { href: `#/${slug}/history/${encodeURIComponent(path)}`, text: "History of this page" }),
+      chapter ? h("a", { href: `#/${slug}/tidy/${encodeURIComponent(path)}`, text: "Citations, concept links and glossary" }) : null),
   ];
+  // The restored or unsaved text goes to the drafts straight away; the check runs either way.
+  setTimeout(() => {
+    tick();
+    if (line) goToLine(textarea, line);
+  }, 0);
+
+  return [...bookHeader(book, "chapters", title), ...stage];
 }
