@@ -274,6 +274,7 @@ form.retitle { width: 100%; }
 .badge.status-edited { background: var(--portal-wash); color: var(--portal-accent); }
 .badge.status-new { background: var(--portal-accent); color: var(--portal-bg); }
 .badge.status-removed { background: var(--portal-del); color: var(--portal-danger); }
+.badge.status-missing { background: transparent; color: var(--portal-danger); border: 1px dashed currentColor; }
 .btn.link.danger { color: var(--portal-danger); }
 .btn.danger-solid { background: var(--portal-danger); border-color: var(--portal-danger); color: var(--portal-bg); }
 .confirm-remove p { margin: 0 0 0.5rem; }
