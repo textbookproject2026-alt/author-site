@@ -712,11 +712,11 @@ test("privacy: the first-visit note, OK closes it for good; the footer links Pri
   await page.reload();
   const note = page.getByRole("region", { name: "Privacy" });
   await note.getByText("No tracking cookies. Margin comments are provided by Hypothes.is, which may set its own cookies.").waitFor();
-  assert.equal(await note.getByRole("link", { name: "Privacy" }).getAttribute("href"), "https://confused4now.org/#privacy");
+  assert.equal(await note.getByRole("link", { name: "Privacy" }).getAttribute("href"), "https://confused4now.org/privacy");
   await note.getByRole("button", { name: "OK" }).click();
   assert.equal(await note.count(), 0);
   await page.reload();
   await page.locator("footer.site-foot").waitFor();
   assert.equal(await page.getByRole("region", { name: "Privacy" }).count(), 0);
-  assert.equal(await page.locator("footer.site-foot").getByRole("link", { name: "Privacy" }).getAttribute("href"), "https://confused4now.org/#privacy");
+  assert.equal(await page.locator("footer.site-foot").getByRole("link", { name: "Privacy" }).getAttribute("href"), "https://confused4now.org/privacy");
 });
