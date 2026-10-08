@@ -293,3 +293,11 @@ form.retitle { width: 100%; }
 .btn.big { font-size: 1.15rem; padding: 0.8rem 1.6rem; width: 100%; }
 .published h3 { margin-top: 0; }
 details.jobs { margin-top: 2rem; }
+
+/* The footer, and the first-visit privacy note at the foot of the window. */
+.site-foot { max-width: var(--measure, 60rem); margin: 3rem auto 2rem; padding: 0 1rem; color: var(--portal-muted); font-size: 0.9rem; }
+.site-foot a { color: inherit; }
+.privacy-note { position: fixed; left: 1rem; bottom: 1rem; z-index: 20; max-width: min(26rem, calc(100vw - 2rem)); box-sizing: border-box; padding: 0.75rem 0.9rem; border: 1px solid var(--portal-border); border-radius: 8px; background: var(--portal-bg); color: var(--portal-ink); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); font-size: 0.9rem; line-height: 1.45; }
+.privacy-note p { margin: 0 0 0.6rem; }
+.privacy-actions { display: flex; justify-content: flex-end; }
+@media print { .privacy-note { display: none; } }
