@@ -87,7 +87,9 @@ export async function chaptersScreen(slug) {
   return [
     ...bookHeader(book, "chapters"),
     h("div", { class: "row spaced" },
-      h("a", { class: "btn primary", href: `#/${slug}/import`, text: "Bring in a document" }),
+      h("a", { class: "btn primary", href: `#/${slug}/new/chapter`, text: "New chapter" }),
+      h("a", { class: "btn", href: `#/${slug}/new/concept`, text: "New concept page" }),
+      h("a", { class: "btn", href: `#/${slug}/import`, text: "Bring in a document" }),
       h("a", { class: "btn", href: book.zip, download: "", text: "Download a copy" }),
       discussionUrl(reg) ? h("a", { class: "btn link", href: discussionUrl(reg), target: "_blank", rel: "noopener", text: "Reader discussion" }) : null),
     saved.node,

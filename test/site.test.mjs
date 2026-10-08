@@ -720,3 +720,63 @@ test("privacy: the first-visit note, OK closes it for good; the footer links Pri
   assert.equal(await page.getByRole("region", { name: "Privacy" }).count(), 0);
   assert.equal(await page.locator("footer.site-foot").getByRole("link", { name: "Privacy" }).getAttribute("href"), "https://confused4now.org/#privacy");
 });
+
+// --- writing new pages (9 Oct) ---------------------------------------------------------
+
+test("new chapter: the title and where it goes; chapters/chapter-NN.md with a heading, in the Contents, one change, then the editor", async () => {
+  await signIn();
+  await page.goto(`${origin}/#/a-book`);
+  await page.getByRole("link", { name: "New chapter" }).click();
+  await page.locator("#new-title").fill("Rivers and lakes");
+  await page.locator("#new-where").selectOption({ label: "After “Soils”" });
+  await Promise.all([page.waitForResponse((r) => r.url().includes("author-send")), page.getByRole("button", { name: "Make the chapter" }).click()]);
+  const sent = sends()[0];
+  assert.equal(sent.message, "New chapter “Rivers and lakes”");
+  assert.equal(sent.base, HEAD);
+  assert.deepEqual(sent.files.map((f) => f.path), ["chapters/chapter-05.md", "index.md"]);
+  assert.equal(sent.files[0].text, "# Rivers and lakes\n");
+  assert.match(sent.files[1].text, /- \[\[chapters\/chapter-02\|Soils\]\]\n- \[\[chapters\/chapter-05\|Rivers and lakes\]\]\n- \[\[chapters\/chapter-01\|Chapter 1\]\]/);
+  await page.waitForURL(`${origin}/#/a-book/edit/${encodeURIComponent("chapters/chapter-05.md")}`);
+  await page.getByRole("tab", { name: "Edit" }).waitFor();
+});
+
+test("new concept page: into a folder the book has, or a new one; at the end of the Contents; then the editor", async () => {
+  await signIn();
+  await page.goto(`${origin}/#/a-book/new/concept`);
+  await page.locator("#new-title").fill("Realism");
+  await page.getByRole("button", { name: "Make the concept page" }).click();
+  await page.getByText("There is already a page called that in this folder.").waitFor();
+  assert.equal(sends().length, 0);
+  await page.locator("#new-title").fill("Emergence");
+  await page.locator("#new-folder").selectOption({ label: "A new folder…" });
+  await page.locator("#new-folder-name").fill("Key ideas");
+  await Promise.all([page.waitForResponse((r) => r.url().includes("author-send")), page.getByRole("button", { name: "Make the concept page" }).click()]);
+  const sent = sends()[0];
+  assert.deepEqual(sent.files.map((f) => f.path), ["chapters/Key ideas/Emergence.md", "index.md"]);
+  assert.equal(sent.files[0].text, "# Emergence\n");
+  assert.match(sent.files[1].text, /- \[\[chapters\/Key ideas\/Emergence\|Emergence\]\]\n$/);
+  assert.equal(sent.message, "New concept page “Emergence”");
+  await page.waitForURL(`${origin}/#/a-book/edit/${encodeURIComponent("chapters/Key ideas/Emergence.md")}`);
+});
+
+test("add glossary term: from a chapter, the Glossary page as its own change in A–Z order; on the Glossary, into the text", async () => {
+  await signIn();
+  await openEditor();
+  await page.getByRole("button", { name: "Add glossary term" }).click();
+  await page.locator("#gloss-term").fill("Agency");
+  await page.locator("#gloss-def").fill("the capacity to act");
+  await Promise.all([page.waitForResponse((r) => r.url().includes("author-send")), page.getByRole("button", { name: "Add to the glossary" }).click()]);
+  await page.getByText("“Agency” is in the glossary.").waitFor();
+  const sent = sends().at(-1);
+  assert.deepEqual(sent.files.map((f) => f.path), ["glossary.md"]);
+  assert.equal(sent.files[0].text, "# Glossary\n\n## Agency\n\nThe capacity to act.\n");
+  assert.equal(sent.message, "Add “Agency” to the glossary");
+
+  const box = await openEditor("glossary.md");
+  await page.getByRole("button", { name: "Add glossary term" }).click();
+  await page.locator("#gloss-term").fill("Structure");
+  await page.locator("#gloss-def").fill("What endures.");
+  await page.getByRole("button", { name: "Add to the glossary" }).click();
+  assert.match(await box.inputValue(), /## Structure\n\nWhat endures\.\n$/);
+  await page.getByText(/^Draft saved \d\d:\d\d$/).waitFor();
+});

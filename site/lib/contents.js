@@ -184,3 +184,46 @@ export function titleOf(text) {
   }
   return null;
 }
+
+/**
+ * The glossary with `term` added in the format the glossary run writes
+ * (authoring-assistant glossary.py, _entry_block): "## Term", a blank line, the
+ * definition as a sentence, a blank line, in A–Z order among the "## " entries.
+ * `text` null starts a glossary ("# Glossary"). Throws { userMessage } if the term is
+ * already there (any case) or either part is empty.
+ */
+export function withGlossaryTerm(text, term, definition) {
+  const t = term.replace(/\s+/g, " ").trim().replace(/^#+\s*/, "");
+  let d = definition.replace(/\s+/g, " ").trim();
+  if (!t || !d) throw Object.assign(new Error("empty"), { userMessage: "Give both the term and what it means." });
+  d = d[0].toUpperCase() + d.slice(1);
+  if (!/[.!?:]$/.test(d)) d += ".";
+  const eol = text?.includes("\r\n") ? "\r\n" : "\n";
+  const lines = (text ?? "# Glossary\n").replace(/\r\n/g, "\n").replace(/\n+$/, "").split("\n");
+  const heads = [];
+  let fence = false;
+  lines.forEach((l, i) => {
+    if (/^\s{0,3}(`{3,}|~{3,})/.test(l)) fence = !fence;
+    const m = !fence && /^\s{0,3}#{2,4}\s+(.+?)\s*$/.exec(l);
+    if (m) heads.push({ i, term: m[1].replace(/[*_`]/g, "") });
+  });
+  if (heads.some((x) => x.term.toLowerCase() === t.toLowerCase())) {
+    throw Object.assign(new Error("exists"), { userMessage: `“${t}” is already in the glossary.` });
+  }
+  const block = [`## ${t}`, "", d];
+  const next = heads.find((x) => x.term.localeCompare(t, "en", { sensitivity: "base" }) > 0);
+  if (next) lines.splice(next.i, 0, ...block, "");
+  else lines.push("", ...block);
+  return lines.join(eol) + eol;
+}
+
+/** chapters/chapter-NN.md with the next number after the highest the book has (two digits at least). */
+export function nextChapterPath(paths) {
+  const used = paths.map((p) => /^chapters\/chapter-(\d+)\.md$/i.exec(p)?.[1]).filter(Boolean).map(Number);
+  const n = (used.length ? Math.max(...used) : 0) + 1;
+  return `chapters/chapter-${String(n).padStart(2, "0")}.md`;
+}
+
+/** A page's file name from its title: what a file name can't hold taken out; "" if nothing is left. */
+export const pageFileName = (title) =>
+  title.replace(/[\\/:*?"<>|#^[\]]+/g, " ").replace(/\s+/g, " ").trim().replace(/^\.+/, "");
