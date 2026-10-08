@@ -45,15 +45,12 @@ for (const [label, viewport] of [["desktop", { width: 1100, height: 900 }], ["ph
     await page.goto(`${origin}/#/a-book/edit/${encodeURIComponent("chapters/chapter-01.md")}`); await page.locator("#editor-text").waitFor(); await shot("3-editor");
     await page.getByRole("link", { name: "Edit", exact: true }).click(); await page.locator("#editor-text").fill("# Chapter 1\n\nSome better text about things.\n"); await shot("3b-edit");
     await page.getByRole("tab", { name: "Changes" }).click(); await shot("3c-edit-changes");
-    await page.getByRole("button", { name: "Cancel" }).click(); await page.getByRole("button", { name: "Discard" }).click();
     stub.s.importState = [importDone({ isNew: false })];
     await page.goto(`${origin}/#/a-book/import`); await page.locator("#docx").waitFor(); await shot("4-import");
     await page.locator("#docx").setInputFiles({ name: "Chapter 2.docx", mimeType: "application/octet-stream", buffer: Buffer.from("PK\x03\x04xx") });
     await page.getByRole("button", { name: "Convert it" }).click();
     await page.getByRole("heading", { name: /It replaces/ }).waitFor({ timeout: 15000 }); await page.locator(".preview").waitFor(); await shot("5-import-review");
-    stub.s.sendAnswers = [[409, { error: "conflict", conflict: { head: "b".repeat(40), commits: [{ who: "reader", when: new Date().toISOString(), message: "A browser edit", url: "https://github.com/x" }], files: [{ path: "chapters/chapter-02.md", status: "modified", patch: "@@ -3,3 +3,3 @@\n Converted from Word.\n-The the domains of reality.\n+The three domains of reality.\n " }] } }]];
-    await page.getByLabel("I've read the converted chapter").check(); await page.getByLabel(/Replace the/).check();
-    await page.getByRole("button", { name: "Send to drafts" }).click(); await page.getByText("Nothing was sent.").waitFor(); await shot("6-conflict");
+    await page.getByRole("button", { name: /^Replace/ }).click(); await page.getByText("was replaced in the drafts").waitFor(); await shot("6-import-done");
     await page.goto(`${origin}/#/a-book/drafts`); await page.getByRole("button", { name: /^Publish/ }).waitFor(); await shot("7-drafts");
     await page.goto(`${origin}/#/a-book/suggestion/7`); await page.getByText("What they suggest").waitFor(); await shot("8-suggestion");
     await page.goto(`${origin}/#/settings`); await page.locator("#key-input").fill("sk-abcdefgh9876"); await page.getByRole("button", { name: "Save key" }).click(); await page.getByText("The key works.").waitFor(); await shot("11-settings");
