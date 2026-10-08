@@ -4,6 +4,7 @@
 // one change on the drafts area, made by the author. The questions themselves are the
 // app's own Python (python.js); this file only asks and shows.
 
+import { rawText, titlesFrom } from "./drafts.js";
 import { h, clear, busy, note, errorNote, plural } from "./dom.js";
 import { read, send } from "./api.js";
 import { bookBySlug, bookHeader, rawUrl } from "./books.js";
@@ -52,7 +53,8 @@ export async function tidyScreen(slug, path) {
   const book = await bookBySlug(slug);
   const stage = h("div", { "aria-live": "polite" });
   options(book, path, stage);
-  return [...bookHeader(book, "chapters", `Citations, concept links and glossary: ${path.split("/").pop().replace(/\.md$/i, "")}`), stage];
+  const name = titlesFrom(await rawText(book.repo, book.drafts_branch, "index.md").catch(() => null)).get(path, await rawText(book.repo, book.drafts_branch, path).catch(() => null));
+  return [...bookHeader(book, "chapters", `Citations, concept links and glossary: “${name}”`), stage];
 }
 
 function options(book, path, stage, problem) {
@@ -73,14 +75,14 @@ function options(book, path, stage, problem) {
   const anchor = (value, text, checked) => h("label", { class: "confirm" }, h("input", { type: "radio", name: "anchor", value, checked }), h("span", { text }));
   const go = h("button", { type: "submit", class: "btn primary", text: "Look through this chapter" });
   const form = h("form", {},
-    h("p", { text: "One question at a time: each shows the sentence and the change. Nothing reaches the book until you've seen every change together and pressed Send." }),
+    h("p", { text: "One question at a time: each shows the sentence and the change. Nothing reaches the book until you've seen every change together and pressed Save to drafts." }),
     h("h2", { text: "What should it look for?" }), refs, terms, gloss, format,
     h("details", {}, h("summary", { text: "A few more choices" }), first, deepseek,
       h("p", { class: "muted", text: "How should citation links work?" }),
       anchor("obsidian", "Mark each entry in the reference list and link straight to it (recommended). A short tag such as ^bhaskar-1975 goes at the end of the entry; the book's website follows these links.", true),
       anchor("html", "Put a plain web anchor in front of each entry instead, for exporting the chapter with pandoc.", false)),
     problem ? errorNote(problem) : null,
-    h("div", { class: "actions" }, go, h("a", { class: "btn link", href: `#/${book.slug}/chapter/${encodeURIComponent(path)}`, text: "Back to the chapter" })));
+    h("div", { class: "actions" }, go, h("a", { class: "btn link", href: `#/${book.slug}/edit/${encodeURIComponent(path)}`, text: "Back to the chapter" })));
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const analyses = [["opt-references", "references"], ["opt-terms", "terms"], ["opt-glossary", "glossary"], ["opt-format", "format"]]
@@ -187,13 +189,13 @@ async function preview(book, path, stage, opts, result, state, snap) {
   const notes = [...result.warnings, ...result.notes, ...(p.format_skipped ?? []).map((n) =>
     `The formatting fix for line ${n} was left out, because you chose another change on the same line. Run the formatting check again after sending.`)].map(inBrowser);
   const tick = h("input", { type: "checkbox", id: "tidy-confirm" });
-  const go = h("button", { type: "button", class: "btn primary", text: "Send to drafts", disabled: true });
+  const go = h("button", { type: "button", class: "btn primary", text: "Save to drafts", disabled: true });
   tick.addEventListener("change", () => { go.disabled = !tick.checked; });
   const outcome = h("div", { class: "outcome", "aria-live": "polite" });
 
   go.addEventListener("click", async () => {
     go.disabled = true;
-    clear(outcome, busy("Sending it to the drafts area…"));
+    clear(outcome, busy("Saving it to the drafts…"));
     const what = [c.references ? "citations" : null, c.terms || c.expanded ? "concept links" : null, c.glossary ? "glossary" : null, c.format ? "formatting" : null].filter(Boolean);
     try {
       const sent = await send({
@@ -201,7 +203,7 @@ async function preview(book, path, stage, opts, result, state, snap) {
         files: Object.entries(out.files).map(([file, text]) => ({ path: file, text })),
         message: `Tidy ${path.split("/").pop()}: ${what.join(", ") || "links"}`,
       });
-      clear(stage, ...sentView(book, sent, "Sent to the drafts area"));
+      clear(stage, ...sentView(book, sent, "Saved to the drafts"));
     } catch (err) {
       if (err.status !== 409 || err.body?.error !== "conflict") {
         clear(outcome, errorNote(err));
@@ -239,14 +241,14 @@ async function preview(book, path, stage, opts, result, state, snap) {
         : h("p", { class: "muted", text: "No lines of the chapter itself will change." }),
       p.glossary_added.length ? [
         h("h3", { text: "Your glossary" }),
-        h("p", { class: "muted small", text: `${p.glossary_path}${p.glossary_exists ? "" : " (this file will be created)"}` }),
+        h("p", { class: "muted small", text: p.glossary_exists ? "Into the book's glossary." : "Into a new glossary for the book." }),
         p.glossary_added.map((term) => {
           const i = glossaryAfter.findIndex((l) => l.trim() === `## ${term}`);
           const def = i >= 0 ? (glossaryAfter.slice(i + 1, i + 4).find((l) => l.trim()) ?? "") : "";
           return h("div", { class: "card" }, h("strong", { text: term }), h("div", { text: def.trim() }));
         }),
       ] : null,
-      note([h("p", { text: "When you press Send, these changes go to the drafts area as one change of their own, made by you. Only the lines shown above change. If anything else changed the drafts area while you were looking, nothing is sent and you are shown it." })]),
+      note([h("p", { text: "When you press Save to drafts, these changes go to the drafts as one change of their own, made by you. Only the lines shown above change. If anything else changed the drafts area while you were looking, nothing is saved and you are shown it." })]),
       h("label", { class: "confirm" }, tick, h("span", { text: "I have read the changes above and I want to send them to the drafts area." })),
     ],
     h("div", { class: "actions" },
@@ -255,6 +257,6 @@ async function preview(book, path, stage, opts, result, state, snap) {
         state.index = Math.min(state.index, result.findings.length - 1);
         question(book, path, stage, opts, result, state, snap);
       } }) : null,
-      h("a", { class: "btn link", href: `#/${book.slug}/chapter/${encodeURIComponent(path)}`, text: "Back to the chapter" })),
+      h("a", { class: "btn link", href: `#/${book.slug}/edit/${encodeURIComponent(path)}`, text: "Back to the chapter" })),
     outcome);
 }

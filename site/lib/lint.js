@@ -1,4 +1,4 @@
-// The book's own lint, in the browser, before Send: markdownlint 0.38.0 (the version
+// The book's own lint, in the browser, as the author types: markdownlint 0.38.0 (the version
 // the books' lint workflow runs: markdownlint-cli2-action@v20 → cli2 0.18.1) with the
 // book's .markdownlint-cli2.yaml at the drafts commit the page was read at. What it
 // can put right itself (blank lines, spacing) it does; anything left is said in plain
@@ -136,3 +136,36 @@ export function fixedWords(fixed) {
 
 /** A rule's plain words (for problems the function found before Publish). */
 export const ruleWords = (rule, description = "") => WORDS[rule] ?? (description ? `${description}.` : rule);
+
+const lineAt = (text, pos) => text.slice(0, pos).split("\n").length;
+
+/**
+ * The editor's live check: lints the page with the book's rules and puts right what
+ * markdownlint can, except on the line the caret is on (that one is still being
+ * typed). -> { text, caret, problems, fixed: [rule] }: the caret moves with its text.
+ */
+export async function lintLive(book, commit, path, original, caret) {
+  const options = await bookLintConfig(book, commit);
+  if (!/\.md$/i.test(path) || options.ignores.some((re) => re.test(path))) return { text: original, caret, problems: [], fixed: [] };
+  const [mdl] = await load();
+  const run = async (text) => (await mdl.lintPromise({ strings: { [path]: text }, config: options.config, handleRuleFailures: true }))[path];
+  const MARK = "⁣";
+  let text = original;
+  let pos = caret;
+  const fixed = new Set();
+  const notHere = (e) => (e.fixInfo.lineNumber ?? e.lineNumber) !== lineAt(text, pos) && e.lineNumber !== lineAt(text, pos);
+  for (let round = 0; round < 3; round++) {
+    const errors = (await run(text)).filter((e) => e.fixInfo && notHere(e));
+    if (!errors.length) break;
+    const next = mdl.applyFixes(text.slice(0, pos) + MARK + text.slice(pos), errors);
+    const at = next.indexOf(MARK);
+    if (at < 0) break; // the caret's own line went: leave the text as it was
+    const unmarked = next.slice(0, at) + next.slice(at + 1);
+    if (unmarked === text) break;
+    errors.forEach((e) => fixed.add(e.ruleNames[0]));
+    text = unmarked;
+    pos = at;
+  }
+  const problems = (await run(text)).filter((e) => !(e.fixInfo && !notHere(e))).map(describe);
+  return { text, caret: pos, problems, fixed: [...fixed] };
+}

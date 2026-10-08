@@ -15,6 +15,7 @@ export const REPO = "someone/a-book";
 export const HEAD = "a".repeat(40);
 export const MOVED = "b".repeat(40);
 export const SENT = "c".repeat(40);
+export const LIVE = "d".repeat(40);
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAcCBlCwAAAABJRU5ErkJggg==", "base64");
 
 export const BOOK = {
@@ -32,6 +33,14 @@ const REGISTRY = {
 export const LINT_CONFIG = readFileSync(new URL("./fixtures/markdownlint-cli2.yaml", import.meta.url), "utf8");
 const CH1 = "# Chapter 1\n\nSome text about ![a figure](../assets/chapter-01/image1.png) things.\n";
 const CH2 = "# Chapter 2: Soils\n\nConverted from Word.\n\n![A soil profile](../assets/chapter-02/image1.png)\n";
+// The book as readers have it (live) and as the drafts hold it: chapter 1 edited, Rocks
+// removed, Water new, Soils moved first, one new picture.
+export const INDEX_LIVE = "# A Book of Things\n\nAn introduction.\n\n## Contents\n\n- [[chapters/chapter-01|Chapter 1]]\n- [[chapters/chapter-02|Soils]]\n- [[chapters/chapter-03|Rocks]]\n";
+export const INDEX_DRAFTS = "# A Book of Things\n\nAn introduction.\n\n## Contents\n\n- [[chapters/chapter-02|Soils]]\n- [[chapters/chapter-01|Chapter 1]]\n- [[chapters/chapter-04|Water]]\n";
+export const CH1_DRAFTS = CH1.replace("Some text", "Some new text");
+export const ROCKS = "# Rocks\n\nHard things.\n";
+const LIVE_FILES = { "chapters/chapter-01.md": CH1, "chapters/chapter-02.md": CH2, "chapters/chapter-03.md": ROCKS, "chapters/Definitions/Realism.md": "# Realism\n", "index.md": INDEX_LIVE, "glossary.md": "# Glossary\n" };
+const DRAFT_FILES = { "chapters/chapter-01.md": CH1_DRAFTS, "chapters/chapter-02.md": CH2, "chapters/chapter-04.md": "# Water\n\nWet things.\n", "chapters/Definitions/Realism.md": "# Realism\n", "index.md": INDEX_DRAFTS, "glossary.md": "# Glossary\n" };
 
 // What the DeepSeek stub answers: llm.suggest_terms' request (its system prompt is
 // about a glossary) and formatting.check's (everything else), as llm.py reads them.
@@ -47,16 +56,7 @@ export function createStub({ siteOrigin }) {
     requests: [],
     signedIn: { token: "tok-1", login: "author-one", id: 5, name: "Author One" },
     books: [BOOK],
-    tree: {
-      head: HEAD,
-      files: [
-        { path: "chapters/chapter-01.md", sha: "1".repeat(40), size: 90 },
-        { path: "chapters/Definitions/Realism.md", sha: "2".repeat(40), size: 30 },
-        { path: "assets/chapter-01/image1.png", sha: "3".repeat(40), size: 70 },
-        { path: "index.md", sha: "4".repeat(40), size: 50 },
-        { path: "glossary.md", sha: "5".repeat(40), size: 12 },
-      ],
-    },
+    tree: null, // made from bookFiles below
     importState: [], // successive answers for GET author-import status
     importResult: null,
     sendAnswers: [], // successive answers for author-send: [status, body]
@@ -109,14 +109,25 @@ export function createStub({ siteOrigin }) {
       if (what === "tree") return json(route, 200, s.tree);
       if (what === "file") {
         const path = url.searchParams.get("path");
-        const text = s.bookFiles.has(path) ? s.bookFiles.get(path).toString("utf8") : path === "chapters/chapter-01.md" ? CH1 : `# ${path}\n`;
+        const text = s.bookFiles.has(path) ? s.bookFiles.get(path).toString("utf8") : `# ${path}\n`;
         return json(route, 200, { path, sha: "1".repeat(40), text, last: { who: "author-one", when: new Date().toISOString(), message: "Tidy", url: "" } });
       }
       if (what === "suggestions") return json(route, 200, { suggestions: s.suggestions });
       if (what === "suggestion-changes") return json(route, 200, { page: "chapter-01", changes: [{ sha: SENT, url: `https://github.com/${REPO}/commit/${SENT}`, who: "author-one", when: new Date().toISOString(), message: "Reword" }] });
       if (what === "changes") return json(route, 200, { changes: s.changes });
       if (what === "change") return json(route, 200, s.change);
-      if (what === "publish") return json(route, 200, { publish: s.publish });
+      if (what === "publish") return s.publishError ? json(route, 502, { error: "x", userMessage: "GitHub didn't answer." }) : json(route, 200, { publish: s.publish });
+      if (what === "drafts") {
+        const paths = new Set([...s.liveFiles.keys(), ...s.bookFiles.keys()]);
+        const files = [...paths].sort().flatMap((path) => {
+          const a = s.liveFiles.get(path);
+          const b = s.bookFiles.get(path);
+          if (a && b && a.equals(b)) return [];
+          return [{ path, status: !a ? "added" : !b ? "removed" : "modified", who: "author-one", when: new Date(Date.now() - 600e3).toISOString() }];
+        });
+        if (s.tree.files.some((f) => f.path === "assets/chapter-04/image1.png")) files.push({ path: "assets/chapter-04/image1.png", status: "added", who: "author-one", when: new Date().toISOString() });
+        return json(route, 200, { live: LIVE, drafts: s.tree.head, files, more: 0 });
+      }
     }
     if (endpoint === "author-import") {
       if (req.method() === "POST" && typeof body.part === "string") return json(route, 201, { receipt: `receipt-${s.requests.filter((r) => r.body?.part).length}` });
@@ -189,6 +200,7 @@ export function createStub({ siteOrigin }) {
   /** Serve a real book (a folder) as the drafts: tree with git blob ids, files by path. */
   function useBook(dir) {
     const files = [];
+    s.bookFiles = new Map();
     const walk = (at) => {
       for (const name of readdirSync(join(dir, at))) {
         const rel = at ? `${at}/${name}` : name;
@@ -203,7 +215,9 @@ export function createStub({ siteOrigin }) {
     walk("");
     s.tree = { head: HEAD, files };
   }
-  s.bookFiles = new Map();
+  s.bookFiles = new Map(Object.entries(DRAFT_FILES).map(([p, t]) => [p, Buffer.from(t)]));
+  s.liveFiles = new Map(Object.entries(LIVE_FILES).map(([p, t]) => [p, Buffer.from(t)]));
+  s.tree = { head: HEAD, files: [...[...s.bookFiles].map(([path, b]) => ({ path, sha: gitBlob(b), size: b.length })), { path: "assets/chapter-01/image1.png", sha: "3".repeat(40), size: 70 }, { path: "assets/chapter-04/image1.png", sha: "6".repeat(40), size: 70 }] };
   s.lintConfig = LINT_CONFIG;
 
   async function raw(route) {
@@ -214,10 +228,12 @@ export function createStub({ siteOrigin }) {
       return s.lintConfig === null ? route.fulfill({ status: 404, headers: cors, body: "" })
         : route.fulfill({ status: 200, contentType: "text/plain", headers: cors, body: s.lintConfig });
     }
-    const prefix = `/${REPO}/${HEAD}/`;
-    if (url.pathname.startsWith(prefix)) {
-      const path = decodeURIComponent(url.pathname.slice(prefix.length));
-      if (s.bookFiles.has(path)) return route.fulfill({ status: 200, contentType: "text/plain", headers: cors, body: s.bookFiles.get(path) });
+    const m = new RegExp(`^/${REPO}/([^/]+)/(.+)$`).exec(url.pathname);
+    if (m && !url.pathname.endsWith(".png")) {
+      const [ref, path] = [m[1], decodeURIComponent(m[2])];
+      const files = ref === LIVE || ref === "main" ? s.liveFiles : s.bookFiles;
+      return files.has(path) ? route.fulfill({ status: 200, contentType: "text/plain", headers: cors, body: files.get(path) })
+        : route.fulfill({ status: 404, headers: cors, body: "" });
     }
     if (url.pathname.endsWith("/registry.json")) return route.fulfill({ status: 200, contentType: "application/json", headers: cors, body: JSON.stringify(s.registry ?? REGISTRY) });
     if (url.pathname.endsWith(".png")) return route.fulfill({ status: 200, contentType: "image/png", headers: cors, body: PNG });

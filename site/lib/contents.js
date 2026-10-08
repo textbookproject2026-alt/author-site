@@ -118,3 +118,69 @@ export function retitledChapter(text, title) {
   lines.splice(bodyFrom, 0, `# ${clean}`, "");
   return lines.join(eol);
 }
+
+/** index.md with the Contents items listed by `order` only (indexes into parsed.items): the rest go. */
+export const withoutPath = (parsed, path) => withOrder(parsed, parsed.items.map((_, k) => k).filter((k) => parsed.items[k].path !== path));
+
+/** index.md with an item of `lines` put in the Contents at position `at`. */
+export function withItem(parsed, lines, at) {
+  const items = [...parsed.items];
+  items.splice(Math.max(0, Math.min(at, items.length)), 0, { lines });
+  return withOrder({ ...parsed, items }, items.map((_, i) => i));
+}
+
+/** A Contents line for `path` called `title`, written the way the list's first item is. */
+export function itemLine(parsed, path, title) {
+  const target = path.replace(/\.md$/i, "");
+  const first = parsed.items[0]?.lines[0];
+  if (!first || !LINK.test(first)) return `- [[${target}|${safeLabel(title)}]]`;
+  return first.replace(LINK, (all, wiki, _f, _o, _t, href, rest) =>
+    (wiki ? `[[${target}|${safeLabel(title)}]]` : `[${safeLabel(title).replace(/[[\]]/g, "")}](${encodeURI(target)}${/\.md$/i.test(href) ? ".md" : ""}${rest ?? ""})`));
+}
+
+/** The drafts' Contents (`parsed`) put back in the order of `livePaths`, for the items both have; the others keep their places. */
+export function orderLike(parsed, livePaths) {
+  const rank = new Map(livePaths.map((p, i) => [p, i]));
+  const slots = parsed.items.map((_, k) => k).filter((k) => rank.has(parsed.items[k].path));
+  const sorted = [...slots].sort((a, b) => rank.get(parsed.items[a].path) - rank.get(parsed.items[b].path));
+  const order = parsed.items.map((_, k) => k);
+  slots.forEach((slot, i) => {
+    order[slot] = sorted[i];
+  });
+  return withOrder(parsed, order);
+}
+
+/** The front page's text outside its Contents list (what "the front page changed" means). */
+export function outsideContents(text) {
+  const p = parseContents(text);
+  if (!p || p.problem) return text.replace(/\r\n/g, "\n");
+  return [...p.lines.slice(0, p.start + 1), ...p.lines.slice(p.end)].join("\n");
+}
+
+/** `liveText` (index.md as readers have it) with the Contents list of `draftsText`. */
+export function withContentsOf(liveText, draftsText) {
+  const live = parseContents(liveText);
+  const drafts = parseContents(draftsText);
+  if (!live || live.problem || !drafts || drafts.problem) return liveText;
+  return [...live.lines.slice(0, live.start + 1), ...drafts.lines.slice(drafts.start + 1, drafts.end), ...live.lines.slice(live.end)].join(live.eol);
+}
+
+/** A page's title: its front matter's title:, else its first # heading; null if neither. */
+export function titleOf(text) {
+  if (typeof text !== "string") return null;
+  const lines = text.split(/\r?\n/);
+  let i = 0;
+  if (lines[0] === "---") {
+    const close = lines.findIndex((l, k) => k > 0 && /^---\s*$/.test(l));
+    for (let k = 1; k < close; k++) {
+      const m = /^title\s*:\s*(.+)$/.exec(lines[k]);
+      if (m) return m[1].trim().replace(/^(["'])(.*)\1$/, "$2");
+    }
+    i = close + 1;
+  }
+  for (; i < lines.length; i++) {
+    const m = /^#\s+(.+?)\s*#*\s*$/.exec(lines[i]);
+    if (m) return m[1];
+  }
+  return null;
+}
