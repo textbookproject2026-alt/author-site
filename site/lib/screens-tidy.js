@@ -1,13 +1,20 @@
-// The link and glossary questions, as the desktop app asked them: citations linked to
+// Links & glossary: the link and glossary questions, as the desktop app asked them: citations linked to
 // the chapter's own reference list, mentions of concept pages linked to them, and terms
 // worth a glossary entry, one question at a time; then exactly what will change; then
-// one change on the drafts area, made by the author. The questions themselves are the
-// app's own Python (python.js); this file only asks and shows.
+// one change on the drafts, made by the author, which Drafts lists like any other.
+// The questions themselves are the app's own Python (python.js); this file only asks
+// and shows.
+//
+// Book-wide (#/<book>/tidy-all/<glossary|concepts>[/<n>], from Chapters): the same
+// questions for one kind of thing, chapter by chapter in reading order, each chapter
+// saved as its own change before the next is read (so each sees the glossary as the
+// one before left it).
 
-import { rawText, titlesFrom } from "./drafts.js";
+import { forgetCount, rawText, titlesFrom } from "./drafts.js";
 import { h, clear, busy, note, errorNote, plural } from "./dom.js";
 import { read, send } from "./api.js";
 import { bookBySlug, bookHeader, rawUrl } from "./books.js";
+import { parseContents } from "./contents.js";
 import { analyse, changes } from "./python.js";
 import { deepseekKey } from "./deepseek.js";
 import { conflictView, sentView } from "./screens-shared.js";
@@ -49,12 +56,60 @@ async function snapshot(book) {
 // are reworded here rather than forked. Add a case if the converter adds one.
 const inBrowser = (note) => note.replace(/ on this Mac/g, " in this browser").replace(/ by running Setup again/g, " in Settings");
 
+/** The book-wide run in progress, or null for one chapter: { kind, n, total, next, name }. */
+let tour = null;
+let name = "";
+const tourNext = () => h("a", { class: "btn primary", href: tour.next, text: tour.n + 1 < tour.total ? "Next chapter" : "Finish" });
+
 export async function tidyScreen(slug, path) {
+  tour = null;
   const book = await bookBySlug(slug);
   const stage = h("div", { "aria-live": "polite" });
+  name = titlesFrom(await rawText(book.repo, book.drafts_branch, "index.md").catch(() => null)).get(path, await rawText(book.repo, book.drafts_branch, path).catch(() => null));
   options(book, path, stage);
-  const name = titlesFrom(await rawText(book.repo, book.drafts_branch, "index.md").catch(() => null)).get(path, await rawText(book.repo, book.drafts_branch, path).catch(() => null));
-  return [...bookHeader(book, "chapters", `Citations, concept links and glossary: “${name}”`), stage];
+  return [...bookHeader(book, "chapters", `Links & glossary: “${name}”`), stage];
+}
+
+/** The chapters a book-wide run goes through: reading order, then the rest; never the concept pages themselves. */
+async function chaptersInOrder(book) {
+  const tree = await read("tree", { book: book.slug });
+  const known = new Set(tree.files.map((f) => f.path));
+  const index = known.has("index.md") ? await read("file", { book: book.slug, path: "index.md", ref: tree.head }) : null;
+  const parsed = typeof index?.text === "string" ? parseContents(index.text) : null;
+  const ok = (p) => p && known.has(p) && /^chapters\/.+\.md$/i.test(p) && !CONCEPT_FOLDERS.test(p);
+  const listed = (parsed && !parsed.problem ? parsed.items.map((i) => i.path) : []).filter(ok);
+  const rest = tree.files.map((f) => f.path).filter((p) => ok(p) && !listed.includes(p) && !p.slice("chapters/".length).includes("/")).sort();
+  return { paths: [...new Set([...listed, ...rest])], titles: titlesFrom(index?.text), hasConcepts: tree.files.some((f) => CONCEPT_FOLDERS.test(f.path)) };
+}
+
+const KINDS = {
+  glossary: { title: "Glossary terms in every chapter", analyses: ["glossary"] },
+  concepts: { title: "Concept links in every chapter", analyses: ["terms"] },
+};
+
+export async function tidyAllScreen(slug, kind, n = 0) {
+  const book = await bookBySlug(slug);
+  const k = KINDS[kind];
+  const { paths, titles, hasConcepts } = await chaptersInOrder(book);
+  const header = bookHeader(book, "chapters", k.title);
+  const stop = h("a", { class: "btn link", href: `#/${slug}`, text: "Stop and go back to the chapters" });
+  if (kind === "concepts" && !hasConcepts) {
+    return [...header, note([h("p", { text: "This book has no concept pages yet, so there is nothing to link to. Bring a document into the concept folder (Bring in a document › Where it goes), then come back." })]), stop];
+  }
+  if (n >= paths.length) {
+    tour = null;
+    return [...header, note([h("p", { text: `Done: every chapter has been through. Each one you saved is on Drafts, ready to publish.` })]),
+      h("div", { class: "actions" }, h("a", { class: "btn primary", href: `#/${slug}/drafts`, text: "Drafts" }), h("a", { class: "btn", href: `#/${slug}`, text: "Back to the chapters" }))];
+  }
+  const path = paths[n];
+  name = titles.get(path, await rawText(book.repo, book.drafts_branch, path).catch(() => null));
+  tour = { kind, n, total: paths.length, next: `#/${slug}/tidy-all/${kind}/${n + 1}` };
+  const stage = h("div", { "aria-live": "polite" });
+  run(book, path, stage, { analyses: k.analyses, first_mention_only: true, anchor_style: "obsidian", use_deepseek: kind === "glossary" && Boolean(deepseekKey()) });
+  return [...header,
+    h("p", { class: "muted" }, `Chapter ${n + 1} of ${paths.length}: `, h("strong", { text: `“${name}”` })),
+    h("div", { class: "row spaced" }, h("a", { class: "btn", href: tour.next, text: "Skip this chapter" }), stop),
+    stage];
 }
 
 function options(book, path, stage, problem) {
@@ -106,9 +161,12 @@ async function run(book, path, stage, opts, keep) {
     if (!snap.files[path]) throw Object.assign(new Error("gone"), { userMessage: "That chapter isn't in the drafts area any more." });
     result = await analyse(snap, got.blobs, path, opts, say);
   } catch (err) {
+    if (tour) return clear(stage, errorNote(err), h("div", { class: "actions" }, tourNext()));
     return options(book, path, stage, err);
   }
   const state = keep ?? { index: 0, decisions: {}, groupRule: {}, expand: [] };
+  // Book-wide: a chapter with nothing to ask about is passed by.
+  if (tour && !result.findings.length) return void location.replace(tour.next);
   // Nothing to ask, or the author's choices carried over after the drafts moved on
   // (the chapter and glossary unchanged): straight to what will change.
   if (!result.findings.length || keep) return preview(book, path, stage, opts, result, state, snap);
@@ -201,9 +259,11 @@ async function preview(book, path, stage, opts, result, state, snap) {
       const sent = await send({
         book: book.slug, base: snap.head,
         files: Object.entries(out.files).map(([file, text]) => ({ path: file, text })),
-        message: `Tidy ${path.split("/").pop()}: ${what.join(", ") || "links"}`,
+        message: `Links & glossary for “${name}”: ${what.join(", ") || "links"}`,
       });
-      clear(stage, ...sentView(book, sent, "Saved to the drafts"));
+      forgetCount(book.slug);
+      if (tour) return clear(stage, note([h("p", { text: `Saved to the drafts: “${name}”.` })]), h("div", { class: "actions" }, tourNext()));
+      clear(stage, ...sentView(book, sent, "Saved to the drafts", [], h("a", { class: "btn primary", href: `#/${book.slug}/edit/${encodeURIComponent(path)}`, text: "Back to the chapter" })));
     } catch (err) {
       if (err.status !== 409 || err.body?.error !== "conflict") {
         clear(outcome, errorNote(err));
@@ -257,6 +317,6 @@ async function preview(book, path, stage, opts, result, state, snap) {
         state.index = Math.min(state.index, result.findings.length - 1);
         question(book, path, stage, opts, result, state, snap);
       } }) : null,
-      h("a", { class: "btn link", href: `#/${book.slug}/edit/${encodeURIComponent(path)}`, text: "Back to the chapter" })),
+      tour ? tourNext() : h("a", { class: "btn link", href: `#/${book.slug}/edit/${encodeURIComponent(path)}`, text: "Back to the chapter" })),
     outcome);
 }

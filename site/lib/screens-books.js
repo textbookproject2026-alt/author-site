@@ -9,6 +9,7 @@ import { parseContents, retitledChapter, withLabel, withOrder, withoutPath } fro
 import { bookBySlug, bookHeader, myBooks } from "./books.js";
 import { draftItems, forgetCount, titlesFrom } from "./drafts.js";
 import { savedAt } from "./screens-shared.js";
+import { discussionUrl, registryBook } from "./public.js";
 
 export async function booksScreen() {
   const { login, books } = await myBooks();
@@ -40,7 +41,7 @@ const edit = (slug, path) => `#/${slug}/edit/${encodeURIComponent(path)}`;
 
 export async function chaptersScreen(slug) {
   const book = await bookBySlug(slug);
-  const [tree, state] = await Promise.all([read("tree", { book: slug }), draftItems(book, { texts: false }).catch(() => null)]);
+  const [tree, state, reg] = await Promise.all([read("tree", { book: slug }), draftItems(book, { texts: false }).catch(() => null), registryBook(slug)]);
   const known = new Set(tree.files.map((f) => f.path));
   const index = known.has("index.md") ? await read("file", { book: slug, path: "index.md", ref: tree.head }) : null;
   const titles = titlesFrom(state?.liveIndex, index?.text);
@@ -53,7 +54,14 @@ export async function chaptersScreen(slug) {
   const parsed = typeof index?.text === "string" ? parseContents(index.text) : null;
   const usable = parsed && !parsed.problem && parsed.items.length ? parsed : null;
   const listed = new Set(usable?.items.map((i) => i.path) ?? []);
-  const rest = pages.filter((f) => !listed.has(f.path));
+  const unlisted = pages.filter((f) => !listed.has(f.path));
+  // Pages in a folder inside chapters (concept pages, say) under the folder's name, as before.
+  const rest = unlisted.filter((f) => !f.path.slice("chapters/".length).includes("/"));
+  const folders = new Map();
+  for (const f of unlisted.filter((x) => x.path.slice("chapters/".length).includes("/"))) {
+    const folder = f.path.slice("chapters/".length, f.path.lastIndexOf("/"));
+    folders.set(folder, [...(folders.get(folder) ?? []), f]);
+  }
   const pageRow = (path) => h("li", { class: "row" },
     h("a", { class: "grow", href: edit(slug, path), text: titles.get(path) }), badge(path));
 
@@ -62,7 +70,8 @@ export async function chaptersScreen(slug) {
     ...bookHeader(book, "chapters"),
     h("div", { class: "row spaced" },
       h("a", { class: "btn primary", href: `#/${slug}/import`, text: "Bring in a document" }),
-      h("a", { class: "btn", href: book.zip, download: "", text: "Download a copy" })),
+      h("a", { class: "btn", href: book.zip, download: "", text: "Download a copy" }),
+      discussionUrl(reg) ? h("a", { class: "btn link", href: discussionUrl(reg), target: "_blank", rel: "noopener", text: "Reader discussion" }) : null),
     saved.node,
     usable ? readingOrder(book, tree, usable, titles, badge, saved) : [
       h("h2", { text: "Chapters" }),
@@ -75,6 +84,14 @@ export async function chaptersScreen(slug) {
       h("p", { class: "muted small" }, "Changed your mind? Discard it under ", h("a", { href: `#/${slug}/drafts`, text: "Drafts" }), ", or bring it back from History."),
     ] : null,
     rest.length ? [h("h3", { text: usable ? "Other pages" : "Pages" }), h("ul", { class: "list" }, rest.map((f) => pageRow(f.path)))] : null,
+    [...folders].map(([folder, list]) => [h("h3", { text: folder }), h("ul", { class: "list" }, list.map((f) => pageRow(f.path)))]),
+    h("h2", { text: "Across the whole book" }),
+    h("p", { class: "muted small", text: "The Links & glossary questions for every chapter in turn, one kind at a time. Each chapter you save becomes a change on Drafts. For one chapter, use Links & glossary in its editor." }),
+    h("div", { class: "row spaced" },
+      h("a", { class: "btn", href: `#/${slug}/tidy-all/glossary`, text: "Glossary terms in every chapter" }),
+      folders.size
+        ? h("a", { class: "btn", href: `#/${slug}/tidy-all/concepts`, text: "Concept links in every chapter" })
+        : h("span", { class: "muted small", text: "Concept links: the book has no concept pages yet (bring a document into a concept folder)." })),
     h("h3", { text: "The rest of the book" }),
     h("ul", { class: "list" },
       known.has("index.md") ? pageRow("index.md") : null,

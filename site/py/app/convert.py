@@ -553,6 +553,9 @@ def convert(docx_path, md_name, folder):
                                + str(e))
 
     text, media = _collect_media(stage, text, dest["link_prefix"])
+    text = one_h1(text)
+    text, made = emphasis_headings(text)
+    text = keep_front_matter(os.path.join(folder, md_name), text)
 
     warnings = [w for w in (proc.stderr or "").strip().split("\n") if w.strip()]
     return {
@@ -564,7 +567,146 @@ def convert(docx_path, md_name, folder):
         "pandoc_warnings": warnings[:12],
         "docx": os.path.abspath(docx_path),
         "md_name": md_name,
+        "emphasis_headings": made,
     }
+
+
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def one_h1(text):
+    """Keeps the first `# ` heading and makes every later one `## `.
+
+    A Word "Heading 1" after the chapter title (References, say) comes out as
+    a second H1, which the book's lint refuses (MD025) and which reads as a
+    second title. Headings inside fenced code are left alone. Runs on pandoc's
+    output, before keep_front_matter adds any front matter back.
+    """
+    out, seen, fence = [], False, None
+    for line in text.splitlines(keepends=True):
+        m = _FENCE.match(line)
+        if fence:
+            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence):
+                fence = None
+        elif m:
+            fence = m.group(1)
+        elif line.startswith("# ") or line.rstrip("\r\n") == "#":
+            if seen:
+                line = "#" + line
+            seen = True
+        out.append(line)
+    return "".join(out)
+
+
+# A paragraph that is one line of bold and/or italic and nothing else: ***x***,
+# **x**, *x*, and the same with underscores. The delimiter may not appear inside,
+# so "**a** and **b**" is not one.
+_EMPHASIS_LINE = re.compile(r"^(\*{1,3}|_{1,3})(?![\s*_])([^*_]+?)(?<!\s)\1:?\s*$")
+_HEADING_MAX = 90       # as long as a heading written by hand gets (BOLD_ONLY_RE's note)
+
+
+_SECTION_NUMBER = re.compile(r"^(\d+(?:\.\d+)+)\.?\s")
+
+
+def emphasis_headings(text):
+    """Turns lines that are headings made by hand - a paragraph of its own that
+    is entirely bold or italic, short, and not a sentence - into real headings.
+    The book's lint refuses these lines as they are (MD036).
+
+    Each becomes one level below the heading before it, and never more than one
+    level below it (MD001):
+    - one that starts with a section number takes its level from the number
+      where that fits ("11.3.1 ..." is level 3), and counts as a real heading for
+      what follows;
+    - otherwise, since the last heading, every kind of emphasis gets its own
+      level in the order it first appears, so "***Case studies***" followed by
+      "*Limits*" gives a heading and a subheading beneath it, and the next
+      "***...***" is a sibling of the first.
+    Fenced code is left alone.
+
+    Returns (text, made): made is [{"text", "level", "was"}] in order, for
+    report() to list under what to check.
+    """
+    lines = text.splitlines(keepends=True)
+    out, made, fence = [], [], None
+    base, last, kinds = 1, 1, {}
+    for i, line in enumerate(lines):
+        m = _FENCE.match(line)
+        if fence:
+            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence):
+                fence = None
+            out.append(line)
+            continue
+        if m:
+            fence = m.group(1)
+            out.append(line)
+            continue
+        h = ATX_RE.match(line)
+        if h:
+            base = last = len(h.group(1))
+            kinds = {}
+            out.append(line)
+            continue
+        e = _EMPHASIS_LINE.match(line.strip())
+        alone = ((i == 0 or not lines[i - 1].strip() or ATX_RE.match(lines[i - 1]))
+                 and (i == len(lines) - 1 or not lines[i + 1].strip()))
+        words = e.group(2).strip() if e else ""
+        if (e and alone and not line.startswith((" ", "\t"))
+                and len(words) < _HEADING_MAX and not words.endswith((".", "!", "?", ";", ","))
+                and "](" not in words and not words.startswith(("!", "<", "[^"))):
+            delim = e.group(1)
+            number = _SECTION_NUMBER.match(words)
+            if number:
+                level = max(2, min(number.group(1).count(".") + 1, last + 1, 6))
+                base, kinds = level, {}
+            else:
+                if delim not in kinds:
+                    kinds[delim] = base + 1 + len(kinds)
+                level = min(kinds[delim], last + 1, 6)
+            last = level
+            if out and ATX_RE.match(out[-1]):
+                out.append("\n")    # a heading needs a blank line before it (MD022)
+            out.append("#" * level + " " + words + "\n")
+            made.append({"text": words, "level": level,
+                         "was": "bold and italic" if len(delim) == 3
+                         else "bold" if len(delim) == 2 else "italic"})
+            continue
+        out.append(line)
+    return "".join(out), made
+
+
+FRONT_MATTER = re.compile(r"\A---\r?\n.*?^---[ \t]*(\r?\n|\Z)", re.S | re.M)
+
+
+def keep_front_matter(old_path, text):
+    """A chapter that replaces one already at `old_path` keeps that chapter's
+    front matter (topic and so on). Word has none, so without this every
+    re-import would drop it. Front matter the new text brings itself wins.
+    A `title:` that says what the new chapter's first `# ` heading says is left
+    out: the reading site takes the title from that heading, and both would
+    show it twice."""
+    if FRONT_MATTER.match(text):
+        return text
+    try:
+        with open(old_path, encoding="utf-8", errors="replace", newline="") as fh:
+            old = FRONT_MATTER.match(fh.read())
+    except OSError:
+        return text
+    if not old:
+        return text
+    block = old.group(0) if old.group(1) else old.group(0) + "\n"
+    h1 = re.search(r"(?m)^# +(.+?)\s*#*\s*$", text)
+    if h1:
+        plain = lambda t: " ".join(re.sub(r"[*_`]", "", t).split())
+        heading = plain(h1.group(1))
+        lines = block.splitlines(keepends=True)
+        kept = [ln for ln in lines[1:-1]
+                if not (re.match(r"title\s*:", ln)
+                        and plain(ln.split(":", 1)[1].strip().strip("\"'")) == heading)]
+        if not any(ln.strip() for ln in kept):
+            return text
+        block = lines[0] + "".join(kept) + lines[-1]
+    return block + "\n" + text.lstrip("\n")
 
 
 def _collect_media(stage, text, link_prefix):
@@ -775,6 +917,7 @@ def report(result):
     notes += _table_notes(lines)
     notes += _footnote_notes(text, lines)
     notes += _heading_notes(lines)
+    notes += _emphasis_heading_notes(result, lines)
     notes += _leftovers_notes(text, lines)
     notes += _converter_notes(result)
     notes += _shape_notes(text, lines)
@@ -996,6 +1139,33 @@ def _footnote_notes(text, lines):
 
 
 # -- headings -----------------------------------------------------------------
+
+def _emphasis_heading_notes(result, lines):
+    made = result.get("emphasis_headings") or []
+    if not made:
+        return []
+    listed, at = [], 0
+    for h in made:
+        want = "#" * h["level"] + " " + h["text"]
+        for j in range(at, len(lines)):
+            if lines[j].rstrip("\r") == want:
+                at = j + 1
+                break
+        listed.append(f"line {at}: “{h['text']}” (was {h['was']}, now level {h['level']})")
+    one = len(made) == 1
+    return [_note(
+        "look",
+        ("1 line was" if one else f"{len(made)} lines were") + " made into "
+        + ("a heading" if one else "headings"),
+        ("It was" if one else "They were") + " a paragraph of "
+        + ("its" if one else "their") + " own in bold or italic, which is how a "
+        "heading looks when it is made by hand rather than with Word's Heading "
+        "styles. Each became one level below the heading before it: "
+        + "; ".join(listed) + ".",
+        "Check in the preview that each of these really is a heading, and at the "
+        "right level. If one is not, edit it after sending: take away the #s at "
+        "the start of its line.")]
+
 
 def _heading_notes(lines):
     levels = []
