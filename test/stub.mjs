@@ -64,7 +64,7 @@ export function createStub({ siteOrigin }) {
       { number: 7, who: "Ada", path: "chapters/chapter-01.md", page: "chapter-01", suggestion: '"recieve" should be "receive"', reasoning: "Spelling.", when: new Date(Date.now() - 3600e3).toISOString(), url: "https://github.com/someone/a-book/issues/7", open: true, accepted: false },
       { number: 8, who: "Grace", path: "chapters/chapter-01.md", page: "chapter-01", suggestion: "Could this be clearer?", reasoning: "", when: new Date(Date.now() - 86400e3).toISOString(), url: "https://github.com/someone/a-book/issues/8", open: true, accepted: true },
     ],
-    changes: [{ number: 12, who: "reader-bot", title: "Fix a typo", when: new Date().toISOString(), url: "https://github.com/someone/a-book/pull/12" }],
+    changes: [{ number: 12, who: "reader-bot", title: "Fix a typo", when: new Date().toISOString(), url: "https://github.com/someone/a-book/pull/12", path: "chapters/chapter-02.md" }],
     change: { readable: true, why: "", pages: [{ page: "chapter-01", path: "chapters/chapter-01.md", added: 1, removed: 1, lines: [{ kind: "before", text: "The the domains." }, { kind: "after", text: "The three domains." }] }] },
     publish: { open: true, waiting: false, number: 30, url: "https://github.com/someone/a-book/pull/30", pages: ["chapter-01"], page_count: 1, change_count: 2, who: ["author-one", "reader"], state: "clean", state_words: "This can go to readers now. Nothing else is waiting on it.", can_publish: true },
     status401: false,

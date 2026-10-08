@@ -175,7 +175,12 @@ test("chapters: reading order with each chapter's status, the removed one listed
   await page.getByRole("heading", { name: "Chapters, in reading order" }).waitFor();
   const rows = page.locator("ol.reorder > li");
   await rows.nth(2).waitFor();
-  assert.deepEqual((await rows.allInnerTexts()).map((t) => t.split("\n").slice(0, 3).join(" | ")), ["⠿ | Soils | Published", "⠿ | Chapter 1 | Draft changes", "⠿ | Water | New", "⠿ | Realism | Published", "⠿ | Glossary | Published"]);
+  assert.deepEqual((await rows.allInnerTexts()).map((t) => t.split("\n").filter((l) => !/suggestions?$/.test(l)).slice(0, 3).join(" | ")), ["⠿ | Soils | Published", "⠿ | Chapter 1 | Draft changes", "⠿ | Water | New", "⠿ | Realism | Published", "⠿ | Glossary | Published"]);
+  // Each chapter's open reader suggestions, written and proposed, linking to its editor.
+  assert.equal(await rows.nth(0).locator(".badge.suggestions").innerText(), "1 suggestion");
+  assert.equal(await rows.nth(1).locator(".badge.suggestions").innerText(), "2 suggestions");
+  assert.equal(await rows.nth(1).locator(".badge.suggestions").getAttribute("href"), `#/a-book/edit/${encodeURIComponent(CH1_PATH)}`);
+  assert.equal(await rows.nth(2).locator(".badge.suggestions").count(), 0);
   // The concept page and the glossary aren't in index.md's Contents: at its end, flagged, as the builder adds them.
   assert.equal(await rows.nth(3).getByText("Not in the Contents").count(), 1);
   assert.equal(await rows.nth(4).getByText("Not in the Contents").count(), 1);
@@ -240,6 +245,39 @@ test("chapters: Rename changes the heading and the reading order's label; Remove
 });
 
 // --- the editor -------------------------------------------------------------------------------------
+
+test("editor: the page's open reader suggestions, with Accept and Decline", async () => {
+  await signIn();
+  await openEditor();
+  const box = page.getByRole("region", { name: "Reader suggestions on this page" });
+  await box.getByRole("heading", { name: "Reader suggestions on this page (2)" }).waitFor();
+  await box.getByText('"recieve" should be "receive"').waitFor();
+  // The accepted one waits for the change; the other can be answered here.
+  assert.equal(await box.getByText("Accepted").count(), 1);
+  await Promise.all([page.waitForResponse((r) => r.url().includes("author-act")), box.getByRole("button", { name: "Decline" }).click()]);
+  await box.getByText("Declined, with a courteous reply.").waitFor();
+  const done = lastCall("author-act").body;
+  assert.equal(done.action, "suggestion-decline");
+  assert.equal(done.number, 7);
+});
+
+test("editor: a proposed edit to the page, accepted from the editor", async () => {
+  await signIn();
+  await openEditor("chapters/chapter-02.md");
+  const box = page.getByRole("region", { name: "Reader suggestions on this page" });
+  await box.getByText("Fix a typo").waitFor();
+  await Promise.all([page.waitForResponse((r) => r.url().includes("author-act")), box.getByRole("button", { name: "Accept" }).click()]);
+  await box.getByText("Accepted: it is in the drafts.").waitFor();
+  assert.deepEqual([lastCall("author-act").body.action, lastCall("author-act").body.number], ["change-accept", 12]);
+});
+
+test("editor: no suggestions, no list", async () => {
+  await signIn();
+  await openEditor("chapters/chapter-04.md");
+  await page.getByRole("tab", { name: "Edit" }).waitFor();
+  await page.waitForTimeout(300);
+  assert.equal(await page.getByRole("region", { name: "Reader suggestions on this page" }).count(), 0);
+});
 
 test("editor: no Send; typing is saved to the drafts by itself, Saving… then Draft saved HH:MM, each save on the one before", async () => {
   await signIn();
@@ -539,6 +577,26 @@ test("people: the book's authors; invite by username; pending until live, and on
   await page.getByText("One change at a time", { exact: false }).waitFor();
   assert.equal(await page.locator("#invite-login").count(), 0);
   assert.equal(await page.getByRole("button", { name: "Remove", exact: true }).count(), 0, "nothing else while one is open");
+});
+
+test("people: each author turns suggestion emails off for themselves, and on again", async () => {
+  await signIn();
+  await page.goto(`${origin}/#/a-book/people`);
+  await page.getByRole("heading", { name: "Emails about reader suggestions" }).waitFor();
+  await page.getByText(/you're @mentioned on it, so GitHub emails you/).waitFor();
+  await Promise.all([page.waitForResponse((r) => r.url().includes("author-people-change")), page.getByRole("button", { name: "Stop emailing me" }).click()]);
+  const sent = lastCall("author-people-change").body;
+  assert.deepEqual([sent.action, sent.login], ["mentions-off", "author-one"]);
+  await page.getByText(/new reader suggestions won't mention you/).waitFor();
+  await page.getByText(/Stopping suggestion emails for/).waitFor();
+
+  // Off, as the registry has it: the button turns them back on.
+  stub.s.people = { ...stub.s.people, mentionsOff: ["Author-One"], pending: [] };
+  await page.goto(`${origin}/#/a-book`);
+  await page.goto(`${origin}/#/a-book/people`);
+  await page.getByText(/don't mention you, so GitHub doesn't email you/).waitFor();
+  await Promise.all([page.waitForResponse((r) => r.url().includes("author-people-change")), page.getByRole("button", { name: "Email me again" }).click()]);
+  assert.equal(lastCall("author-people-change").body.action, "mentions-on");
 });
 
 test("people: remove asks first; the last author can't be removed; not switched on says so", async () => {
