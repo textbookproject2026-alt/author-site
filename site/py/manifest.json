@@ -1,6 +1,6 @@
 {
   "repo": "textbookproject2026-alt/authoring-assistant",
-  "ref": "50df4d0cbcbed71efeab9ee7eb89971bf996b634",
+  "ref": "e40d91bc2d2d41311a6ddcd687cae3a747d9a08f",
   "files": [
     "app/__init__.py",
     "app/mdmap.py",
