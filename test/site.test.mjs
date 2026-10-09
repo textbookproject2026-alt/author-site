@@ -130,6 +130,13 @@ test("the account menu on a phone: avatar only, the full login inside, no label 
   // The book's tabs: one row, the current one in view.
   await page.goto(`${origin}/#/a-book/history`);
   await page.getByRole("heading", { name: "History", exact: true }).waitFor();
+  // The strip scrolls the current tab into view a frame or two after it is drawn.
+  await page.waitForFunction(() => {
+    const nav = document.querySelector("nav.tabs");
+    const cur = nav?.querySelector('[aria-current="page"]')?.getBoundingClientRect();
+    const box = nav?.getBoundingClientRect();
+    return cur && cur.right <= box.right + 1 && cur.left >= box.left - 1;
+  }, null, { timeout: 3000 }).catch(() => {});
   const tabs = await page.locator("nav.tabs").evaluate((nav) => {
     const tops = new Set([...nav.querySelectorAll("a")].map((a) => Math.round(a.getBoundingClientRect().top)));
     const cur = nav.querySelector('[aria-current="page"]').getBoundingClientRect();

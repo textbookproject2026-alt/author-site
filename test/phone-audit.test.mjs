@@ -50,6 +50,13 @@ test("phone audit: every screen at 360, 390 and 412px, light and dark", async ()
         await page.goto(`${server.origin}/${hash}`, { waitUntil: "networkidle" });
         await page.waitForTimeout(500);
         if (opts.menu) await page.locator(".account-btn").click();
+        await page.waitForFunction(() => {
+          const nav = document.querySelector("nav.tabs");
+          if (!nav) return true;
+          const cur = nav.querySelector('[aria-current="page"]')?.getBoundingClientRect();
+          const box = nav.getBoundingClientRect();
+          return !cur || (cur.right <= box.right + 1 && cur.left >= box.left - 1);
+        }, null, { timeout: 3000 }).catch(() => {});
         const failures = await page.evaluate(auditPage, { scope: opts.menu ? ".masthead" : null });
         const tabs = await page.evaluate(() => {
           const nav = document.querySelector("nav.tabs");
