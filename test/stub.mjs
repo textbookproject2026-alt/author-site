@@ -22,7 +22,7 @@ export const BOOK = {
   slug: "a-book", title: "A Book of Things", status: "live", repo: REPO, drafts_branch: "drafts", live_branch: "main",
   domain: "a-book.example.org", zip: `https://github.com/${REPO}/archive/refs/heads/drafts.zip`,
 };
-const REGISTRY = {
+export const REGISTRY = {
   schema_version: 1,
   books: [{
     slug: "a-book", status: "live", content: { repo: REPO, live_branch: "main", drafts_branch: "drafts" },

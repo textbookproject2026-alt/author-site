@@ -1,6 +1,9 @@
 // Credits: who is named as the book's authors and editors, and a chapter's own
 // (which override the book's for that chapter). Each person has a name and,
-// optionally, an ORCID iD (checked by its check digit) and a GitHub username. Saving
+// optionally, an ORCID iD (checked by its check digit) and a GitHub username. The
+// ORCID field shows only while the platform has ORCID on (registry
+// platform.features.orcid); while it is off, iDs already in the frontmatter are kept
+// as they are and saved back unchanged, just not shown. Saving
 // is one change on the drafts, like any other: readers see it when the book is
 // published. The frontmatter keys are quartz-book's (credits.js); contributors are
 // credited by the platform from accepted edits and notes, not here.
@@ -10,6 +13,7 @@ import { read, send } from "./api.js";
 import { bookBySlug, bookHeader } from "./books.js";
 import { forgetCount, titlesFrom } from "./drafts.js";
 import { peopleOf, problemsOf, withPeople } from "./credits.js";
+import { platformFeatures } from "./public.js";
 
 const JS_YAML = "https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/+esm";
 let yamlLib = null;
@@ -49,6 +53,7 @@ async function draw(book, stage, path, said = null) {
   const bookFm = target === "index.md" ? fm : await frontmatter(index?.text ?? "");
 
   const lists = { authors: peopleOf(fm.authors ?? fm.author), editors: peopleOf(fm.editors ?? fm.editor) };
+  const orcidOn = (await platformFeatures()).orcid !== false;
   const out = h("div", { "aria-live": "polite" });
 
   const editor = (key, label, help) => {
@@ -68,7 +73,7 @@ async function draw(book, stage, path, said = null) {
           redraw();
         };
         return h("li", { class: "credit-row" },
-          h("div", { class: "credit-fields" }, name, orcid, github),
+          h("div", { class: "credit-fields" }, name, orcidOn ? orcid : null, github),
           h("div", { class: "row" },
             h("button", { type: "button", class: "btn link", text: "Up", disabled: i === 0, onclick: () => move(-1) }),
             h("button", { type: "button", class: "btn link", text: "Down", disabled: i === lists[key].length - 1, onclick: () => move(1) }),

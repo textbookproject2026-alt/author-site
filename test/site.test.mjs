@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { chromium } from "playwright-core";
 import { startServer } from "./server.mjs";
-import { createStub, importDone, API, HEAD, MOVED, SENT, LIVE, CH1_DRAFTS, ROCKS, INDEX_LIVE } from "./stub.mjs";
+import { createStub, importDone, API, HEAD, MOVED, SENT, LIVE, CH1_DRAFTS, ROCKS, INDEX_LIVE, REGISTRY } from "./stub.mjs";
 
 let server, origin, browser;
 before(async () => {
@@ -812,6 +812,21 @@ test("credits: add an editor with an ORCID iD (checked), reorder the authors, sa
   assert.equal(sent.message, "Credits: the book's authors and editors");
   assert.equal(sent.files[0].path, "index.md");
   assert.match(sent.files[0].text, /^---\nauthors:\n  - "Bo Second"\n  - "Ann Author"\neditors:\n  - name: "Ed Itor"\n    orcid: "0000-0002-1825-0097"\n    github: "ed-itor"\n---\n\n# A Book of Things\n/);
+});
+
+test("credits: with ORCID switched off for the platform, no ORCID field; an iD already there is kept on save", async () => {
+  await signIn();
+  stub.s.registry = { ...structuredClone(REGISTRY), platform: { ...REGISTRY.platform, features: { orcid: false } } };
+  const index = stub.s.bookFiles.get("index.md").toString("utf8");
+  stub.s.bookFiles.set("index.md", Buffer.from(index.replace(/^/, '---\neditors:\n  - name: "Ed Itor"\n    orcid: "0000-0002-1825-0097"\n---\n')));
+  await page.goto(`${origin}/#/a-book/credits`);
+  await page.getByLabel("Editor 1: name").waitFor();
+  assert.equal(await page.getByLabel(/ORCID/).count(), 0);
+  assert.equal(await page.getByText(/ORCID/).count(), 0);
+  await page.getByLabel("Editor 1: name").fill("Ed Itor-Smith");
+  await page.getByRole("button", { name: "Save to the drafts" }).click();
+  await page.getByText("Saved to the drafts. Readers see it when you publish.").waitFor();
+  assert.match(sends().at(-1).files[0].text, /editors:\n  - name: "Ed Itor-Smith"\n    orcid: "0000-0002-1825-0097"\n/);
 });
 
 test("credits: a chapter's own authors and editors, said to replace the book's", async () => {

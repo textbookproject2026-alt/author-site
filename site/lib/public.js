@@ -18,6 +18,17 @@ export async function registryBook(slug) {
   }
 }
 
+/** The platform's switches (registry platform.features); {} when unknown. ORCID is on unless switched off. */
+export async function platformFeatures() {
+  try {
+    registry ??= fetch(REGISTRY, { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null));
+    return (await registry)?.platform?.features ?? {};
+  } catch {
+    registry = null;
+    return {};
+  }
+}
+
 /** Every comment in the margins of the book's site (Hypothes.is), as the app linked it. */
 export const discussionUrl = (b) => (b?.site?.domain ? `https://hypothes.is/search?q=url:https://${b.site.domain}/*` : null);
 
