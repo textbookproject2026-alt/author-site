@@ -780,3 +780,44 @@ test("add glossary term: from a chapter, the Glossary page as its own change in 
   assert.match(await box.inputValue(), /## Structure\n\nWhat endures\.\n$/);
   await page.getByText(/^Draft saved \d\d:\d\d$/).waitFor();
 });
+
+test("credits: add an editor with an ORCID iD (checked), reorder the authors, saved to the drafts as one change", async () => {
+  await signIn();
+  await page.goto(`${origin}/#/a-book/credits`);
+  await page.getByRole("heading", { name: "Authors" }).waitFor();
+  await page.getByRole("button", { name: "Add author" }).click();
+  await page.getByLabel("Author 1: name").fill("Ann Author");
+  await page.getByRole("button", { name: "Add author" }).click();
+  await page.getByLabel("Author 2: name").fill("Bo Second");
+  await page.locator(".credit-row").nth(1).getByRole("button", { name: "Up" }).click();
+  await page.getByRole("button", { name: "Add editor" }).click();
+  await page.getByLabel("Editor 1: name").fill("Ed Itor");
+  await page.getByLabel("Editor 1: ORCID iD").fill("0000-0002-1825-0098");
+  await page.getByRole("button", { name: "Save to the drafts" }).click();
+  await page.getByText(/isn't an ORCID iD/).waitFor();
+  assert.equal(sends().length, 0, "a wrong check digit sends nothing");
+  await page.getByLabel("Editor 1: ORCID iD").fill("0000-0002-1825-0097");
+  await page.getByLabel("Editor 1: GitHub username").fill("@ed-itor");
+  await page.getByRole("button", { name: "Save to the drafts" }).click();
+  await page.getByText("Saved to the drafts. Readers see it when you publish.").waitFor();
+  assert.equal(sends().length, 1);
+  const sent = sends()[0];
+  assert.equal(sent.base, HEAD);
+  assert.equal(sent.message, "Credits: the book's authors and editors");
+  assert.equal(sent.files[0].path, "index.md");
+  assert.match(sent.files[0].text, /^---\nauthors:\n  - "Bo Second"\n  - "Ann Author"\neditors:\n  - name: "Ed Itor"\n    orcid: "0000-0002-1825-0097"\n    github: "ed-itor"\n---\n\n# A Book of Things\n/);
+});
+
+test("credits: a chapter's own authors and editors, said to replace the book's", async () => {
+  await signIn();
+  await page.goto(`${origin}/#/a-book/credits`);
+  await page.getByLabel("Credits for").selectOption({ label: "Chapter 1" });
+  await page.getByText(/replace the book's for that chapter/).waitFor();
+  await page.getByRole("button", { name: "Add author" }).click();
+  await page.getByLabel("Author 1: name").fill("Cee Writer");
+  await page.getByRole("button", { name: "Save to the drafts" }).click();
+  await page.getByText("Saved to the drafts. Readers see it when you publish.").waitFor();
+  const sent = sends()[0];
+  assert.equal(sent.files[0].path, "chapters/chapter-01.md");
+  assert.match(sent.files[0].text, /^---\nauthors:\n  - "Cee Writer"\n---\n\n# Chapter 1\n/);
+});
