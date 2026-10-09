@@ -73,7 +73,17 @@ export function withOrder(parsed, order) {
   // The spacing between items stays as it was: one blank line between them if there was any.
   const blank = parsed.gaps.some((g) => g > 0);
   const list = items.flatMap((it, k) => [...(k && blank ? [""] : []), ...it.lines]);
-  const out = [...parsed.lines.slice(0, parsed.start + 1), ...parsed.head, ...list, ...parsed.tail, ...parsed.lines.slice(parsed.end)];
+  // A blank line after the heading, before the list and after it, as markdownlint
+  // asks (MD022, MD032), whatever the page had: the Contents is the platform's
+  // block, and a first item added to an empty one used to run into the next heading.
+  const head = [...parsed.head];
+  if (list.length) {
+    if (!head.length || head[0].trim()) head.unshift("");
+    if (head.at(-1).trim()) head.push("");
+  }
+  const rest = [...parsed.tail, ...parsed.lines.slice(parsed.end)];
+  const after = list.length && rest.length && rest[0].trim() ? [""] : [];
+  const out = [...parsed.lines.slice(0, parsed.start + 1), ...head, ...list, ...after, ...rest];
   return out.join(parsed.eol);
 }
 
