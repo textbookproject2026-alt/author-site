@@ -521,6 +521,7 @@ test("drafts: Publish N changes — one press, Publishing… then Published with
   await page.goto(`${origin}/#/a-book/drafts`);
   const go = page.getByRole("button", { name: "Publish 5 changes" });
   assert.equal(await go.isDisabled(), false);
+  assert.equal(await page.locator(".publish-preview").textContent(), "Publishing will move 5 changes from Being edited to Published.");
   assert.equal(await page.getByRole("checkbox").count(), 0, "no tick box");
   stub.s.publish = { ...stub.s.publish, open: true, number: 30, state: "clean", can_publish: true };
   await go.click();
@@ -644,17 +645,22 @@ const INDEX_WITH_CONTENTS = "# A Book of Things\n\n## Contents\n\n- **[[chapters
 
 // --- history -----------------------------------------------------------------------------------
 
-test("history: the book's changes in this site, paged, marked live or waiting; not GitHub", async () => {
+test("history: the book's changes in this site, paged, in the three states readers see; not GitHub", async () => {
   await signIn();
   await page.goto(`${origin}/#/a-book`);
   const link = page.getByRole("link", { name: "History", exact: true });
   assert.equal(await link.getAttribute("href"), "#/a-book/history");
   await link.click();
   await page.getByRole("heading", { name: "History", exact: true }).waitFor();
-  const items = page.locator("ul.history > li");
+  const open = page.locator("ul.history.proposed > li");
+  assert.equal(await open.count(), 1);
+  assert.match(await open.nth(0).textContent(), /Say where this is from — Jo Reader.*Proposed · Note/);
+  assert.equal(await open.locator("a").getAttribute("href"), "#/a-book/suggestion/12");
+  assert.deepEqual(lastCall("history").query, { book: "a-book" });
+  const items = page.locator("ul.history:not(.proposed) > li");
   assert.equal(await items.count(), 30);
-  assert.match(await items.nth(0).textContent(), /Say it better — author-one.*Waiting in drafts/);
-  assert.match(await items.nth(2).textContent(), /Change 2 — co-author.*Live/);
+  assert.match(await items.nth(0).textContent(), /Say it better — author-one.*Being edited/);
+  assert.match(await items.nth(2).textContent(), /Change 2 — co-author.*Published/);
   await page.getByRole("button", { name: "Show older changes" }).click();
   await items.nth(30).waitFor();
   assert.deepEqual(lastCall("author-history").query, { book: "a-book", page: "2" });
@@ -666,7 +672,7 @@ test("history: a page's, from the editor; Restore opens the old text in the edit
   await page.getByRole("link", { name: "History of this page" }).click();
   await page.getByRole("heading", { name: "History of “Chapter 1”" }).waitFor();
   assert.deepEqual(lastCall("author-history").query, { book: "a-book", path: CH1_PATH });
-  await page.locator("ul.history > li a").nth(1).click();
+  await page.locator("ul.history:not(.proposed) > li a").nth(1).click();
   await page.getByRole("heading", { name: "What this change did to the page" }).waitFor();
   assert.equal(await page.locator(".diff del").first().textContent(), "first");
   await noFileNames();

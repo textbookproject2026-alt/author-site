@@ -59,3 +59,20 @@ export const importStatus = (book, id, file) => call("author-import", { query: {
 export const people = (book) => call("author-people", { query: { book } });
 export const changePeople = (book, action, login) => call("author-people-change", { method: "POST", body: { book, action, login } });
 export const history = (book, query = {}) => call("author-history", { query: { book, ...query } });
+/**
+ * What is proposed for the book (or one page): open proposed edits, notes and
+ * suggestions, from the function's public /api/history, the same the book's readers
+ * see in Page history. No sign-in; [] when it can't be had.
+ */
+export async function proposed(book, path) {
+  try {
+    const url = new URL("history", apiBase());
+    url.searchParams.set("book", book);
+    if (path) url.searchParams.set("path", path);
+    const res = await fetch(url);
+    const items = res.ok ? (await res.json())?.items : null;
+    return Array.isArray(items) ? items.filter((i) => i && Number.isInteger(i.number)) : [];
+  } catch {
+    return [];
+  }
+}

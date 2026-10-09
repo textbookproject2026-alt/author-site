@@ -5,10 +5,12 @@
 // author-send on the drafts as they are now (never a revert of history).
 //
 // Read through author-history, as the App, so authors don't share GitHub's
-// 60-an-hour unauthenticated limit.
+// 60-an-hour unauthenticated limit. The same three states readers see in Page
+// history: Proposed (open proposals and notes, from the function's /api/history),
+// Being edited (in the drafts, not yet published) and Published.
 
 import { h, clear, busy, note, errorNote, when } from "./dom.js";
-import { history, read, send } from "./api.js";
+import { history, proposed, read, send } from "./api.js";
 import { bookBySlug, bookHeader, rawUrl } from "./books.js";
 import { renderChapter } from "./preview.js";
 import { renderDiff, renderPatch } from "./diff.js";
@@ -26,13 +28,20 @@ const titlesOf = async (book) => {
 const said = (message, titles) => (message || "A change").replace(/\b(?:chapters|assets)\/[^\s"”“)]+|\b(?:index|glossary)\.md\b/g, (p) => `“${titles.get(p)}”`);
 const enc = encodeURIComponent;
 const marker = (c) => c.live
-  ? h("span", { class: "badge", text: "Live" })
-  : h("span", { class: "badge accepted", text: "Waiting in drafts" });
+  ? h("span", { class: "badge status-published", text: "Published" })
+  : h("span", { class: "badge status-edited", text: "Being edited" });
+const KINDS = { edit: "Proposed edit", note: "Note", suggestion: "Suggestion" };
+/** An open proposal or note: where the author answers it (Drafts, or the suggestion's own screen). */
+const proposedLine = (slug, it) => h("li", {},
+  h("div", { class: "row" },
+    h("a", { class: "grow", href: it.kind === "edit" ? `#/${slug}/drafts` : `#/${slug}/suggestion/${it.number}` },
+      h("strong", { text: it.summary || KINDS[it.kind] || "A suggestion" }), ` — ${it.who?.name ?? "a reader"}, ${when(it.date)}`),
+    h("span", { class: "badge status-new", text: `Proposed · ${KINDS[it.kind] ?? "Suggestion"}` })));
 
 /** #/<book>/history and #/<book>/history/<path>: the commits, 30 at a time. */
 export async function historyScreen(slug, path = "") {
   const book = await bookBySlug(slug);
-  const [first, titles] = await Promise.all([history(slug, { path: path || undefined }), titlesOf(book)]);
+  const [first, titles, open] = await Promise.all([history(slug, { path: path || undefined }), titlesOf(book), proposed(slug, path)]);
   const list = h("ul", { class: "list history" });
   const more = h("div", { class: "actions" });
   let page = 1;
@@ -60,8 +69,11 @@ export async function historyScreen(slug, path = "") {
   return [
     ...bookHeader(book, "history", path ? `History of “${titles.get(path)}”` : "History"),
     h("p", { class: "muted small" },
-      "Every change in the drafts area, newest first. ",
-      h("strong", { text: "Live" }), " means readers have it; ", h("strong", { text: "Waiting in drafts" }), " means it goes to readers when the drafts are next published."),
+      "Every change, newest first, in the three states readers see in Page history. ",
+      h("strong", { text: "Proposed" }), ": a reader's proposal or note, waiting for you. ",
+      h("strong", { text: "Being edited" }), ": in the drafts; it goes to readers when you next publish. ",
+      h("strong", { text: "Published" }), ": readers have it."),
+    open.length ? h("ul", { class: "list history proposed" }, open.map((it) => proposedLine(slug, it))) : null,
     first.commits.length ? list : h("p", { class: "muted", text: "No changes yet." }),
     more,
     path ? h("p", {}, h("a", { href: `#/${slug}/edit/${enc(path)}`, text: `Back to “${titles.get(path)}”` }), " · ", h("a", { href: `#/${slug}/history`, text: "The whole book's history" })) : null,
