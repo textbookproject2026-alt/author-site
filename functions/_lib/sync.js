@@ -12,6 +12,7 @@ export async function requestSync(env, book) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ book }),
       redirect: "manual",
+      signal: AbortSignal.timeout(30000),
     });
     if (!res.ok) console.error(`sync ${book}: HTTP ${res.status}`);
   } catch (err) {

@@ -49,9 +49,10 @@ export const validEmail = (e) =>
 /** A display name: one line, no control characters, trimmed, at most 80 characters, no "@" (the registry is public). */
 export const cleanName = (n) =>
   String(n ?? "")
-    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
-    // Invisible and direction-changing characters: a name must read as it is (it is public).
-    .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g, "")
+    .replace(/[\p{Cc}\u2028\u2029]/gu, " ")
+    // Invisible and direction-changing characters (all of Unicode's "format" class, and
+    // variation selectors): a name must read as it is (it is public).
+    .replace(/[\p{Cf}\u034f\u180b-\u180f\ufe00-\ufe0f]/gu, "")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/@/g, "")
@@ -153,7 +154,7 @@ export async function allow(env, key, limit, seconds) {
 let registryCache = null;
 export async function registry() {
   if (registryCache && now() - registryCache.at < 60_000) return registryCache.data;
-  const res = await fetch("https://raw.githubusercontent.com/textbookproject2026-alt/textbook-registry/main/registry.json");
+  const res = await fetch("https://raw.githubusercontent.com/textbookproject2026-alt/textbook-registry/main/registry.json", { signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`registry: HTTP ${res.status}`);
   const data = await res.json();
   registryCache = { at: now(), data };
@@ -174,6 +175,7 @@ export const isMaintainer = (env, member) =>
 export async function sendMail(env, { to, subject, text, html }) {
   if (!env.RESEND_API_KEY || !env.MAIL_FROM) throw new Error("mail: not configured");
   const res = await fetch("https://api.resend.com/emails", {
+    signal: AbortSignal.timeout(10000),
     method: "POST",
     headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
     body: JSON.stringify({ from: env.MAIL_FROM, to: [to], subject, text, html }),

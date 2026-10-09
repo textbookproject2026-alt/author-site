@@ -116,11 +116,11 @@ test("an invitation: confirm the name the book credits you by, Continue, and you
   await page.getByRole("heading", { name: "This invitation has expired" }).waitFor();
 });
 
-test("a copied invitation: you join, and the sign-in link comes by email (not signed in here)", async () => {
+test("a copied invitation: nothing happens here but the invitation going to the address", async () => {
   stub.s.session = false;
   await page.goto(`${origin}/#/invite/${"J".repeat(43)}`);
   await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByText("You're on A Book of Things. We've sent a sign-in link to new@example.org: open it on this device to start.").waitFor();
+  await page.getByText("One more step: we've emailed this invitation to new@example.org. Open it there to join A Book of Things.").waitFor();
   assert.equal(stub.s.session, false);
 });
 
@@ -666,6 +666,11 @@ test("people: remove asks first and takes effect at once; a member without an em
   await signIn();
   await page.goto(`${origin}/#/a-book/people`);
   await page.getByText("needs an email address").waitFor();
+  // Only the platform maintainer gives an address for someone else.
+  await page.getByText("Brandon adds it the next time they sign in with GitHub.", { exact: false }).waitFor();
+  assert.equal(await page.getByLabel("Brandon's email address").count(), 0);
+  stub.s.me = { ...stub.s.me, maintainer: true };
+  await page.reload();
   await page.getByLabel("Brandon's email address").fill("brandon@example.org");
   await page.getByRole("button", { name: "Send them a link" }).click();
   await page.getByText("Once Brandon opens it, they sign in with it.").waitFor();

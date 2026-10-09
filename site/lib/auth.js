@@ -68,7 +68,7 @@ export async function consumeLink(token) {
 export const invitation = (kind, token) => own("/api/invite", { method: "POST", body: { kind, token, action: "info" } });
 export async function acceptInvitation(kind, token, name) {
   const out = await own("/api/invite", { method: "POST", body: { kind, token, action: "accept", ...(name ? { name } : {}) } });
-  if (out.signedIn !== false) await loadMe();
+  if (out.joined !== false) await loadMe();
   return out;
 }
 

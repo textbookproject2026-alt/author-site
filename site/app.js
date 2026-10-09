@@ -251,12 +251,12 @@ async function invitationScreen(kind, token) {
     clear(status, busy("Joining…"));
     try {
       const r = await acceptInvitation("invite", token, name.value);
-      if (r.signedIn !== false) return (location.hash = `#/${r.book}`);
-      // A copied invitation: the inbox proves it's them, so the sign-in comes by email.
+      if (r.joined !== false) return (location.hash = `#/${r.book}`);
+      // A copied invitation: the inbox proves it's them, so the invitation comes again by email.
       form.remove();
       clear(status, h("p", { text: r.emailed
-        ? `You're on ${info.title}. We've sent a sign-in link to ${info.email ?? "the address you were invited at"}: open it on this device to start.`
-        : `You're on ${info.title}. To start, sign in with ${info.email ?? "the address you were invited at"} on the sign-in page.` }));
+        ? `One more step: we've emailed this invitation to ${info.email ?? "the address you were invited at"}. Open it there to join ${info.title}.`
+        : `The invitation couldn't be emailed to ${info.email ?? "the address you were invited at"} just now. Ask whoever invited you to send it again.` }));
     } catch (err) {
       clear(status, errorNote(err));
     }

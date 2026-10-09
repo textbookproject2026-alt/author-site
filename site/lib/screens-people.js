@@ -48,7 +48,9 @@ async function draw(book, stage, said = null) {
     li.append(h("div", { class: "row" }, name, remove));
     if (!m.hasEmail) {
       li.append(h("p", { class: "badge level-look", text: "needs an email address" }));
-      if (!m.you) {
+      if (!m.you && !identity()?.maintainer) {
+        li.append(h("p", { class: "muted small", text: `${m.name} adds it the next time they sign in with GitHub. Only the platform's maintainer can add it for them.` }));
+      } else if (!m.you) {
         const email = h("input", { type: "email", "aria-label": `${m.name}'s email address`, autocomplete: "off", spellcheck: "false" });
         const send = h("button", { type: "button", class: "btn", text: "Send them a link" });
         send.addEventListener("click", () => act(send, { action: "set-email", member: m.id, email: email.value }, () => note([h("p", { text: `A link went to that address. Once ${m.name} opens it, they sign in with it.` })])));

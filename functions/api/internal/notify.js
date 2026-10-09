@@ -26,26 +26,30 @@ export async function onRequestPost({ request, env }) {
   if (!entry || !Number.isInteger(number) || number < 1 || number > 1e7) return fail(404, "not found");
   if (!(await allow(env, `notify:ip:${request.headers.get("cf-connecting-ip") ?? "unknown"}`, PER_CALLER_PER_HOUR, 3600))) return fail(429, "rate limited");
 
-  const res = await fetch(`${UPSTREAM}/api/page-revision?mode=item&book=${encodeURIComponent(entry.slug)}&number=${number}`, { redirect: "manual" });
+  const res = await fetch(`${UPSTREAM}/api/page-revision?mode=item&book=${encodeURIComponent(entry.slug)}&number=${number}`, { redirect: "manual", signal: AbortSignal.timeout(8000) });
   if (res.status === 404) return fail(404, "not found");
   if (!res.ok) return fail(502, "upstream");
   const item = await res.json().catch(() => null);
   if (!item || item.number !== number || !Object.hasOwn(KIND, item.kind)) return fail(404, "not found");
   if (item.state !== "open") return json({ ok: true, sent: 0 });
+  const { results } = await env.DB.prepare(
+    `SELECT m.id, m.email FROM book_members bm JOIN members m ON m.id = bm.member_id
+     WHERE bm.book = ? AND m.notify = 1 AND m.email IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM notified n WHERE n.book = bm.book AND n.number = ? AND n.member_id = m.id)`,
+  )
+    .bind(entry.slug, number)
+    .all();
+  // Nobody new to tell (a repeat call): costs no budget, so repeats can't crowd out new items.
+  if (!results.length) return json({ ok: true, sent: 0 });
   if (!(await allow(env, `notify:book:${entry.slug}`, PER_BOOK_PER_HOUR, 3600)) || !(await allow(env, "notify:all", OVERALL_PER_HOUR, 3600)))
     return fail(429, "rate limited");
 
-  const { results } = await env.DB.prepare(
-    "SELECT m.id, m.email FROM book_members bm JOIN members m ON m.id = bm.member_id WHERE bm.book = ? AND m.notify = 1 AND m.email IS NOT NULL",
-  )
-    .bind(entry.slug)
-    .all();
   const what = KIND[item.kind];
   // A reader wrote the summary: short, and only ever as text (mailBody escapes it).
   const summary = typeof item.summary === "string" ? item.summary.slice(0, 200) : "";
   const n = Number.isInteger(item.paragraph?.n) ? item.paragraph.n : null;
   const mail = mailBody({
-    lines: [`A reader ${what} ${entry.title}.`, ...(summary ? [`“${summary}”`] : []), ...(n ? [`Where: ¶${n}`] : [])],
+    lines: [`A reader ${what} ${entry.title}.`, ...(summary ? [`The reader wrote (their words, not ours): “${summary}”`] : []), ...(n ? [`Where: ¶${n}`] : [])],
     button: "Review in the author site",
     url: `${linkOrigin(request)}/#/${entry.slug}/drafts`,
     footer: "You get these because “Emails about reader suggestions” is on in your author site settings.",
@@ -68,4 +72,4 @@ export async function onRequestPost({ request, env }) {
 }
 
 /** Anything but POST. */
-export const onRequest = () => new Response(JSON.stringify({ error: "method not allowed" }), { status: 405, headers: { "content-type": "application/json", allow: "POST" } });
+export const onRequest = () => new Response(JSON.stringify({ error: "method not allowed" }), { status: 405, headers: { "content-type": "application/json", "x-content-type-options": "nosniff", allow: "POST" } });

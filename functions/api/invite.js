@@ -5,13 +5,13 @@
 //   POST /api/invite { kind: "claim",  token, action: "accept" } -> confirms the email, signs in
 // An invitation is for one address and one book, single use, seven days: whoever
 // opens it joins as that address. Only an invitation that went straight to that
-// inbox signs them in there and then; one the inviter copied to pass on (so the
-// inviter has seen it) adds them to the book and emails a sign-in link to the
-// invited address, so the inbox is proven either way. A claim confirms an address for a member who has
+// inbox joins and signs in; one the inviter copied to pass on (so the inviter has
+// seen it) only sends that invitation to the address, so the inbox is proven
+// either way and nobody is added to a book, or named, without it. A claim confirms an address for a member who has
 // none (filled in by another member, or given after a GitHub sign-in): only someone
 // who can read that inbox can confirm it.
 import { audit, body, bookEntry, cleanName, fail, json, linkOrigin, mailBody, memberId, now, sameSite, sendMail, startSession } from "../_lib/core.js";
-import { createLink, peekLink, useLink } from "../_lib/links.js";
+import { createLink, markNotMailed, peekLink, useLink } from "../_lib/links.js";
 import { requestSync } from "../_lib/sync.js";
 
 const GONE = (what) => fail(410, "link used or expired", `This ${what} has been used or has expired. Ask whoever sent it for a new one.`);
@@ -47,38 +47,44 @@ export async function onRequestPost({ request, env, waitUntil }) {
     return json({ ok: true }, 200, { "set-cookie": await startSession(env, m.id) });
   }
 
-  if (!(await bookEntry(link.book).catch(() => null))) return GONE("invitation");
+  const entry = await bookEntry(link.book).catch(() => null);
+  if (!entry) return GONE("invitation");
   const inviter = await env.DB.prepare("SELECT 1 AS x FROM book_members WHERE book = ? AND member_id = ?").bind(link.book, link.created_by).first();
   if (!inviter) return GONE("invitation"); // the inviter has left the book since
   const name = cleanName(b.name) || link.name;
+
+  // A copied link changes nothing by itself: the inviter has seen it. It becomes an
+  // invitation emailed to the address, so only that inbox's owner joins.
+  if (!link.mailed) {
+    const token = await createLink(env, { kind: "invite", book: link.book, email: link.email, name, createdBy: link.created_by });
+    const mail = mailBody({
+      lines: [`Hello ${name},`, `You opened an invitation to work on ${entry.title} on Confused for Now. To make sure it's you, here it is again at this address. It works once, within seven days.`],
+      button: "Join the book",
+      url: `${linkOrigin(request)}/#/invite/${token}`,
+      footer: "If you didn't open an invitation, you can ignore this: nothing happens unless the link is opened.",
+    });
+    try {
+      await sendMail(env, { to: link.email, subject: `Your invitation to ${entry.title} on Confused for Now`, ...mail });
+    } catch (err) {
+      console.error(`invite re-send: ${err.message}`);
+      await markNotMailed(env, token);
+      return json({ ok: true, book: link.book, joined: false, emailed: false });
+    }
+    return json({ ok: true, book: link.book, joined: false, emailed: true });
+  }
+
+  // From the inbox: join. An existing member keeps the name they have (a name given
+  // here is only for someone new).
   let member = await env.DB.prepare("SELECT id, display_name FROM members WHERE email = ?").bind(link.email).first();
   if (!member) {
     member = { id: memberId(), display_name: name };
     await env.DB.prepare("INSERT INTO members (id, display_name, email, created_at) VALUES (?, ?, ?, ?)").bind(member.id, name, link.email, now()).run();
-  } else if (name !== member.display_name) {
-    await env.DB.prepare("UPDATE members SET display_name = ? WHERE id = ?").bind(name, member.id).run();
-    member.display_name = name;
   }
   await env.DB.prepare("INSERT OR IGNORE INTO book_members (book, member_id, added_by, added_at) VALUES (?, ?, ?, ?)").bind(link.book, member.id, link.created_by, now()).run();
   await audit(env, link.book, member, "joined", member.display_name);
   waitUntil(requestSync(env, link.book));
-  if (link.mailed) return json({ ok: true, book: link.book, signedIn: true }, 200, { "set-cookie": await startSession(env, member.id) });
-  const token = await createLink(env, { kind: "signin", memberId: member.id, email: link.email });
-  const mail = mailBody({
-    lines: [`Hello ${member.display_name},`, "You're on the book now. Here is your link to sign in to the author site on Confused for Now. It works once, for the next 15 minutes."],
-    button: "Sign in",
-    url: `${linkOrigin(request)}/#/link/${token}`,
-    footer: "If you didn't ask for this, you can ignore it: nobody can sign in without the link.",
-  });
-  let emailed = true;
-  try {
-    await sendMail(env, { to: link.email, subject: "Your sign-in link for Confused for Now", ...mail });
-  } catch (err) {
-    console.error(`invite signin mail: ${err.message}`);
-    emailed = false;
-  }
-  return json({ ok: true, book: link.book, signedIn: false, emailed });
+  return json({ ok: true, book: link.book, joined: true }, 200, { "set-cookie": await startSession(env, member.id) });
 }
 
 /** Anything but POST. */
-export const onRequest = () => new Response(JSON.stringify({ error: "method not allowed" }), { status: 405, headers: { "content-type": "application/json", allow: "POST" } });
+export const onRequest = () => new Response(JSON.stringify({ error: "method not allowed" }), { status: 405, headers: { "content-type": "application/json", "x-content-type-options": "nosniff", allow: "POST" } });

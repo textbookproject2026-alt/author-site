@@ -126,7 +126,7 @@ export function createStub({ siteOrigin }) {
       if (body.action === "info") return j(200, body.kind === "invite" ? { title: "A Book of Things", name: "New Person", email: "new@example.org", inviter: "Author One" } : { name: "Brandon", email: "brandon@example.org" });
       delete s.links[body.token];
       // "J…": an invitation the inviter copied, which signs nobody in.
-      if (body.token === "J".repeat(43)) return j(200, { ok: true, book: "a-book", signedIn: false, emailed: true });
+      if (body.token === "J".repeat(43)) return j(200, { ok: true, book: "a-book", joined: false, emailed: true });
       s.session = true;
       if (body.kind === "invite") s.me = { ...s.me, name: body.name || "New Person" };
       return j(200, { ok: true, book: "a-book" });

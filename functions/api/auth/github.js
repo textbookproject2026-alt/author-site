@@ -14,6 +14,7 @@ export async function onRequestPost({ request, env }) {
   const res = await fetch(`${UPSTREAM}/api/author-read?what=books`, {
     headers: { authorization: `Bearer ${token}`, origin: SITE },
     redirect: "manual",
+    signal: AbortSignal.timeout(8000),
   });
   if (!res.ok) return fail(401, "github identity refused", "GitHub sign-in didn't work. Try again, or sign in with your email address.");
   const login = String((await res.json().catch(() => ({}))).login ?? "");
@@ -22,8 +23,11 @@ export async function onRequestPost({ request, env }) {
   await adoptNewBooks(env, { github: login });
   const member = await env.DB.prepare("SELECT id, email FROM members WHERE github = ?").bind(login).first();
   if (!member || !(await booksOf(env, member.id)).length) return fail(403, "not on a book", "Your GitHub account isn't on any book here. Ask someone on your book to invite you by email.");
-  return json({ ok: true, needsEmail: !member.email }, 200, { "set-cookie": await startSession(env, member.id) });
+  // Only to give an address: once a member has one, that is their only way in, so a
+  // GitHub login that changes hands later opens nothing.
+  if (member.email) return fail(403, "use email", "You sign in with your email address now: ask for a link above.");
+  return json({ ok: true, needsEmail: true }, 200, { "set-cookie": await startSession(env, member.id) });
 }
 
 /** Anything but POST. */
-export const onRequest = () => new Response(JSON.stringify({ error: "method not allowed" }), { status: 405, headers: { "content-type": "application/json", allow: "POST" } });
+export const onRequest = () => new Response(JSON.stringify({ error: "method not allowed" }), { status: 405, headers: { "content-type": "application/json", "x-content-type-options": "nosniff", allow: "POST" } });

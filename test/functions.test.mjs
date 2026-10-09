@@ -132,21 +132,28 @@ test("a sign-in link works once, gives an HttpOnly Secure SameSite=Lax 30-day co
   assert.equal((await post("/api/auth/consume", { token: old })).status, 410);
 });
 
-test("invite: a copied link joins in two steps but signs nobody in (a sign-in link goes to the address); People at once with an audit line; removal ends access at once", async () => {
+test("invite: a copied link only sends the invitation to the address; from the inbox, two steps to join; People at once with an audit line; removal ends access at once", async () => {
   const alec = await signInAs(ALEC.id, ALEC.email);
   const inv = await (await post("/api/members", { book: "platform-test-book", action: "invite", name: "Test Member", email: "Test.Member@Example.org", send: false }, { cookie: alec })).json();
   const t = /#\/invite\/([A-Za-z0-9_-]{43})$/.exec(inv.link)[1];
   const info = await (await post("/api/invite", { kind: "invite", token: t, action: "info" })).json();
   assert.deepEqual([info.name, info.inviter, info.email], ["Test Member", "Alec Gordon", "test.member@example.org"]);
-  const joined = await post("/api/invite", { kind: "invite", token: t, action: "accept", name: "Test Member" });
-  assert.equal(joined.status, 200);
-  // The inviter has seen a copied link, so it can't be a session: the inbox is.
-  assert.equal(cookieOf(joined), undefined);
-  assert.equal((await joined.json()).signedIn, false);
-  const sent = rows("SELECT m.id FROM links l JOIN members m ON m.id = l.member_id WHERE l.kind = 'signin' AND l.email = 'test.member@example.org'");
-  assert.equal(sent.length, 1, "a sign-in link for the invited address");
-  const member = await signInAs(sent[0].id, "test.member@example.org");
+  const copied = await post("/api/invite", { kind: "invite", token: t, action: "accept", name: "Test Member" });
+  assert.equal(copied.status, 200);
+  // The inviter has seen a copied link: it adds nobody and signs nobody in. A fresh
+  // invitation is written for the address (locally the mail fails, so it's marked unsent).
+  assert.equal(cookieOf(copied), undefined);
+  assert.equal((await copied.json()).joined, false);
+  assert.equal(rows("SELECT COUNT(*) AS n FROM members WHERE email = 'test.member@example.org'")[0].n, 0);
+  assert.equal(rows("SELECT COUNT(*) AS n FROM links WHERE kind = 'invite' AND email = 'test.member@example.org' AND used_at IS NULL")[0].n, 1);
   assert.equal((await post("/api/invite", { kind: "invite", token: t, action: "accept" })).status, 410, "single use");
+  // The emailed one (as Resend would have delivered it): joins and signs in.
+  const mailed = token();
+  sql(`INSERT INTO links (token_hash, kind, book, email, name, created_by, mailed, created_at, expires_at) VALUES ('${sha(mailed)}', 'invite', 'platform-test-book', 'test.member@example.org', 'Test Member', '${ALEC.id}', 1, ${Date.now()}, ${Date.now() + 86400000})`);
+  const joined = await post("/api/invite", { kind: "invite", token: mailed, action: "accept", name: "Test Member" });
+  assert.equal((await joined.json()).joined, true);
+  const member = cookieOf(joined);
+  assert.ok(member);
   const people = await (await get("/api/members?book=platform-test-book", { cookie: alec })).json();
   const tm = people.members.find((m) => m.name === "Test Member");
   assert.ok(tm && tm.hasEmail);
@@ -162,7 +169,7 @@ test("invite: a copied link joins in two steps but signs nobody in (a sign-in li
   assert.equal(rows(`SELECT email FROM members WHERE id = '${tm.id}'`)[0].email, null, "on no book: email deleted");
 });
 
-test("set-email: refused for a member who is also on a book the asker isn't on", async () => {
+test("set-email for someone else: the platform maintainer only", async () => {
   const DANA = { id: "d4d4d4d4d4", email: "dana@example.org" };
   sql(`INSERT INTO members (id, display_name, email, created_at) VALUES ('${DANA.id}', 'Dana', '${DANA.email}', ${NOW});
        INSERT INTO book_members (book, member_id, added_at) VALUES ('ontology-for-social-research-a-criti', '${DANA.id}', ${NOW}), ('platform-test-book', '${BRANDON.id}', ${NOW});`);
@@ -171,6 +178,13 @@ test("set-email: refused for a member who is also on a book the asker isn't on",
   assert.equal(res.status, 403);
   assert.equal(rows(`SELECT COUNT(*) AS n FROM links WHERE member_id = '${BRANDON.id}' AND kind = 'claim'`)[0].n, 0);
   sql(`DELETE FROM book_members WHERE book = 'platform-test-book' AND member_id = '${BRANDON.id}'; DELETE FROM book_members WHERE member_id = '${DANA.id}';`);
+});
+
+test("an invitation never renames someone who is already a member", async () => {
+  const t = token();
+  sql(`INSERT INTO links (token_hash, kind, book, email, name, created_by, mailed, created_at, expires_at) VALUES ('${sha(t)}', 'invite', 'platform-test-book', '${ALEC.email}', 'Mallory', '${ALEC.id}', 1, ${Date.now()}, ${Date.now() + 86400000})`);
+  assert.equal((await post("/api/invite", { kind: "invite", token: t, action: "accept", name: "Mallory" })).status, 200);
+  assert.equal(rows(`SELECT display_name FROM members WHERE id = '${ALEC.id}'`)[0].display_name, "Alec Gordon");
 });
 
 test("removing the last member of a book is refused", async () => {

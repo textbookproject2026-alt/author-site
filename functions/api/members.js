@@ -124,8 +124,10 @@ export async function onRequestPost({ request, env, waitUntil }) {
     const who = await env.DB.prepare("SELECT m.id, m.display_name, m.email FROM book_members b JOIN members m ON m.id = b.member_id WHERE b.book = ? AND m.id = ?").bind(book, String(b.member ?? "")).first();
     if (!who) return fail(404, "not on the book", "That person isn't on this book.");
     if (who.email) return fail(409, "has email", "They already have an email address.");
-    // Only for someone whose books are all yours too: the address becomes their way in,
-    // so you can't give yourself a way into a book you aren't on.
+    // The address becomes their way in, and whoever reads that inbox becomes them, on
+    // every book and after the giver has left. So only the platform maintainer gives
+    // one for someone else; anyone can give their own (/api/me, after a GitHub sign-in).
+    if (!isMaintainer(env, me)) return fail(403, "maintainer only", `Only the platform's maintainer can give an address for ${who.display_name}. They can also give it themselves: they sign in once more the old way and are asked for it.`);
     const elsewhere = await env.DB.prepare(
       "SELECT 1 AS x FROM book_members t WHERE t.member_id = ? AND t.book NOT IN (SELECT book FROM book_members WHERE member_id = ?) LIMIT 1",
     ).bind(who.id, me.id).first();
