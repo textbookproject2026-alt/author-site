@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseContents, withOrder, withLabel, retitledChapter } from "../site/lib/contents.js";
+import { parseContents, withOrder, withLabel, withItem, itemLine, retitledChapter } from "../site/lib/contents.js";
 
 const INDEX = [
   "# A book", "", "Intro.", "", "## Contents", "",
@@ -73,4 +73,19 @@ test("nextChapterPath and pageFileName", () => {
   assert.equal(nextChapterPath([]), "chapters/chapter-01.md");
   assert.equal(pageFileName("Structure / agency: a note?"), "Structure agency a note");
   assert.equal(pageFileName("..."), "");
+});
+
+test("the Contents always has blank lines around its heading and list (markdownlint MD022, MD032)", () => {
+  // The first item added to an empty Contents doesn't run into the next heading.
+  const empty = parseContents("# B\n\n## Contents\n\n## Next\n\nText\n");
+  assert.equal(
+    withItem(empty, [itemLine(empty, "chapters/x.md", "X")], 0),
+    "# B\n\n## Contents\n\n- [[chapters/x|X]]\n\n## Next\n\nText\n",
+  );
+  // A list packed against its heading and the next one (platform-test-book's drafts, 9 Oct) gets them.
+  const packed = parseContents("## Contents\n1. [[a|A]]\n2. [[b|B]]\n## Next\n");
+  assert.equal(withOrder(packed, [1, 0]), "## Contents\n\n2. [[b|B]]\n1. [[a|A]]\n\n## Next\n");
+  // Text before the list keeps a blank line on both sides.
+  const intro = parseContents("## Contents\nRead in order:\n- [[a|A]]\n");
+  assert.equal(withOrder(intro, [0]), "## Contents\n\nRead in order:\n\n- [[a|A]]\n");
 });
