@@ -304,3 +304,11 @@ details.jobs { margin-top: 2rem; }
 
 .glossary-add { margin: 1rem 0; padding: 0.9rem 1rem; border: 1px solid var(--portal-border); border-radius: 8px; }
 .glossary-add textarea { width: 100%; box-sizing: border-box; font: inherit; }
+
+/* Credits: one row per author or editor; the three fields side by side where there
+   is room, stacked on a phone. */
+.credit-list { margin: 0 0 0.75rem; padding-left: 1.4rem; }
+.credit-row { margin: 0 0 0.6rem; }
+.credit-fields { display: grid; grid-template-columns: minmax(10rem, 2fr) minmax(9rem, 1.4fr) minmax(9rem, 1.4fr); gap: 0.4rem; }
+.credit-fields input { min-width: 0; padding: 0.4rem 0.55rem; border: 1px solid var(--portal-border); border-radius: 6px; font: inherit; background: var(--portal-bg); color: var(--portal-ink); }
+@media (max-width: 640px) { .credit-fields { grid-template-columns: 1fr; } }

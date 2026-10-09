@@ -14,6 +14,7 @@
 //   #/<book>/tidy-all/<glossary|concepts>[/<n>]  the same, book-wide, chapter by chapter
 //   #/<book>/people             who can work on it; invite, remove
 //   #/<book>/history[/<path>]   the drafts' history, of the book or one page
+//   #/<book>/credits[/<path>]   the book's (or a chapter's) authors and editors
 //   #/<book>/revision/<sha>[/<path>]  one change; one page at it, Restore, Bring it back
 //   #/settings                  the author's own DeepSeek key, in this browser
 // Older links (#/<book>/waiting, /publish, /change/<n>, /chapter/<path>) still land.
@@ -27,6 +28,7 @@ import { editScreen } from "./lib/screens-edit.js";
 import { settingsScreen } from "./lib/screens-settings.js";
 import { peopleScreen } from "./lib/screens-people.js";
 import { historyScreen, revisionScreen } from "./lib/screens-history.js";
+import { creditsScreen } from "./lib/screens-credits.js";
 import { suggestionScreen } from "./lib/screens-suggestion.js";
 import { privacyNote } from "./lib/privacy.js";
 import { newChapterScreen, newConceptScreen } from "./lib/screens-new.js";
@@ -118,6 +120,7 @@ const ROUTES = [
   [/^([a-z0-9-]+)\/(?:drafts|waiting|publish|change\/\d+)$/, (book) => draftsScreen(book)],
   [/^([a-z0-9-]+)\/suggestion\/(\d+)$/, (book, n) => suggestionScreen(book, Number(n))],
   [/^([a-z0-9-]+)\/people$/, (book) => peopleScreen(book)],
+  [/^([a-z0-9-]+)\/credits(?:\/(.+))?$/, (book, path) => creditsScreen(book, path ? decodeURIComponent(path) : "")],
   [/^([a-z0-9-]+)\/history(?:\/(.+))?$/, (book, path) => historyScreen(book, path ? decodeURIComponent(path) : "")],
   [/^([a-z0-9-]+)\/revision\/([0-9a-f]{40})(?:\/(.+))?$/, (book, sha, path) => revisionScreen(book, sha, path ? decodeURIComponent(path) : "")],
 ];
