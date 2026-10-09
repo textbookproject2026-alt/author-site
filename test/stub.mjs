@@ -100,6 +100,12 @@ export function createStub({ siteOrigin }) {
     }
     const body = req.postData() ? JSON.parse(req.postData()) : null;
     s.requests.push({ endpoint, method: req.method(), query: Object.fromEntries(url.searchParams), body, auth: req.headers().authorization });
+    // The public /api/history (no sign-in): what is proposed, as Page history shows readers.
+    if (endpoint === "history") {
+      return json(route, 200, { items: [
+        { kind: "note", number: 12, url: "https://github.com/o/a-book/issues/12", date: "2026-10-08T09:00:00Z", summary: "Say where this is from", who: { name: "Jo Reader" }, paragraph: 3 },
+      ] });
+    }
     if (s.status401) return json(route, 401, { error: "identity required", userMessage: "Please sign in with GitHub again." });
     if (req.headers().authorization !== `Bearer ${s.signedIn.token}`) return json(route, 401, { error: "identity required" });
 

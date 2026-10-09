@@ -218,6 +218,7 @@ function publishPart(book, state, pub, n) {
   return [
     h("h2", { text: "Before publishing" }),
     checks.length ? checks : h("p", { class: "muted", text: "Nothing to check." }),
+    n && !reason ? h("p", { class: "muted small publish-preview", text: `Publishing will move ${plural(n, "change")} from Being edited to Published.` }) : null,
     h("div", { class: "publish" }, why, go),
     outcome,
   ];
