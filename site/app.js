@@ -60,20 +60,59 @@ showTheme();
 
 // --- who is signed in -------------------------------------------------------------------
 
+// An account button (the avatar, and the login where there's room) opens a menu with
+// the full name, the guide, Settings and Sign out (batch 2b: on a phone the six
+// controls didn't fit one row and broke inside their words).
 const who = document.getElementById("who");
+let closeMenu = () => {};
 function showWho(id) {
+  closeMenu();
+  document.body.classList.toggle("signed-in", Boolean(id));
   if (!id) {
     who.hidden = true;
     clear(who);
     return;
   }
-  clear(who,
-    id.id ? h("img", { src: `https://avatars.githubusercontent.com/u/${id.id}?s=44`, alt: "" }) : null,
-    h("span", { text: `@${id.login}` }),
-    h("a", { class: "btn link", href: "#/settings", text: "Settings" }),
-    h("button", { type: "button", class: "btn link", text: "Sign out", onclick: () => signOut() }));
+  const label = `@${id.login}`;
+  const button = h("button", { type: "button", class: "account-btn", "aria-haspopup": "menu", "aria-expanded": "false", "aria-controls": "account-menu", "aria-label": `Account: ${label}` },
+    id.id ? h("img", { src: `https://avatars.githubusercontent.com/u/${id.id}?s=56`, alt: "" }) : h("span", { class: "initial", "aria-hidden": "true", text: (id.name || id.login).slice(0, 1).toUpperCase() }),
+    h("span", { class: "login", "aria-hidden": "true", text: label }));
+  const menu = h("div", { class: "account-menu", id: "account-menu", role: "menu", hidden: true },
+    h("p", { class: "account-name" }, id.name ? h("strong", { text: id.name }) : null, label),
+    h("hr", {}),
+    h("a", { role: "menuitem", href: "https://guide.confused4now.org", target: "_blank", rel: "noopener", text: "Guide for authors" }),
+    h("a", { role: "menuitem", href: "#/settings", text: "Settings" }),
+    h("button", { type: "button", role: "menuitem", text: "Sign out", onclick: () => signOut() }));
+  const onDoc = (e) => {
+    if (!who.contains(e.target)) closeMenu();
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape") {
+      closeMenu();
+      button.focus();
+    }
+  };
+  closeMenu = () => {
+    menu.hidden = true;
+    button.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", onDoc, true);
+    document.removeEventListener("keydown", onKey);
+  };
+  button.addEventListener("click", () => {
+    if (!menu.hidden) return closeMenu();
+    menu.hidden = false;
+    button.setAttribute("aria-expanded", "true");
+    document.addEventListener("click", onDoc, true);
+    document.addEventListener("keydown", onKey);
+    menu.querySelector("a, button")?.focus();
+  });
+  menu.addEventListener("click", (e) => {
+    if (e.target.closest("a")) closeMenu();
+  });
+  clear(who, button, menu);
   who.hidden = false;
 }
+window.addEventListener("hashchange", () => closeMenu());
 onChange((id) => {
   showWho(id);
   route();
