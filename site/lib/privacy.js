@@ -24,6 +24,15 @@ export function privacyNote() {
           /* closed for this page only */
         }
         box.remove();
+        document.body.style.removeProperty("padding-bottom");
       } })));
   document.body.append(box);
+  // While it shows, the page keeps room for it at the end, so nothing stays under it
+  // (batch 2b: on a phone it covered the last rows of every list). CSSOM, not a
+  // style attribute in the markup: the CSP allows the former.
+  const room = () => {
+    if (box.isConnected) document.body.style.paddingBottom = `${box.offsetHeight + 32}px`;
+  };
+  room();
+  addEventListener("resize", room);
 }

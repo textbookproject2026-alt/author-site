@@ -1,5 +1,6 @@
 # The browser tests on every pull request and push to main.
-#   site       test/site.test.mjs: every screen against stubbed endpoints, with the CSP
+#   site       test/site.test.mjs: every screen against stubbed endpoints, with the CSP;
+#              test/phone-audit.test.mjs: the phone audit on every screen (batch 2b)
 #   questions  test/questions.test.mjs: the converter's Python in real Pyodide, byte for
 #              byte against the same Python run here. Needs authoring-assistant readable
 #              without credentials (it is fetched as the Pages build fetches it).
@@ -27,7 +28,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright-core install --with-deps chromium
-      - run: node --test --test-concurrency=1 test/site.test.mjs test/contents.test.mjs
+      - run: node --test --test-concurrency=1 test/site.test.mjs test/contents.test.mjs test/phone-audit.test.mjs
 
   questions:
     runs-on: ubuntu-latest

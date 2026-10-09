@@ -80,7 +80,8 @@ test("signed out: the sign-in screen; the popup signs in; the books are the auth
 
 test("sign out, and a 401 from the endpoints, both return to the sign-in screen", async () => {
   await signIn();
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.getByRole("button", { name: /^Account: @author-one$/ }).click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
   await page.getByRole("heading", { name: "Work on your textbook" }).waitFor();
   await signIn();
   stub.s.status401 = true;
@@ -94,13 +95,55 @@ test("an account that is no book's author is told so, and how to fix it", async 
   await page.getByText("isn't one of any book's authors").waitFor();
 });
 
-test("the header's Guide link opens the author guide in a new tab, signed in or out", async () => {
+test("the guide opens in a new tab: from the header signed out, from the account menu signed in", async () => {
   await page.goto(`${origin}/`);
   const guide = page.locator(".masthead").getByRole("link", { name: "Guide", exact: true });
   assert.equal(await guide.getAttribute("href"), "https://guide.confused4now.org");
   assert.equal(await guide.getAttribute("target"), "_blank");
   await signIn();
-  assert.ok(await guide.isVisible());
+  assert.equal(await guide.isVisible(), false, "signed in, it is in the account menu");
+  await page.getByRole("button", { name: /^Account: / }).click();
+  const item = page.getByRole("menuitem", { name: "Guide for authors" });
+  assert.equal(await item.getAttribute("href"), "https://guide.confused4now.org");
+  assert.equal(await item.getAttribute("target"), "_blank");
+});
+
+test("the account menu on a phone: avatar only, the full login inside, no label broken inside a word; Escape closes it", async () => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  stub.s.signedIn = { ...stub.s.signedIn, login: "textbookproject2026-alt" };
+  await signIn();
+  const button = page.getByRole("button", { name: "Account: @textbookproject2026-alt" });
+  assert.equal(await button.locator(".login").isVisible(), false, "only the avatar under 720px");
+  await button.click();
+  assert.equal(await button.getAttribute("aria-expanded"), "true");
+  await page.locator(".account-name").getByText("@textbookproject2026-alt").waitFor();
+  for (const name of ["Guide for authors", "Settings", "Sign out"]) {
+    const lines = await page.getByRole("menuitem", { name }).evaluate((el) => {
+      const r = document.createRange();
+      r.selectNodeContents(el);
+      return new Set([...r.getClientRects()].map((x) => Math.round(x.top))).size;
+    });
+    assert.equal(lines, 1, `${name} on one line`);
+  }
+  await page.keyboard.press("Escape");
+  assert.equal(await button.getAttribute("aria-expanded"), "false");
+  // The book's tabs: one row, the current one in view.
+  await page.goto(`${origin}/#/a-book/history`);
+  await page.getByRole("heading", { name: "History", exact: true }).waitFor();
+  // The strip scrolls the current tab into view a frame or two after it is drawn.
+  await page.waitForFunction(() => {
+    const nav = document.querySelector("nav.tabs");
+    const cur = nav?.querySelector('[aria-current="page"]')?.getBoundingClientRect();
+    const box = nav?.getBoundingClientRect();
+    return cur && cur.right <= box.right + 1 && cur.left >= box.left - 1;
+  }, null, { timeout: 3000 }).catch(() => {});
+  const tabs = await page.locator("nav.tabs").evaluate((nav) => {
+    const tops = new Set([...nav.querySelectorAll("a")].map((a) => Math.round(a.getBoundingClientRect().top)));
+    const cur = nav.querySelector('[aria-current="page"]').getBoundingClientRect();
+    const box = nav.getBoundingClientRect();
+    return { rows: tops.size, visible: cur.left >= box.left - 1 && cur.right <= box.right + 1 };
+  });
+  assert.deepEqual(tabs, { rows: 1, visible: true });
 });
 
 test("theme: follows a dark system, the toggle switches to light and remembers it before first paint", async () => {
@@ -122,7 +165,8 @@ test("theme: follows a dark system, the toggle switches to light and remembers i
 
 test("settings: the DeepSeek key is kept in this browser only, checked with DeepSeek itself, and removed", async () => {
   await signIn();
-  await page.getByRole("link", { name: "Settings" }).click();
+  await page.getByRole("button", { name: /^Account: / }).click();
+  await page.getByRole("menuitem", { name: "Settings" }).click();
   await page.getByRole("heading", { name: "DeepSeek (optional)" }).waitFor();
   await page.getByRole("button", { name: "Save key" }).click();
   await page.getByText("Please paste a key first.").waitFor();

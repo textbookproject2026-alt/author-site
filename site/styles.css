@@ -97,8 +97,14 @@ body {
   font-family: var(--portal-font-ui);
   font-size: var(--portal-size-body);
   line-height: var(--portal-lh-body);
-  overflow-wrap: anywhere;
+  /* A word breaks only when it can't fit a line on its own (a long URL): "anywhere"
+     here let flex rows squeeze controls until "Settings" broke as "Setting / s". */
+  overflow-wrap: break-word;
 }
+/* Controls never break inside a word (batch 2b). */
+.btn, .tabs a, .masthead a, .masthead button, .account-menu a, .account-menu button, .badge { white-space: nowrap; }
+/* The router focuses main after each screen, for screen readers; the ring is no help to anyone else. */
+main:focus { outline: none; }
 main, .masthead { max-width: var(--portal-page); margin: 0 auto; }
 a { color: var(--portal-accent); text-decoration-color: var(--portal-accent-soft); text-underline-offset: 2px; }
 a:hover { color: var(--portal-accent-hover); }
@@ -119,9 +125,34 @@ code { font-family: var(--portal-font-mono); font-size: 0.85em; padding: 0.05rem
 .masthead .home:hover { color: var(--portal-accent); }
 .masthead .home svg { display: block; height: 28px; width: auto; }
 .masthead .where { color: var(--portal-muted); font-size: 0.95rem; }
-.masthead .right { display: flex; align-items: center; gap: 0.75rem; margin-left: auto; }
-.who { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--portal-muted); font-size: 0.9rem; }
-.who img { width: 22px; height: 22px; border-radius: 50%; }
+.masthead { flex-wrap: nowrap; }
+.masthead .where { white-space: nowrap; }
+.masthead .right { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; flex: none; }
+.masthead .right > a.btn.link { display: inline-flex; align-items: center; min-height: 44px; }
+/* Who is signed in: an account button (avatar, and the login where there's room) and its menu. */
+.who { position: relative; display: inline-flex; }
+.account-btn { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 44px; min-width: 44px; padding: 0 0.4rem;
+  border: 1px solid transparent; border-radius: 999px; background: none; color: var(--portal-muted); font: inherit; font-size: 0.9rem; cursor: pointer; }
+.account-btn:hover, .account-btn[aria-expanded="true"] { border-color: var(--portal-border); color: var(--portal-ink); }
+.account-btn img, .account-btn .initial { width: 28px; height: 28px; flex: none; border-radius: 50%; }
+.account-btn .initial { display: inline-flex; align-items: center; justify-content: center; background: var(--portal-bg-soft); color: var(--portal-ink); font-weight: 700; }
+.account-btn .login { max-width: 14ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-menu { position: absolute; right: 0; top: calc(100% + 0.25rem); z-index: 30; min-width: 14rem; max-width: calc(100vw - 2rem);
+  padding: 0.4rem; border: 1px solid var(--portal-border); border-radius: 10px; background: var(--portal-bg);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14); }
+.account-menu[hidden] { display: none; }
+.account-menu .account-name { margin: 0; padding: 0.5rem 0.6rem; color: var(--portal-muted); font-size: 0.9rem; overflow-wrap: anywhere; }
+.account-menu .account-name strong { display: block; color: var(--portal-ink); }
+.account-menu a, .account-menu button { display: flex; align-items: center; width: 100%; min-height: 44px; box-sizing: border-box; padding: 0 0.6rem;
+  border: 0; border-radius: 6px; background: none; color: var(--portal-ink); font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+.account-menu a:hover, .account-menu button:hover { background: var(--portal-bg-soft); }
+.account-menu hr { margin: 0.3rem 0; border: 0; border-top: 1px solid var(--portal-border); }
+@media (max-width: 720px) {
+  .account-btn .login { display: none; }
+}
+/* Signed in, the guide is in the account menu. */
+.signed-in .masthead .right > a.guide { display: none; }
+.theme-toggle { min-width: 44px; min-height: 44px; }
 .theme-toggle { display: inline-flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; padding: 0;
   border: 1px solid var(--portal-border); border-radius: 50%; background: var(--portal-bg-soft); color: var(--portal-ink); cursor: pointer; }
 .theme-toggle svg { width: 1.1rem; height: 1.1rem; }
@@ -136,8 +167,18 @@ code { font-family: var(--portal-font-mono); font-size: 0.85em; padding: 0.05rem
 /* --- building blocks ------------------------------------------------------------ */
 .crumbs { margin: 0 0 0.5rem; font-size: 0.9rem; color: var(--portal-muted); }
 .crumbs a { color: var(--portal-muted); }
-.tabs { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0 0 var(--portal-rhythm); border-bottom: 1px solid var(--portal-border); }
-.tabs a { padding: 0.4rem 0.8rem; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; margin-bottom: -1px;
+/* One row at every width: a strip that scrolls sideways (no scrollbar shown), with a
+   fade at whichever edge has more tabs; books.js scrolls the current tab into view. */
+.tabs { display: flex; flex-wrap: nowrap; gap: 0.25rem; margin: 0 0 var(--portal-rhythm); border-bottom: 1px solid var(--portal-border);
+  overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  background:
+    linear-gradient(to right, var(--portal-bg) 30%, transparent) left / 1.5rem 100% no-repeat local,
+    linear-gradient(to left, var(--portal-bg) 30%, transparent) right / 1.5rem 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, color-mix(in srgb, var(--portal-ink) 25%, transparent), transparent) left / 0.75rem 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, color-mix(in srgb, var(--portal-ink) 25%, transparent), transparent) right / 0.75rem 100% no-repeat scroll; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs a { display: inline-flex; align-items: center; flex: none; min-height: 44px; box-sizing: border-box; padding: 0 0.8rem;
+  border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; margin-bottom: -1px;
   color: var(--portal-muted); text-decoration: none; }
 .tabs a[aria-current="page"] { border-color: var(--portal-border); background: var(--portal-bg-soft); color: var(--portal-ink); font-weight: 600; }
 .card { margin: 0 0 0.75rem; padding: 0.9rem 1rem; border: 1px solid var(--portal-border); border-radius: 10px; background: var(--portal-bg-soft); }
@@ -214,8 +255,9 @@ blockquote.said { margin: 0 0 0.75rem; padding: 0.6rem 0.9rem; border-left: 3px 
 .prose-change.after { background: var(--portal-add); }
 
 @media (max-width: 640px) {
-  .masthead .right { width: 100%; justify-content: space-between; margin-left: 0; }
   .preview { padding: 1rem; }
+  /* The page's 16px gutter is the only side spacing: cards lose their outline. */
+  .card { padding-left: 0; padding-right: 0; border-left: 0; border-right: 0; border-radius: 0; background: none; }
 }
 @media print {
   .theme-toggle, .actions { display: none; }
