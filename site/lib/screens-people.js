@@ -1,19 +1,14 @@
-// A book's People: who can work on it here, and inviting or removing an author. Each
-// change is a pull request on the platform's registry that goes through by itself
-// once its checks pass (suggest-edit-function's author-people-change); access starts
-// or ends only when the author site's server has the change, so until then it is
-// shown as on its way.
+// A book's People (batch 2b): who works on it, inviting by name and email, removing,
+// and what has changed ("Brandon added Caroline · 9 Oct"). Everyone on a book is
+// equal. Changes take effect at once (the author site's own server, /api/members);
+// the registry, the public record, follows by itself in the background.
 
-import { h, clear, busy, note, errorNote, when } from "./dom.js";
-import { people, changePeople } from "./api.js";
+import { h, clear, note, errorNote } from "./dom.js";
 import { bookBySlug, bookHeader } from "./books.js";
-import { identity } from "./auth.js";
+import { identity, loadMe, own } from "./auth.js";
 
-const RECHECK_MS = 30_000;
-const lower = (s) => s.toLowerCase();
-/** How a change starts in a sentence: "Inviting @x", "Removing @x", … */
-const VERB = { add: "Inviting ", remove: "Removing ", "mentions-off": "Stopping suggestion emails for ", "mentions-on": "Suggestion emails again for " };
-const profile = (login) => h("a", { href: `https://github.com/${encodeURIComponent(login)}`, target: "_blank", rel: "noopener", text: `@${login}` });
+/** "9 Oct", as the audit lines read. */
+const day = (ms) => new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
 export async function peopleScreen(slug) {
   const book = await bookBySlug(slug);
@@ -25,119 +20,109 @@ export async function peopleScreen(slug) {
 async function draw(book, stage, said = null) {
   let p;
   try {
-    p = await people(book.slug);
+    p = await own(`/api/members?book=${encodeURIComponent(book.slug)}`);
   } catch (err) {
-    if (err.status === 404) return clear(stage, note([h("p", { text: "Changing who works on a book isn't switched on yet. Ask the platform's technical contact." })]));
-    throw err;
+    return clear(stage, errorNote(err));
   }
-  const me = lower(identity()?.login ?? "");
-  const open = p.pending.find((c) => c.state === "open");
-  // A change that didn't go through is said so, with why: never "on its way" for good.
-  const failed = p.pending.filter((c) => c.state === "failed");
-  const onWay = p.pending.filter((c) => c.state !== "failed");
-  const pendingFor = new Map(onWay.map((c) => [lower(c.login), c]));
-
-  const out = h("div", { class: "outcome", "aria-live": "polite" });
-  const act = async (action, login, button) => {
+  const redraw = (msg) => draw(book, stage, msg);
+  const act = async (button, body, done) => {
     button.disabled = true;
-    clear(out, busy(`${VERB[action]}@${login}…`));
     try {
-      const c = await changePeople(book.slug, action, login);
-      await draw(book, stage, [
-        note([h("p", { text: {
-          add: `@${c.login} is invited. GitHub tells them, with a link to sign in here. They can work on the book once the change has gone through, usually a few minutes.`,
-          remove: `@${c.login} is being removed. They keep access until the change has gone through, usually a few minutes.`,
-          "mentions-off": "Done: once the change has gone through (usually a few minutes), new reader suggestions won't mention you, so GitHub won't email you about them.",
-          "mentions-on": "Done: once the change has gone through (usually a few minutes), new reader suggestions mention you again, and GitHub emails you about them.",
-        }[action] })]),
-        c.warning ? note([h("p", { text: c.warning })], "warn") : null,
-      ]);
+      const r = await own("/api/members", { method: "POST", body: { book: book.slug, ...body } });
+      await redraw(done(r));
+    } catch (err) {
+      button.disabled = false;
+      button.after(errorNote(err));
+    }
+  };
+
+  const rows = p.members.map((m) => {
+    const li = h("li", { class: "person" });
+    const name = h("div", { class: "grow" }, h("strong", { text: m.name }), m.you ? h("span", { class: "muted", text: " (you)" }) : null);
+    const remove = m.you ? null : h("button", { type: "button", class: "btn link danger", text: "Remove" });
+    remove?.addEventListener("click", () => {
+      const yes = h("button", { type: "button", class: "btn danger-solid", text: `Remove ${m.name}` });
+      yes.addEventListener("click", () => act(yes, { action: "remove", member: m.id }, () => note([h("p", { text: `${m.name} is no longer on this book. If they were signed in, they've been signed out.` })])));
+      remove.replaceWith(h("span", { class: "row" }, yes, h("button", { type: "button", class: "btn link", text: "Keep", onclick: () => redraw(said) })));
+    });
+    li.append(h("div", { class: "row" }, name, remove));
+    if (!m.hasEmail) {
+      li.append(h("p", { class: "badge level-look", text: "needs an email address" }));
+      if (!m.you) {
+        const email = h("input", { type: "email", "aria-label": `${m.name}'s email address`, autocomplete: "off", spellcheck: "false" });
+        const send = h("button", { type: "button", class: "btn", text: "Send them a link" });
+        send.addEventListener("click", () => act(send, { action: "set-email", member: m.id, email: email.value }, () => note([h("p", { text: `A link went to that address. Once ${m.name} opens it, they sign in with it.` })])));
+        li.append(h("div", { class: "row wrap" }, email, send));
+      }
+    }
+    return li;
+  });
+
+  // Inviting: name and email; the email goes, or the link is copied.
+  const name = h("input", { type: "text", id: "invite-name", autocomplete: "off", maxlength: "80", required: true });
+  const email = h("input", { type: "email", id: "invite-email", autocomplete: "off", spellcheck: "false", required: true });
+  const out = h("div", { "aria-live": "polite" });
+  const invite = async (send, button) => {
+    if (!name.value.trim() || !email.value.trim()) return clear(out, note([h("p", { text: "Give their name and their email address." })], "warn"));
+    button.disabled = true;
+    try {
+      const r = await own("/api/members", { method: "POST", body: { book: book.slug, action: "invite", name: name.value, email: email.value, send } });
+      if (r.mailed) return redraw(note([h("p", { text: `Invitation sent to ${email.value}. It works once, within seven days.` })]));
+      const box = h("input", { type: "text", readonly: true, value: r.link, "aria-label": "The invitation link" });
+      const copy = h("button", { type: "button", class: "btn", text: "Copy the link" });
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(r.link);
+          copy.textContent = "Copied";
+        } catch {
+          box.select();
+        }
+      });
+      clear(out, note([h("p", { text: r.userMessage ?? "Send them this link yourself. It works once, within seven days, for that address." }), h("div", { class: "row wrap" }, box, copy)]));
+      button.disabled = false;
     } catch (err) {
       button.disabled = false;
       clear(out, errorNote(err));
     }
   };
-
-  const removable = (login) => lower(login) !== lower(p.owner) && p.authors.length > 1 && !open && !pendingFor.has(lower(login));
-  const row = (login) => {
-    const confirm = h("div", { class: "row", hidden: true },
-      h("span", { text: lower(login) === me ? "Remove yourself? You lose access once the change has gone through." : `Remove @${login}? They lose access once the change has gone through.` }));
-    const yes = h("button", { type: "button", class: "btn primary", text: "Yes, remove" });
-    yes.addEventListener("click", () => act("remove", login, yes));
-    confirm.append(yes, h("button", { type: "button", class: "btn link", text: "Cancel", onclick: () => { confirm.hidden = true; } }));
-    const pending = pendingFor.get(lower(login));
-    return h("li", {},
-      h("div", { class: "row" },
-        h("div", { class: "grow" }, profile(login),
-          lower(login) === me ? [" ", h("span", { class: "badge", text: "you" })] : null,
-          lower(login) === lower(p.owner) ? [" ", h("span", { class: "badge", text: "looks after the platform" })] : null,
-          pending?.action === "remove" ? [" ", h("span", { class: "badge level-look", text: "being removed" })] : null),
-        removable(login) ? h("button", { type: "button", class: "btn", text: "Remove", onclick: () => { confirm.hidden = false; } }) : null),
-      confirm);
-  };
-
-  const input = h("input", { type: "text", id: "invite-login", autocomplete: "off", spellcheck: "false", placeholder: "for example, octocat" });
-  const invite = h("button", { type: "submit", class: "btn primary", text: "Invite", disabled: Boolean(open) });
-  const form = h("form", {},
-    h("label", { class: "field", for: "invite-login" }, "Their GitHub username", input),
-    h("div", { class: "row" }, invite),
-    h("p", { class: "muted small", text: "They need a GitHub account. GitHub lets them know, with a link to sign in here. They can do everything you can: bring in chapters, edit, answer readers, publish, and invite or remove people." }));
+  const sendBtn = h("button", { type: "submit", class: "btn primary", text: "Send the invitation" });
+  const linkBtn = h("button", { type: "button", class: "btn", text: "Copy a link instead" });
+  linkBtn.addEventListener("click", () => invite(false, linkBtn));
+  const form = h("form", { class: "invite" },
+    h("label", { for: "invite-name", text: "Their name, as the book will credit them" }), name,
+    h("label", { for: "invite-email", text: "Their email address" }), email,
+    h("div", { class: "actions wrap" }, sendBtn, linkBtn), out);
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    const login = input.value.trim().replace(/^@/, "");
-    if (!login) return clear(out, errorNote({ userMessage: "Type their GitHub username first." }));
-    if (p.authors.some((a) => lower(a) === lower(login))) return clear(out, errorNote({ userMessage: `@${login} can already work on this book.` }));
-    act("add", login, invite);
+    invite(true, sendBtn);
   });
 
-  // Emails about reader suggestions: each author's own choice (registry mentions_off).
-  const amAuthor = p.authors.some((a) => lower(a) === me);
-  const mutedNow = (p.mentionsOff ?? []).some((a) => lower(a) === me);
-  const mine = onWay.find((c) => lower(c.login) === me && c.action.startsWith("mentions-"));
-  const muted = mine ? mine.action === "mentions-off" : mutedNow;
-  const emails = amAuthor ? [
-    h("h2", { text: "Emails about reader suggestions" }),
-    h("p", { text: muted
-      ? "New reader suggestions don't mention you, so GitHub doesn't email you about them. They still show on Chapters, in the editor and under Drafts."
-      : "When a reader suggests a change, you're @mentioned on it, so GitHub emails you (as your GitHub notification settings allow). Every author chooses this for themselves." }),
-    open ? null : h("button", { type: "button", class: "btn", text: muted ? "Email me again" : "Stop emailing me", onclick: (e) => act(muted ? "mentions-on" : "mentions-off", identity().login, e.target) }),
-  ] : null;
+  // Your own reader-suggestion emails.
+  const me = identity();
+  const notifyOn = me?.notify !== false;
+  const toggle = h("button", { type: "button", class: "btn", text: notifyOn ? "Stop emailing me" : "Email me again" });
+  toggle.addEventListener("click", async () => {
+    toggle.disabled = true;
+    try {
+      await own("/api/me", { method: "POST", body: { notify: !notifyOn } });
+      await loadMe();
+    } catch (err) {
+      toggle.disabled = false;
+      toggle.after(errorNote(err));
+    }
+  });
 
-  const words = (c) => c.state === "open"
-    ? "waiting for the registry's checks, then it goes through by itself"
-    : "gone through; reaching the author site, usually within a few minutes";
   clear(stage,
     said,
-    h("h2", { class: "flush-top", text: "Who can work on this book here" }),
-    h("ul", { class: "list" }, p.authors.map(row)),
-    failed.length ? [
-      h("h3", { text: "Didn't go through" }),
-      h("ul", { class: "list" }, failed.map((c) => h("li", { class: "failed-change" },
-        note([
-          h("p", { class: "flush" }, VERB[c.action] ?? "Changing ", profile(c.login), c.by ? [" (by @", c.by, ")"] : null,
-            " didn't go through, so nothing changed. ", h("a", { href: c.url, target: "_blank", rel: "noopener", text: "See it on GitHub" })),
-          h("p", { class: "flush" }, "Why: "),
-          h("ul", {}, (c.reasons ?? []).map((r) => h("li", { text: r }))),
-          h("p", { class: "muted small", text: "You can try again below; that closes this one. If the reason isn't something you can put right, tell the platform's technical contact." }),
-        ], "warn")))),
-    ] : null,
-    onWay.length ? [
-      h("h3", { text: "On its way" }),
-      h("ul", { class: "list" }, onWay.map((c) => h("li", {},
-        h("p", { class: "flush" }, VERB[c.action] ?? "Changing ", profile(c.login), c.by ? [" (by @", c.by, ")"] : null, ": ", words(c), ". ",
-          h("a", { href: c.url, target: "_blank", rel: "noopener", text: "See it on GitHub" })),
-        c.when ? h("p", { class: "muted small below", text: `Started ${when(c.when)}.` }) : null))),
-    ] : null,
-    emails,
+    h("h2", { text: "Who works on this book" }),
+    h("p", { class: "muted small", text: "Everyone here can edit, publish, invite and remove. Nobody needs any other account: they sign in with their email." }),
+    h("ul", { class: "list people" }, rows),
+    p.invitations.length ? [h("h3", { text: "Invited, not joined yet" }), h("ul", { class: "list" }, p.invitations.map((i) => h("li", { class: "row" }, h("span", { class: "grow", text: `${i.name} (${i.email})` }), h("span", { class: "muted small", text: `until ${day(i.expires)}` }))))] : null,
     h("h2", { text: "Invite someone" }),
-    open ? note([h("p", { text: "One change at a time: you can invite or remove someone once the change above has gone through." })]) : form,
-    out);
-
-  // Checked again while something is on its way, for as long as this screen is open.
-  if (onWay.length) {
-    const here = location.hash;
-    setTimeout(() => {
-      if (location.hash === here && stage.isConnected) draw(book, stage).catch(() => {});
-    }, RECHECK_MS);
-  }
+    form,
+    h("h2", { text: "Emails about reader suggestions" }),
+    h("p", { class: "muted small", text: notifyOn ? "You get one email for each new proposal, note or suggestion on your books." : "You don't get emails about new reader suggestions." }),
+    h("div", { class: "actions" }, toggle),
+    p.log.length ? [h("h2", { text: "What changed" }), h("ul", { class: "list log" }, p.log.map((l) => h("li", {}, `${l.text} · `, h("span", { class: "muted", text: day(l.at) }))))] : null,
+    p.sync ? h("p", { class: "muted small", text: p.sync.inSync ? "The registry lists the same people (platform maintainer only)." : `The registry hasn't caught up yet: ${p.sync.registry ?? "?"} listed there, ${p.sync.here} here (platform maintainer only). It syncs by itself.` }) : null);
 }
