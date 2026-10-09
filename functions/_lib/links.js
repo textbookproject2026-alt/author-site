@@ -4,14 +4,14 @@
 // mail scanner that fetches the link can't spend it.
 import { LINK_DAYS, SIGNIN_MINUTES, TOKEN_RE, hash, now, randomToken } from "./core.js";
 
-export async function createLink(env, { kind, book = null, email = null, name = null, memberId = null, createdBy = null }) {
+export async function createLink(env, { kind, book = null, email = null, name = null, memberId = null, createdBy = null, mailed = true }) {
   const token = randomToken();
   const t = now();
   const ttl = kind === "signin" ? SIGNIN_MINUTES * 60_000 : LINK_DAYS * 86_400_000;
   await env.DB.prepare(
-    "INSERT INTO links (token_hash, kind, book, email, name, member_id, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO links (token_hash, kind, book, email, name, member_id, created_by, created_at, expires_at, mailed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   )
-    .bind(await hash(token), kind, book, email, name, memberId, createdBy, t, t + ttl)
+    .bind(await hash(token), kind, book, email, name, memberId, createdBy, t, t + ttl, mailed ? 1 : 0)
     .run();
   return token;
 }
@@ -30,4 +30,9 @@ export async function useLink(env, kind, token) {
   return env.DB.prepare("UPDATE links SET used_at = ? WHERE token_hash = ? AND kind = ? AND used_at IS NULL AND expires_at > ? RETURNING *")
     .bind(now(), await hash(token), kind, now())
     .first();
+}
+
+/** The link was shown to someone other than its addressee: it can't sign anyone in. */
+export async function markNotMailed(env, token) {
+  await env.DB.prepare("UPDATE links SET mailed = 0 WHERE token_hash = ?").bind(await hash(token)).run();
 }

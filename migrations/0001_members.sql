@@ -38,6 +38,8 @@ CREATE TABLE links (
   name TEXT,
   member_id TEXT REFERENCES members(id) ON DELETE CASCADE,
   created_by TEXT,                     -- the member who sent it (invite, claim)
+  mailed INTEGER NOT NULL DEFAULT 1,   -- 0: shown to the inviter to pass on (a copied invitation),
+                                       --    which can't sign anyone in: accepting it emails a sign-in link
   created_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL,
   used_at INTEGER
@@ -72,6 +74,7 @@ CREATE TABLE audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   book TEXT NOT NULL,
   at INTEGER NOT NULL,
+  actor_id TEXT,                       -- the member who did it (null: the platform)
   actor_name TEXT NOT NULL,
   action TEXT NOT NULL,                -- invited | joined | removed | email-requested | email-confirmed | published
   subject_name TEXT NOT NULL
@@ -83,6 +86,7 @@ CREATE TABLE rate (
   key TEXT NOT NULL,
   window INTEGER NOT NULL,
   count INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,         -- the window's end: pruned after it
   PRIMARY KEY (key, window)
 );
 

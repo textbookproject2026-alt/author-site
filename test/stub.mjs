@@ -81,7 +81,7 @@ export function createStub({ siteOrigin }) {
     ],
     invitations: [],
     log: [{ at: Date.now() - 86_400_000, text: "Author One invited Co Author" }],
-    links: { ["L".repeat(43)]: "signin", ["I".repeat(43)]: "invite", ["C".repeat(43)]: "claim" },
+    links: { ["L".repeat(43)]: "signin", ["I".repeat(43)]: "invite", ["J".repeat(43)]: "invite", ["C".repeat(43)]: "claim" },
     own: [], // calls to the site's own endpoints: { path, method, body, header }
     peopleAnswers: [], // successive answers for author-people-change: [status, body]
     // author-history: 31 commits on drafts, the newest 2 still waiting; page 2 is the oldest.
@@ -123,8 +123,10 @@ export function createStub({ siteOrigin }) {
     if (path === "/api/auth/github") { s.session = true; return j(200, { ok: true, needsEmail: !s.me.email }); }
     if (path === "/api/invite") {
       if (s.links[body.token] !== body.kind) return j(410, { error: "used", userMessage: "This invitation has been used or has expired. Ask whoever sent it for a new one." });
-      if (body.action === "info") return j(200, body.kind === "invite" ? { title: "A Book of Things", name: "New Person", inviter: "Author One" } : { name: "Brandon", email: "brandon@example.org" });
+      if (body.action === "info") return j(200, body.kind === "invite" ? { title: "A Book of Things", name: "New Person", email: "new@example.org", inviter: "Author One" } : { name: "Brandon", email: "brandon@example.org" });
       delete s.links[body.token];
+      // "J…": an invitation the inviter copied, which signs nobody in.
+      if (body.token === "J".repeat(43)) return j(200, { ok: true, book: "a-book", signedIn: false, emailed: true });
       s.session = true;
       if (body.kind === "invite") s.me = { ...s.me, name: body.name || "New Person" };
       return j(200, { ok: true, book: "a-book" });

@@ -12,27 +12,29 @@ export async function onRequestPost({ request, env, waitUntil }) {
   const email = normEmail((await body(request)).email);
   if (!validEmail(email)) return fail(400, "bad email", "That doesn't look like an email address.");
   const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
-  const [perEmail, perIp] = await Promise.all([
-    allow(env, `signin:email:${await hash(email)}`, 5, 3600),
-    allow(env, `signin:ip:${ip}`, 20, 3600),
-  ]);
-  if (!perEmail || !perIp) return fail(429, "rate limited", "Too many sign-in links asked for. Wait a little, then try again.");
-  const member = await env.DB.prepare(
-    "SELECT m.id, m.display_name FROM members m WHERE m.email = ? AND EXISTS (SELECT 1 FROM book_members b WHERE b.member_id = m.id)",
-  )
-    .bind(email)
-    .first();
-  if (member) {
-    const token = await createLink(env, { kind: "signin", memberId: member.id, email });
-    const mail = mailBody({
-      lines: [`Hello ${member.display_name},`, "Here is your link to sign in to the author site on Confused for Now. It works once, for the next 15 minutes."],
-      button: "Sign in",
-      url: `${linkOrigin(request)}/#/link/${token}`,
-      footer: "If you didn't ask for this, you can ignore it: nobody can sign in without the link.",
-    });
-    // Sent after the answer, so a member's address takes no longer to answer than a stranger's.
-    waitUntil(sendMail(env, { to: email, subject: "Your sign-in link for Confused for Now", ...mail }).catch((err) => console.error(`signin mail: ${err.message}`)));
-  }
+  if (!(await allow(env, `signin:ip:${ip}`, 20, 3600))) return fail(429, "rate limited", "Too many sign-in links asked for. Wait a little, then try again.");
+  // Everything about the address happens after the answer, so a member's address and a
+  // stranger's are answered alike and as fast. At most five links an hour to an
+  // address, counted only when one is sent (asking for a stranger's costs nobody).
+  const origin = linkOrigin(request);
+  waitUntil(
+    (async () => {
+      const member = await env.DB.prepare(
+        "SELECT m.id, m.display_name FROM members m WHERE m.email = ? AND EXISTS (SELECT 1 FROM book_members b WHERE b.member_id = m.id)",
+      )
+        .bind(email)
+        .first();
+      if (!member || !(await allow(env, `signin:email:${await hash(email)}`, 5, 3600))) return;
+      const token = await createLink(env, { kind: "signin", memberId: member.id, email });
+      const mail = mailBody({
+        lines: [`Hello ${member.display_name},`, "Here is your link to sign in to the author site on Confused for Now. It works once, for the next 15 minutes."],
+        button: "Sign in",
+        url: `${origin}/#/link/${token}`,
+        footer: "If you didn't ask for this, you can ignore it: nobody can sign in without the link.",
+      });
+      await sendMail(env, { to: email, subject: "Your sign-in link for Confused for Now", ...mail });
+    })().catch((err) => console.error(`signin: ${err.message}`)),
+  );
   return json(SAME_ANSWER);
 }
 

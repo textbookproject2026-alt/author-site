@@ -90,7 +90,7 @@ export async function onRequest({ request, env, params, waitUntil }) {
 
   if (endpoint === "author-act" && parsed?.action === "publish" && res.ok) {
     const entry = await bookEntry(book).catch(() => null);
-    waitUntil(audit(env, book, s.member.display_name, "published", entry?.title ?? book));
+    waitUntil(audit(env, book, s.member, "published", entry?.title ?? book));
   }
   const out = new Headers({ "cache-control": "no-store" });
   for (const h of ["content-type", "x-registry-version", "x-function-version", "retry-after"]) {

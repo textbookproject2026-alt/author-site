@@ -63,6 +63,15 @@ const post = (path, body, { cookie, headers = site } = {}) =>
 const get = (path, { cookie, headers = site } = {}) => fetch(`${BASE}${path}`, { headers: { ...headers, ...(cookie ? { cookie } : {}) } });
 const cookieOf = (res) => /(__Host-tb_session=[^;]+)/.exec(res.headers.get("set-cookie") ?? "")?.[1];
 
+/** Work done after the answer (waitUntil): wait for what it writes. */
+async function eventually(check) {
+  for (let i = 0; i < 40; i++) {
+    if (check()) return;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  assert.fail("never happened");
+}
+
 async function signInAs(memberId, email) {
   const t = token();
   sql(`INSERT INTO links (token_hash, kind, member_id, email, created_at, expires_at) VALUES ('${sha(t)}', 'signin', '${memberId}', '${email}', ${Date.now()}, ${Date.now() + 900000})`);
@@ -71,17 +80,24 @@ async function signInAs(memberId, email) {
   return cookieOf(res);
 }
 
-test("sign-in: the same answer for a member and a stranger; rate-limited per address", async () => {
+test("sign-in: the same answer for a member and a stranger; at most five links an hour to an address, twenty asks per IP", async () => {
   const known = await post("/api/auth/request", { email: "ALEC@example.org " });
   const unknown = await post("/api/auth/request", { email: "nobody@example.org" });
   assert.equal(known.status, 200);
   assert.deepEqual(await known.json(), await unknown.json());
   // Only the member's address got a link (stored hashed), and it's for them.
-  const links = rows("SELECT kind, member_id, email, length(token_hash) AS l FROM links WHERE kind = 'signin'");
-  assert.deepEqual(links, [{ kind: "signin", member_id: ALEC.id, email: ALEC.email, l: 64 }]);
+  const signins = () => rows("SELECT kind, member_id, email, length(token_hash) AS l FROM links WHERE kind = 'signin'");
+  await eventually(() => signins().length === 1);
+  assert.deepEqual(signins(), [{ kind: "signin", member_id: ALEC.id, email: ALEC.email, l: 64 }]);
+  // Six more asks for the member: all answered alike, five links in all.
   const codes = [];
-  for (let i = 0; i < 5; i++) codes.push((await post("/api/auth/request", { email: "flood@example.org" })).status);
-  assert.deepEqual(codes, [200, 200, 200, 200, 200]);
+  for (let i = 0; i < 6; i++) codes.push((await post("/api/auth/request", { email: ALEC.email })).status);
+  assert.deepEqual(codes, [200, 200, 200, 200, 200, 200]);
+  await eventually(() => signins().length >= 5);
+  await new Promise((r) => setTimeout(r, 1000));
+  assert.equal(signins().length, 5);
+  // Asking about strangers costs no address budget, only the IP's: 20 in all, then 429.
+  for (let i = 8; i < 20; i++) assert.equal((await post("/api/auth/request", { email: `x${i}@example.org` })).status, 200);
   assert.equal((await post("/api/auth/request", { email: "flood@example.org" })).status, 429);
   assert.equal((await post("/api/auth/request", { email: "not an email" })).status, 400);
 });
@@ -89,6 +105,13 @@ test("sign-in: the same answer for a member and a stranger; rate-limited per add
 test("CSRF: no site header, or another origin, is refused", async () => {
   assert.equal((await post("/api/auth/request", { email: "a@example.org" }, { headers: { origin: BASE, "content-type": "application/json" } })).status, 403);
   assert.equal((await post("/api/auth/request", { email: "a@example.org" }, { headers: { ...site, origin: "https://evil.example" } })).status, 403);
+  // A GET without Origin passes only when the browser says it is same-origin.
+  const alec = await signInAs(ALEC.id, ALEC.email);
+  const bare = { "x-author-site": "1", cookie: alec };
+  assert.equal((await fetch(`${BASE}/fn/author-read?what=books`, { headers: bare })).status, 403);
+  assert.equal((await fetch(`${BASE}/fn/author-read?what=books`, { headers: { ...bare, "sec-fetch-site": "cross-site" } })).status, 403);
+  const ok = await fetch(`${BASE}/fn/author-read?what=books`, { headers: { ...bare, "sec-fetch-site": "same-origin" } });
+  assert.notEqual((await ok.json().catch(() => ({}))).error, "cross-site request", "forwarded (whatever the function then says)");
 });
 
 test("a sign-in link works once, gives an HttpOnly Secure SameSite=Lax 30-day cookie", async () => {
@@ -100,22 +123,29 @@ test("a sign-in link works once, gives an HttpOnly Secure SameSite=Lax 30-day co
   for (const part of ["__Host-tb_session=", "HttpOnly", "Secure", "SameSite=Lax", "Path=/", "Max-Age=2592000"]) assert.ok(sc.includes(part), part);
   assert.equal((await post("/api/auth/consume", { token: t })).status, 410, "single use");
   const me = await (await get("/api/me", { cookie: cookieOf(res) })).json();
-  assert.deepEqual([me.member.name, me.member.maintainer, me.books], ["Alec Gordon", true, ["ontology-for-social-research-a-criti", "platform-test-book"]]);
+  assert.deepEqual([me.member.name, me.member.maintainer], ["Alec Gordon", true]);
+  // His two books, and any the live registry lists him on that had nobody yet (adopted once).
+  assert.ok(["ontology-for-social-research-a-criti", "platform-test-book"].every((b) => me.books.includes(b)), me.books.join());
   // Expired: refused.
   const old = token();
   sql(`INSERT INTO links (token_hash, kind, member_id, email, created_at, expires_at) VALUES ('${sha(old)}', 'signin', '${ALEC.id}', '${ALEC.email}', 0, 1)`);
   assert.equal((await post("/api/auth/consume", { token: old })).status, 410);
 });
 
-test("invite: a copied link, two steps to join, then in People at once with an audit line; removal ends access at once", async () => {
+test("invite: a copied link joins in two steps but signs nobody in (a sign-in link goes to the address); People at once with an audit line; removal ends access at once", async () => {
   const alec = await signInAs(ALEC.id, ALEC.email);
   const inv = await (await post("/api/members", { book: "platform-test-book", action: "invite", name: "Test Member", email: "Test.Member@Example.org", send: false }, { cookie: alec })).json();
   const t = /#\/invite\/([A-Za-z0-9_-]{43})$/.exec(inv.link)[1];
   const info = await (await post("/api/invite", { kind: "invite", token: t, action: "info" })).json();
-  assert.deepEqual([info.name, info.inviter], ["Test Member", "Alec Gordon"]);
+  assert.deepEqual([info.name, info.inviter, info.email], ["Test Member", "Alec Gordon", "test.member@example.org"]);
   const joined = await post("/api/invite", { kind: "invite", token: t, action: "accept", name: "Test Member" });
   assert.equal(joined.status, 200);
-  const member = cookieOf(joined);
+  // The inviter has seen a copied link, so it can't be a session: the inbox is.
+  assert.equal(cookieOf(joined), undefined);
+  assert.equal((await joined.json()).signedIn, false);
+  const sent = rows("SELECT m.id FROM links l JOIN members m ON m.id = l.member_id WHERE l.kind = 'signin' AND l.email = 'test.member@example.org'");
+  assert.equal(sent.length, 1, "a sign-in link for the invited address");
+  const member = await signInAs(sent[0].id, "test.member@example.org");
   assert.equal((await post("/api/invite", { kind: "invite", token: t, action: "accept" })).status, 410, "single use");
   const people = await (await get("/api/members?book=platform-test-book", { cookie: alec })).json();
   const tm = people.members.find((m) => m.name === "Test Member");
@@ -132,6 +162,27 @@ test("invite: a copied link, two steps to join, then in People at once with an a
   assert.equal(rows(`SELECT email FROM members WHERE id = '${tm.id}'`)[0].email, null, "on no book: email deleted");
 });
 
+test("set-email: refused for a member who is also on a book the asker isn't on", async () => {
+  const DANA = { id: "d4d4d4d4d4", email: "dana@example.org" };
+  sql(`INSERT INTO members (id, display_name, email, created_at) VALUES ('${DANA.id}', 'Dana', '${DANA.email}', ${NOW});
+       INSERT INTO book_members (book, member_id, added_at) VALUES ('ontology-for-social-research-a-criti', '${DANA.id}', ${NOW}), ('platform-test-book', '${BRANDON.id}', ${NOW});`);
+  const dana = await signInAs(DANA.id, DANA.email);
+  const res = await post("/api/members", { book: "ontology-for-social-research-a-criti", action: "set-email", member: BRANDON.id, email: "dana2@example.org" }, { cookie: dana });
+  assert.equal(res.status, 403);
+  assert.equal(rows(`SELECT COUNT(*) AS n FROM links WHERE member_id = '${BRANDON.id}' AND kind = 'claim'`)[0].n, 0);
+  sql(`DELETE FROM book_members WHERE book = 'platform-test-book' AND member_id = '${BRANDON.id}'; DELETE FROM book_members WHERE member_id = '${DANA.id}';`);
+});
+
+test("removing the last member of a book is refused", async () => {
+  sql(`DELETE FROM book_members WHERE book = 'author-guide'; INSERT INTO book_members (book, member_id, added_at) VALUES ('author-guide', '${ALEC.id}', ${NOW})`);
+  const alec = await signInAs(ALEC.id, ALEC.email);
+  // Alec can't remove himself (the screen offers no button), and can't remove the last one either way.
+  const res = await post("/api/members", { book: "author-guide", action: "remove", member: ALEC.id }, { cookie: alec });
+  assert.ok([400, 409].includes(res.status), String(res.status));
+  assert.equal(rows(`SELECT COUNT(*) AS n FROM book_members WHERE book = 'author-guide'`)[0].n, 1);
+  sql(`DELETE FROM book_members WHERE book = 'author-guide'`);
+});
+
 test("set-email for a member who has none: a claim link to that address, theirs only once opened", async () => {
   const alec = await signInAs(ALEC.id, ALEC.email);
   const res = await post("/api/members", { book: "ontology-for-social-research-a-criti", action: "set-email", member: BRANDON.id, email: "brandon@example.org" }, { cookie: alec });
@@ -146,6 +197,8 @@ test("set-email for a member who has none: a claim link to that address, theirs 
 });
 
 test("the proxy: only its list, only with a session on that book, never the browser's headers", async () => {
+  // A book Alec isn't on (someone else is, so it isn't adopted from the registry).
+  sql(`DELETE FROM book_members WHERE book = 'from-ontology-to-method-an-ontologic'; INSERT INTO book_members (book, member_id, added_at) VALUES ('from-ontology-to-method-an-ontologic', 'd4d4d4d4d4', ${NOW})`);
   const alec = await signInAs(ALEC.id, ALEC.email);
   for (const [path, method] of [["/fn/author-people", "GET"], ["/fn/author-read/../x", "GET"], ["/fn/author-send", "GET"], ["/fn/author-read", "DELETE"], ["/fn/page-revision", "GET"], ["/fn/", "GET"], ["/fn/author-read/extra", "GET"]])
     assert.equal((await fetch(`${BASE}${path}`, { method, headers: { ...site, cookie: alec } })).status, 404, `${method} ${path}`);

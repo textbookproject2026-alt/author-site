@@ -11,7 +11,7 @@
 import {
   allow, audit, body, bookEntry, cleanName, fail, isMaintainer, json, linkOrigin, mailBody, normEmail, now, onBook, sameSite, sendMail, session, validEmail,
 } from "../_lib/core.js";
-import { createLink } from "../_lib/links.js";
+import { createLink, markNotMailed } from "../_lib/links.js";
 import { requestSync, syncStatus } from "../_lib/sync.js";
 
 const WORDS = { invited: "invited", removed: "removed", "email-requested": "asked to confirm an email address for" };
@@ -68,9 +68,14 @@ export async function onRequestPost({ request, env, waitUntil }) {
     const already = await env.DB.prepare("SELECT 1 AS x FROM book_members b JOIN members m ON m.id = b.member_id WHERE b.book = ? AND m.email = ?").bind(book, email).first();
     if (already) return fail(409, "already on the book", "That person is already on this book.");
     const token = await createLink(env, { kind: "invite", book, email, name, createdBy: me.id });
-    await audit(env, book, me.display_name, "invited", name);
+    await audit(env, book, me, "invited", name);
     const link = `${linkOrigin(request)}/#/invite/${token}`;
-    if (b.send === false) return json({ ok: true, mailed: false, link });
+    // A link the inviter passes on themselves can't sign anyone in: whoever opens it
+    // joins the book, and the sign-in link goes to the invited address (api/invite.js).
+    if (b.send === false) {
+      await markNotMailed(env, token);
+      return json({ ok: true, mailed: false, link });
+    }
     const mail = mailBody({
       lines: [`${me.display_name} invited you to work on ${entry.title} on Confused for Now.`, "Open the link to join. You'll confirm the name the book will credit you by, and then you're in. It works once, within seven days."],
       button: "Join the book",
@@ -81,6 +86,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
       await sendMail(env, { to: email, subject: `${me.display_name} invited you to work on ${entry.title} on Confused for Now`, ...mail });
     } catch (err) {
       console.error(`invite mail: ${err.message}`);
+      await markNotMailed(env, token);
       return json({ ok: true, mailed: false, link, userMessage: "The email couldn't be sent just now. Copy the link and send it yourself." });
     }
     return json({ ok: true, mailed: true });
@@ -89,11 +95,14 @@ export async function onRequestPost({ request, env, waitUntil }) {
   if (b.action === "remove") {
     const who = await env.DB.prepare("SELECT m.id, m.display_name FROM book_members b JOIN members m ON m.id = b.member_id WHERE b.book = ? AND m.id = ?").bind(book, String(b.member ?? "")).first();
     if (!who) return fail(404, "not on the book", "That person isn't on this book.");
-    const { count } = await env.DB.prepare("SELECT COUNT(*) AS count FROM book_members WHERE book = ?").bind(book).first();
-    if (count <= 1) return fail(409, "last person", "A book needs at least one person on it.");
-    // At once: off the book, signed out everywhere, their links and pending requests void.
+    // One statement checks a book keeps someone and removes: two people removing each
+    // other at once can't leave it empty.
+    const gone = await env.DB.prepare(
+      "DELETE FROM book_members WHERE book = ? AND member_id = ? AND (SELECT COUNT(*) FROM book_members WHERE book = ?) > 1",
+    ).bind(book, who.id, book).run();
+    if (!gone.meta.changes) return fail(409, "last person", "A book needs at least one person on it.");
+    // At once: signed out everywhere, their links and pending requests void.
     const statements = [
-      env.DB.prepare("DELETE FROM book_members WHERE book = ? AND member_id = ?").bind(book, who.id),
       env.DB.prepare("DELETE FROM sessions WHERE member_id = ?").bind(who.id),
       env.DB.prepare("DELETE FROM assertions WHERE member_id = ?").bind(who.id),
       env.DB.prepare("DELETE FROM links WHERE member_id = ? AND used_at IS NULL").bind(who.id),
@@ -104,7 +113,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
     // On no book now: their email is deleted (their name stays in the books' credits:
     // CC-BY-SA attribution).
     if (!left) await env.DB.prepare("UPDATE members SET email = NULL WHERE id = ?").bind(who.id).run();
-    await audit(env, book, me.display_name, "removed", who.display_name);
+    await audit(env, book, me, "removed", who.display_name);
     waitUntil(requestSync(env, book));
     return json({ ok: true });
   }
@@ -115,6 +124,12 @@ export async function onRequestPost({ request, env, waitUntil }) {
     const who = await env.DB.prepare("SELECT m.id, m.display_name, m.email FROM book_members b JOIN members m ON m.id = b.member_id WHERE b.book = ? AND m.id = ?").bind(book, String(b.member ?? "")).first();
     if (!who) return fail(404, "not on the book", "That person isn't on this book.");
     if (who.email) return fail(409, "has email", "They already have an email address.");
+    // Only for someone whose books are all yours too: the address becomes their way in,
+    // so you can't give yourself a way into a book you aren't on.
+    const elsewhere = await env.DB.prepare(
+      "SELECT 1 AS x FROM book_members t WHERE t.member_id = ? AND t.book NOT IN (SELECT book FROM book_members WHERE member_id = ?) LIMIT 1",
+    ).bind(who.id, me.id).first();
+    if (elsewhere) return fail(403, "on other books", `${who.display_name} also works on a book you aren't on, so only they can give their address: they sign in once more the old way and are asked for it.`);
     if (!(await allow(env, `claim:${who.id}`, 5, 3600))) return fail(429, "rate limited", "Too many tries. Wait a little.");
     const token = await createLink(env, { kind: "claim", memberId: who.id, email, createdBy: me.id });
     const mail = mailBody({
@@ -129,7 +144,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
       console.error(`claim mail: ${err.message}`);
       return fail(502, "mail", "The email couldn't be sent just now. Try again in a moment.");
     }
-    await audit(env, book, me.display_name, "email-requested", who.display_name);
+    await audit(env, book, me, "email-requested", who.display_name);
     return json({ ok: true });
   }
   return fail(400, "unknown action");

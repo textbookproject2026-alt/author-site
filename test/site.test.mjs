@@ -116,6 +116,14 @@ test("an invitation: confirm the name the book credits you by, Continue, and you
   await page.getByRole("heading", { name: "This invitation has expired" }).waitFor();
 });
 
+test("a copied invitation: you join, and the sign-in link comes by email (not signed in here)", async () => {
+  stub.s.session = false;
+  await page.goto(`${origin}/#/invite/${"J".repeat(43)}`);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByText("You're on A Book of Things. We've sent a sign-in link to new@example.org: open it on this device to start.").waitFor();
+  assert.equal(stub.s.session, false);
+});
+
 test("a claim link: confirm the address you'll sign in with", async () => {
   await page.goto(`${origin}/#/claim/${"C".repeat(43)}`);
   await page.getByText("Brandon, you'll sign in to the author site with brandon@example.org from now on.").waitFor();

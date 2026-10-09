@@ -3,10 +3,11 @@
 // POST /api/me { notify } — emails about reader suggestions on or off.
 // POST /api/me { email } — a member moved over from GitHub gives an address: a link
 //   goes there, and the address is theirs once they open it (api/invite.js, claim).
-import { adoptNewBooks, allow, audit, body, booksOf, fail, isMaintainer, json, linkOrigin, mailBody, normEmail, sameSite, sendMail, session, validEmail } from "../_lib/core.js";
+import { adoptNewBooks, allow, audit, body, booksOf, fail, isMaintainer, json, linkOrigin, mailBody, normEmail, prune, sameSite, sendMail, session, validEmail } from "../_lib/core.js";
 import { createLink } from "../_lib/links.js";
 
-export async function onRequestGet({ request, env }) {
+export async function onRequestGet({ request, env, waitUntil }) {
+  prune(env, waitUntil);
   const s = await session(request, env);
   const githubSignin = env.GITHUB_SIGNIN !== "off";
   if (!s) return json({ member: null, githubSignin });
@@ -46,7 +47,7 @@ export async function onRequestPost({ request, env }) {
       console.error(`claim mail: ${err.message}`);
       return fail(502, "mail", "The email couldn't be sent just now. Try again in a moment.");
     }
-    for (const book of await booksOf(env, s.member.id)) await audit(env, book, s.member.display_name, "email-requested", s.member.display_name);
+    for (const book of await booksOf(env, s.member.id)) await audit(env, book, s.member, "email-requested", s.member.display_name);
     return json({ ok: true, sent: true });
   }
   return fail(400, "nothing to change");

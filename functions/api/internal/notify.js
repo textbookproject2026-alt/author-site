@@ -9,12 +9,14 @@
 // as a proposal, note or suggestion, and was opened by the platform's App or carries
 // its attribution line; anything else is 404 here too. The email's words come from
 // that answer, never from the caller. At most one email per item per member
-// (recorded in D1 before sending); rate-limited per book and overall so a burst
-// can't use up the sending quota.
+// (recorded in D1 before sending). Rate-limited per caller before the check, and per
+// book and overall once an item has passed it, so a burst of real items can't use up
+// the sending quota and a burst of junk can't use up the real items' budget.
 import { UPSTREAM, allow, body, bookEntry, fail, json, linkOrigin, mailBody, now, sendMail } from "../../_lib/core.js";
 
 const PER_BOOK_PER_HOUR = 30;
 const OVERALL_PER_HOUR = 120;
+const PER_CALLER_PER_HOUR = 120;
 const KIND = { edit: "proposed an edit to", note: "left a note on", suggestion: "suggested a change to" };
 
 export async function onRequestPost({ request, env }) {
@@ -22,8 +24,7 @@ export async function onRequestPost({ request, env }) {
   const number = Number(b.number);
   const entry = await bookEntry(b.book).catch(() => null);
   if (!entry || !Number.isInteger(number) || number < 1 || number > 1e7) return fail(404, "not found");
-  if (!(await allow(env, `notify:book:${entry.slug}`, PER_BOOK_PER_HOUR, 3600)) || !(await allow(env, "notify:all", OVERALL_PER_HOUR, 3600)))
-    return fail(429, "rate limited");
+  if (!(await allow(env, `notify:ip:${request.headers.get("cf-connecting-ip") ?? "unknown"}`, PER_CALLER_PER_HOUR, 3600))) return fail(429, "rate limited");
 
   const res = await fetch(`${UPSTREAM}/api/page-revision?mode=item&book=${encodeURIComponent(entry.slug)}&number=${number}`, { redirect: "manual" });
   if (res.status === 404) return fail(404, "not found");
@@ -31,6 +32,8 @@ export async function onRequestPost({ request, env }) {
   const item = await res.json().catch(() => null);
   if (!item || item.number !== number || !Object.hasOwn(KIND, item.kind)) return fail(404, "not found");
   if (item.state !== "open") return json({ ok: true, sent: 0 });
+  if (!(await allow(env, `notify:book:${entry.slug}`, PER_BOOK_PER_HOUR, 3600)) || !(await allow(env, "notify:all", OVERALL_PER_HOUR, 3600)))
+    return fail(429, "rate limited");
 
   const { results } = await env.DB.prepare(
     "SELECT m.id, m.email FROM book_members bm JOIN members m ON m.id = bm.member_id WHERE bm.book = ? AND m.notify = 1 AND m.email IS NOT NULL",
@@ -38,10 +41,11 @@ export async function onRequestPost({ request, env }) {
     .bind(entry.slug)
     .all();
   const what = KIND[item.kind];
-  const summary = typeof item.summary === "string" ? item.summary.slice(0, 300) : "";
-  const para = item.paragraph && Number.isInteger(item.paragraph.n) && /^https:\/\//.test(item.paragraph.url) ? item.paragraph : null;
+  // A reader wrote the summary: short, and only ever as text (mailBody escapes it).
+  const summary = typeof item.summary === "string" ? item.summary.slice(0, 200) : "";
+  const n = Number.isInteger(item.paragraph?.n) ? item.paragraph.n : null;
   const mail = mailBody({
-    lines: [`A reader ${what} ${entry.title}.`, ...(summary ? [`“${summary}”`] : []), ...(para ? [`Where: ¶${para.n}, ${para.url}`] : [])],
+    lines: [`A reader ${what} ${entry.title}.`, ...(summary ? [`“${summary}”`] : []), ...(n ? [`Where: ¶${n}`] : [])],
     button: "Review in the author site",
     url: `${linkOrigin(request)}/#/${entry.slug}/drafts`,
     footer: "You get these because “Emails about reader suggestions” is on in your author site settings.",

@@ -19,7 +19,13 @@ export const now = () => Date.now();
 export function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers },
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+      "strict-transport-security": "max-age=31536000; includeSubDomains",
+      ...headers,
+    },
   });
 }
 export const fail = (status, error, userMessage) => json(userMessage ? { error, userMessage } : { error }, status);
@@ -41,7 +47,15 @@ export const normEmail = (e) => String(e ?? "").trim().toLowerCase();
 export const validEmail = (e) =>
   typeof e === "string" && e.length <= 254 && /^[^\s@<>()",;:\\]{1,64}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(e);
 /** A display name: one line, no control characters, trimmed, at most 80 characters, no "@" (the registry is public). */
-export const cleanName = (n) => String(n ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim().replace(/@/g, "").slice(0, 80);
+export const cleanName = (n) =>
+  String(n ?? "")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
+    // Invisible and direction-changing characters: a name must read as it is (it is public).
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/@/g, "")
+    .slice(0, 80);
 export const memberNoreply = (id) => `m-${id}@users.noreply.confused4now.org`;
 
 const MAX_JSON = 64 * 1024;
@@ -65,8 +79,11 @@ export async function body(request) {
  * protection.
  */
 export function sameSite(request) {
+  if (request.headers.get("x-author-site") !== "1") return false;
   const origin = request.headers.get("origin");
-  return origin === new URL(request.url).origin && request.headers.get("x-author-site") === "1";
+  if (origin) return origin === new URL(request.url).origin;
+  // Browsers leave Origin off a same-origin GET; Fetch Metadata says where it came from.
+  return (request.method === "GET" || request.method === "HEAD") && request.headers.get("sec-fetch-site") === "same-origin";
 }
 
 export function cookies(request) {
@@ -112,9 +129,12 @@ export async function onBook(env, id, book) {
   return !!(await env.DB.prepare("SELECT 1 AS x FROM book_members WHERE member_id = ? AND book = ?").bind(id, book).first());
 }
 
-export async function audit(env, book, actorName, action, subjectName) {
-  await env.DB.prepare("INSERT INTO audit (book, at, actor_name, action, subject_name) VALUES (?, ?, ?, ?, ?)")
-    .bind(book, now(), actorName, action, subjectName)
+/** One line of a book's People log. `actor` is a member row ({ id, display_name }) or a name. */
+export async function audit(env, book, actor, action, subjectName) {
+  const id = typeof actor === "object" && actor ? actor.id : null;
+  const name = typeof actor === "object" && actor ? actor.display_name : String(actor);
+  await env.DB.prepare("INSERT INTO audit (book, at, actor_id, actor_name, action, subject_name) VALUES (?, ?, ?, ?, ?, ?)")
+    .bind(book, now(), id, name, action, subjectName)
     .run();
 }
 
@@ -122,9 +142,9 @@ export async function audit(env, book, actorName, action, subjectName) {
 export async function allow(env, key, limit, seconds) {
   const window = Math.floor(now() / (seconds * 1000));
   const row = await env.DB.prepare(
-    "INSERT INTO rate (key, window, count) VALUES (?, ?, 1) ON CONFLICT(key, window) DO UPDATE SET count = count + 1 RETURNING count",
+    "INSERT INTO rate (key, window, count, expires_at) VALUES (?, ?, 1, ?) ON CONFLICT(key, window) DO UPDATE SET count = count + 1 RETURNING count",
   )
-    .bind(key, window)
+    .bind(key, window, (window + 1) * seconds * 1000)
     .first();
   return (row?.count ?? 1) <= limit;
 }
@@ -235,4 +255,18 @@ export async function adoptNewBooks(env, member) {
     }
     await audit(env, b.slug, "The platform", "joined", `${(b.authors ?? []).length} people from the book's set-up`);
   }
+}
+
+/** Now and then, after answering: expired links, sessions, assertions and old rate windows go. */
+export function prune(env, waitUntil) {
+  if (Math.random() > 0.05) return;
+  const t = now();
+  waitUntil(
+    env.DB.batch([
+      env.DB.prepare("DELETE FROM links WHERE expires_at < ?").bind(t - DAY),
+      env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(t),
+      env.DB.prepare("DELETE FROM assertions WHERE expires_at < ?").bind(t - 3_600_000),
+      env.DB.prepare("DELETE FROM rate WHERE expires_at < ?").bind(t),
+    ]).catch(() => {}),
+  );
 }
