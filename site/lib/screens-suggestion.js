@@ -7,6 +7,7 @@ import { h, clear, busy, note, errorNote, when } from "./dom.js";
 import { read, act, send } from "./api.js";
 import { bookBySlug, bookHeader, pageSlug } from "./books.js";
 import { sentView } from "./screens-shared.js";
+import { declineButton } from "./decline.js";
 
 /** A button that runs `fn`, showing progress and then what happened in `out`. */
 function doButton(text, cls, out, fn) {
@@ -52,9 +53,10 @@ export async function suggestionScreen(slug, number) {
         clear(out, ...done(await act(slug, "suggestion-accept", { number }), back));
         actions.remove();
       }),
-      doButton("Decline, politely", "", out, async () => {
-        clear(out, ...done(await act(slug, "suggestion-decline", { number }), back));
+      declineButton(out, async (reason) => {
+        const r = await act(slug, "suggestion-decline", { number, reason });
         actions.remove();
+        return done(r, back);
       }),
       s.path ? h("a", { class: "btn", href: `#/${slug}/edit/${encodeURIComponent(s.path)}`, text: "Edit the page" }) : null,
       h("a", { class: "btn link", href: s.url, target: "_blank", rel: "noopener", text: "Open on GitHub" }));

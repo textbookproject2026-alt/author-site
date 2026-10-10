@@ -7,10 +7,13 @@
 // Read through author-history, as the App, so authors don't share GitHub's
 // 60-an-hour unauthenticated limit. The same three states readers see in Page
 // history: Proposed (open proposals and notes, from the function's /api/history),
-// Being edited (in the drafts, not yet published) and Published.
+// Being edited (in the drafts, not yet published), Published, and Declined (batch
+// 2c: what the book's people declined and why, with their comments; any of them
+// can add a comment, and delete their own; read fresh through author-read).
 
 import { h, clear, busy, note, errorNote, when } from "./dom.js";
-import { history, proposed, read, send } from "./api.js";
+import { act, declinedChange, history, proposed, read, send } from "./api.js";
+import { identity } from "./auth.js";
 import { bookBySlug, bookHeader, rawUrl } from "./books.js";
 import { renderChapter } from "./preview.js";
 import { renderDiff, renderPatch } from "./diff.js";
@@ -38,10 +41,106 @@ const proposedLine = (slug, it) => h("li", {},
       h("strong", { text: it.summary || KINDS[it.kind] || "A suggestion" }), ` — ${it.who?.name ?? "a reader"}, ${when(it.date)}`),
     h("span", { class: "badge status-new", text: `Proposed · ${KINDS[it.kind] ?? "Suggestion"}` })));
 
+const DECLINED_KINDS = { edit: "Proposed edit", note: "Note", suggestion: "Suggestion" };
+const COMMENT_MAX = 1000;
+
+/** One declined item: who proposed it, who declined it and why, its change, the comments. */
+function declinedLine(slug, d, titles, redraw) {
+  const mine = `m-${identity()?.id ?? ""}`;
+  const out = h("div", { "aria-live": "polite" });
+  const page = d.files?.[0] ? titles.get(d.files[0]) : null;
+  const view = h("div", { hidden: true });
+  const show = d.kind === "edit" ? h("button", { type: "button", class: "btn link", text: "Show changes" }) : null;
+  show?.addEventListener("click", async () => {
+    view.hidden = !view.hidden;
+    show.textContent = view.hidden ? "Show changes" : "Hide changes";
+    if (view.hidden || view.childElementCount) return;
+    clear(view, busy("Reading what was proposed…"));
+    try {
+      const { files } = await declinedChange(slug, d.number);
+      clear(view, files.length ? files.map((f) => renderDiff(f.before ?? "", f.after ?? "", titles.get(f.path))) : h("p", { class: "muted", text: "The proposal changed no page." }));
+    } catch (err) {
+      clear(view, errorNote(err));
+    }
+  });
+  const comments = d.comments.map((c) => {
+    const del = c.member === mine ? h("button", { type: "button", class: "btn link danger", text: "Delete" }) : null;
+    del?.addEventListener("click", async () => {
+      del.disabled = true;
+      try {
+        await act(slug, "comment-delete", { number: d.number, id: c.id });
+        await redraw("Your comment was deleted.");
+      } catch (err) {
+        del.disabled = false;
+        del.after(errorNote(err));
+      }
+    });
+    return h("li", { class: "comment" },
+      h("p", { class: "muted small" }, `${c.name}, ${when(c.date)}`, del ? " · " : "", del),
+      h("p", { class: "said", text: c.text }));
+  });
+  const add = h("button", { type: "button", class: "btn", text: "Add a comment" });
+  add.addEventListener("click", () => {
+    const id = `comment-${d.number}`;
+    const field = h("textarea", { id, rows: "3", maxlength: String(COMMENT_MAX), required: true });
+    const post = h("button", { type: "submit", class: "btn primary", text: "Post comment" });
+    const form = h("form", { class: "decline" },
+      h("label", { for: id, text: "Your comment" }),
+      h("p", { class: "muted small", text: "Shown publicly with your name, on GitHub and in the book's history. Readers can read it but not reply." }),
+      field, h("div", { class: "actions" }, post, h("button", { type: "button", class: "btn link", text: "Cancel", onclick: () => { clear(out); add.disabled = false; } })));
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (field.value.trim().length < 2) return field.focus();
+      post.disabled = field.disabled = true;
+      try {
+        await act(slug, "comment-add", { number: d.number, text: field.value.trim() });
+        await redraw("Your comment was added.");
+      } catch (err) {
+        post.disabled = field.disabled = false;
+        form.append(errorNote(err));
+      }
+    });
+    add.disabled = true;
+    clear(out, form);
+    field.focus();
+  });
+  return h("li", { class: "declined" },
+    h("div", { class: "row" },
+      h("strong", { class: "grow", text: d.summary || DECLINED_KINDS[d.kind] }),
+      h("span", { class: "badge status-declined", text: `Declined · ${DECLINED_KINDS[d.kind] ?? "Suggestion"}` })),
+    h("p", { class: "muted small", text: `${page ? `${page} · ` : ""}Proposed by ${d.who?.name ?? "a reader"}, ${when(d.proposed)}. Declined${d.decliner ? ` by ${d.decliner}` : ""}, ${when(d.date)}.` }),
+    h("blockquote", { class: `said${d.reason ? "" : " muted"}`, text: d.reason ?? "No reason was recorded." }),
+    comments.length ? h("ul", { class: "list comments" }, comments) : null,
+    h("div", { class: "row wrap" }, show, add, h("a", { class: "btn link", href: d.url, target: "_blank", rel: "noopener", text: `#${d.number} on GitHub` })),
+    view, out);
+}
+
+/** The Declined section: fresh from author-read, so a comment shows at once. */
+async function declinedSection(slug, path, titles) {
+  const stage = h("section", { "aria-labelledby": "declined-h" });
+  const draw = async (said = null) => {
+    let items;
+    try {
+      items = (await read("declined", { book: slug })).items ?? [];
+    } catch (err) {
+      return clear(stage, h("h2", { id: "declined-h", text: "Declined" }), errorNote(err));
+    }
+    if (path) items = items.filter((d) => d.files?.includes(path));
+    if (!items.length) return clear(stage);
+    clear(stage,
+      h("h2", { id: "declined-h", text: `Declined (${items.length})` }),
+      said ? note([h("p", { text: said })]) : null,
+      h("ul", { class: "list history declined-list" }, items.map((d) => declinedLine(slug, d, titles, draw))));
+  };
+  await draw();
+  return stage;
+}
+
 /** #/<book>/history and #/<book>/history/<path>: the commits, 30 at a time. */
 export async function historyScreen(slug, path = "") {
   const book = await bookBySlug(slug);
   const [first, titles, open] = await Promise.all([history(slug, { path: path || undefined }), titlesOf(book), proposed(slug, path)]);
+  const declined = await declinedSection(slug, path, titles);
   const list = h("ul", { class: "list history" });
   const more = h("div", { class: "actions" });
   let page = 1;
@@ -69,13 +168,15 @@ export async function historyScreen(slug, path = "") {
   return [
     ...bookHeader(book, "history", path ? `History of “${titles.get(path)}”` : "History"),
     h("p", { class: "muted small" },
-      "Every change, newest first, in the three states readers see in Page history. ",
+      "Every change, newest first, in the states readers see in Page history. ",
       h("strong", { text: "Proposed" }), ": a reader's proposal or note, waiting for you. ",
       h("strong", { text: "Being edited" }), ": in the drafts; it goes to readers when you next publish. ",
-      h("strong", { text: "Published" }), ": readers have it."),
+      h("strong", { text: "Published" }), ": readers have it. ",
+      h("strong", { text: "Declined" }), ": you or someone on the book decided against it, and said why."),
     open.length ? h("ul", { class: "list history proposed" }, open.map((it) => proposedLine(slug, it))) : null,
     first.commits.length ? list : h("p", { class: "muted", text: "No changes yet." }),
     more,
+    declined,
     path ? h("p", {}, h("a", { href: `#/${slug}/edit/${enc(path)}`, text: `Back to “${titles.get(path)}”` }), " · ", h("a", { href: `#/${slug}/history`, text: "The whole book's history" })) : null,
   ];
 }
