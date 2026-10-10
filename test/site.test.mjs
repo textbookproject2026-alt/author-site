@@ -913,7 +913,7 @@ test("history: Declined, with who proposed and declined it, the reason (or none 
   await page.getByRole("heading", { name: "Declined (2)" }).waitFor();
   const first = page.locator("li.declined", { hasText: "A clearer opening" });
   await first.getByText("Declined · Proposed edit").waitFor();
-  await first.getByText(/Proposed by Jo Reader, .+\. Declined by Co Author, .+\./).waitFor();
+  await first.getByText("Chapter One · Proposed by Jo Reader on 8 Oct 2026. Declined by Co Author on 9 Oct 2026.").or(first.getByText(/Proposed by Jo Reader on 8 Oct 2026\. Declined by Co Author on 9 Oct 2026\./)).first().waitFor();
   await first.getByText("We keep the original wording.").waitFor();
   await page.locator("li.declined", { hasText: "Make it weirder" }).getByText("No reason was recorded.").waitFor();
   // Show changes: the proposal's change, from the function's public history.

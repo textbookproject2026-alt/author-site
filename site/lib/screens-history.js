@@ -41,6 +41,8 @@ const proposedLine = (slug, it) => h("li", {},
       h("strong", { text: it.summary || KINDS[it.kind] || "A suggestion" }), ` — ${it.who?.name ?? "a reader"}, ${when(it.date)}`),
     h("span", { class: "badge status-new", text: `Proposed · ${KINDS[it.kind] ?? "Suggestion"}` })));
 
+/** "10 Oct 2026": a declined item's dates are days, so never "14 hours ago". */
+const day = (d) => new Date(`${String(d).slice(0, 10)}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 const DECLINED_KINDS = { edit: "Proposed edit", note: "Note", suggestion: "Suggestion" };
 const COMMENT_MAX = 1000;
 
@@ -108,7 +110,7 @@ function declinedLine(slug, d, titles, redraw) {
     h("div", { class: "row" },
       h("strong", { class: "grow", text: d.summary || DECLINED_KINDS[d.kind] }),
       h("span", { class: "badge status-declined", text: `Declined · ${DECLINED_KINDS[d.kind] ?? "Suggestion"}` })),
-    h("p", { class: "muted small", text: `${page ? `${page} · ` : ""}Proposed by ${d.who?.name ?? "a reader"}, ${when(d.proposed)}. Declined${d.decliner ? ` by ${d.decliner}` : ""}, ${when(d.date)}.` }),
+    h("p", { class: "muted small", text: `${page ? `${page} · ` : ""}Proposed by ${d.who?.name ?? "a reader"} on ${day(d.proposed)}. Declined${d.decliner ? ` by ${d.decliner}` : ""} on ${day(d.date)}.` }),
     h("blockquote", { class: `said${d.reason ? "" : " muted"}`, text: d.reason ?? "No reason was recorded." }),
     comments.length ? h("ul", { class: "list comments" }, comments) : null,
     h("div", { class: "row wrap" }, show, add, h("a", { class: "btn link", href: d.url, target: "_blank", rel: "noopener", text: `#${d.number} on GitHub` })),
