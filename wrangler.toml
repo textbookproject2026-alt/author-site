@@ -1,0 +1,40 @@
+# The author site on Cloudflare Pages (project c4n-author-site): the static site in
+# site/, and its backend in functions/ (batch 2b): email sign-in, sessions, who is on
+# each book (the D1 database below), and a proxy to the suggest-edit function's
+# author endpoints. With this file, Pages takes the bindings and plain variables
+# from here; secrets (RESEND_API_KEY) stay in the project's settings
+# (book-requests' author-site-mail workflow sets them).
+name = "c4n-author-site"
+pages_build_output_dir = "site"
+compatibility_date = "2026-10-02"
+
+[vars]
+NODE_VERSION = "22"
+# Where sign-in links, invitations and reader-suggestion emails come from.
+MAIL_FROM = "Confused for Now <no-reply@confused4now.org>"
+# GitHub sign-in, kept only while members move to email links; "off" when all have.
+GITHUB_SIGNIN = "on"
+# The platform maintainer's GitHub login: sees the registry sync's status.
+PLATFORM_OWNER = "textbookproject2026-alt"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "c4n-author-members"
+database_id = "ad9a20ae-bcac-41ec-bf7e-befed3892e8b"
+migrations_dir = "migrations"
+
+# Preview deployments (pull requests) get their own, empty database, so a preview
+# can never sign anyone in to the real books, and no Resend key (it is set for
+# production only), so a preview sends no email. Pages doesn't inherit bindings or
+# variables into an environment: everything is repeated here.
+[env.preview.vars]
+NODE_VERSION = "22"
+MAIL_FROM = "Confused for Now <no-reply@confused4now.org>"
+GITHUB_SIGNIN = "off"
+PLATFORM_OWNER = "textbookproject2026-alt"
+
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "c4n-author-members-preview"
+database_id = "2cdb0293-91ab-44c9-9c1b-b6f30b1243dc"
+migrations_dir = "migrations"

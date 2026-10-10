@@ -28,7 +28,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright-core install --with-deps chromium
-      - run: node --test --test-concurrency=1 test/site.test.mjs test/contents.test.mjs test/phone-audit.test.mjs
+      - run: node --test --test-concurrency=1 test/site.test.mjs test/contents.test.mjs test/phone-audit.test.mjs test/functions.test.mjs
 
   questions:
     runs-on: ubuntu-latest

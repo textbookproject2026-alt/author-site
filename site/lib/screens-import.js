@@ -81,7 +81,7 @@ async function upload(book, stage, file, folder = "chapters", chapterName = null
   clear(stage, h("p", { class: "busy", text: "Uploading your document…" }), h("div", { class: "progress", role: "progressbar", "aria-label": "Upload" }, bar));
   let started;
   try {
-    const receipts = await uploadParts(file, (f) => {
+    const receipts = await uploadParts(book.slug, file, (f) => {
       bar.style.width = `${Math.round(f * 100)}%`;
     });
     clear(stage, busy("Starting the conversion…"));

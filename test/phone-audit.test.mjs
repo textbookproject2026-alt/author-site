@@ -13,6 +13,8 @@ import { auditPage } from "./phone-audit-checks.mjs";
 const CH1 = encodeURIComponent("chapters/chapter-01.md");
 const SCREENS = [
   ["sign-in", "#/", { signedOut: true }],
+  ["sign-in link", `#/link/${"L".repeat(43)}`, { signedOut: true }],
+  ["invitation", `#/invite/${"I".repeat(43)}`, { signedOut: true }],
   ["your books", "#/"],
   ["chapters", "#/a-book"],
   ["editor", `#/a-book/edit/${CH1}`],
@@ -45,7 +47,8 @@ test("phone audit: every screen at 360, 390 and 412px, light and dark", async ()
         stub.s.signedIn = { token: "tok-1", login: "textbookproject2026-alt", id: 5, name: "Alec Gordon" };
         await stub.install(ctx);
         await ctx.addInitScript(() => { try { localStorage.setItem("tb-privacy-ok", "1"); } catch {} });
-        if (!opts.signedOut) await ctx.addInitScript((id) => sessionStorage.setItem("tb-author-identity", JSON.stringify({ ...id, at: Date.now() })), stub.s.signedIn);
+        stub.s.session = !opts.signedOut;
+        stub.s.me = { ...stub.s.me, name: "Alec Gordon", email: "alecg95@example.org" };
         const page = await ctx.newPage();
         await page.goto(`${server.origin}/${hash}`, { waitUntil: "networkidle" });
         await page.waitForTimeout(500);

@@ -54,39 +54,81 @@ afterEach(async () => {
   assert.deepEqual(problems, [], problems.join("\n"));
 });
 
+/** Signed in: the way an emailed link does it (#/link/<token>, then its button). */
 async function signIn() {
-  await page.goto(`${origin}/`);
-  const [popup] = await Promise.all([page.waitForEvent("popup"), page.getByRole("button", { name: "Sign in with GitHub" }).click()]);
-  await popup.waitForEvent("close").catch(() => {});
+  await page.goto(`${origin}/#/link/${"L".repeat(43)}`);
+  await page.getByRole("button", { name: "Sign in" }).click();
   await page.getByRole("heading", { name: "Your books" }).waitFor();
 }
 const lastCall = (endpoint, pred = () => true) => stub.s.requests.filter((r) => r.endpoint === endpoint && pred(r)).at(-1);
 
 // --- signing in, books, theme ------------------------------------------------------------------
 
-test("signed out: the sign-in screen; the popup signs in; the books are the author's, with the identity on every call", async () => {
+test("signed out: email me a link (the same answer for any address); the link signs in; every call goes through this site with the session", async () => {
   await page.goto(`${origin}/`);
   await page.getByRole("heading", { name: "Work on your textbook" }).waitFor();
-  const popupUrl = page.waitForEvent("popup").then((p) => p.url());
-  await page.getByRole("button", { name: "Sign in with GitHub" }).click();
-  assert.equal(await popupUrl, `https://suggest-edit-function.vercel.app/api/github-auth?origin=${encodeURIComponent(origin)}`);
+  await page.getByLabel("Your email address").fill("someone@example.org");
+  await page.getByRole("button", { name: "Email me a sign-in link" }).click();
+  await page.getByText("If that address has access, we've sent a link.").waitFor();
+  assert.deepEqual(stub.s.own.find((c) => c.path === "/api/auth/request").body, { email: "someone@example.org" });
+  // The link: one press, then in.
+  await page.goto(`${origin}/#/link/${"L".repeat(43)}`);
+  await page.getByRole("button", { name: "Sign in" }).click();
   await page.getByRole("heading", { name: "Your books" }).waitFor();
   await page.getByRole("link", { name: "A Book of Things" }).waitFor();
-  assert.match(await page.locator("#who").textContent(), /@author-one/);
-  assert.ok(stub.s.requests.every((r) => r.auth === "Bearer tok-1"));
-  // Nothing about the sign-in is kept beyond this tab (the privacy note's "seen" is no sign-in).
-  assert.deepEqual(await page.evaluate(() => Object.keys(localStorage).filter((k) => k !== "tb-privacy-ok")), []);
+  // Every author call went to this site's /fn/, marked as the site's own; no token anywhere.
+  assert.ok(stub.s.requests.length > 0);
+  assert.ok(stub.s.requests.every((r) => r.auth === undefined));
+  assert.ok(stub.s.own.filter((c) => c.method === "POST").every((c) => c.header === "1"));
+  // Used once: the same link again says so.
+  await page.goto(`${origin}/#/link/${"L".repeat(43)}`);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByText("That link has been used or has expired.").waitFor();
+  // Nothing about the sign-in is kept in the page's storage (the session is an HttpOnly cookie).
+  assert.deepEqual(await page.evaluate(() => Object.keys(localStorage).filter((k) => k !== "tb-privacy-ok" && k !== "theme")), []);
 });
 
 test("sign out, and a 401 from the endpoints, both return to the sign-in screen", async () => {
   await signIn();
-  await page.getByRole("button", { name: /^Account: @author-one$/ }).click();
-  await page.getByRole("menuitem", { name: "Sign out" }).click();
+  await page.getByRole("button", { name: /^Account: Author One$/ }).click();
+  await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
   await page.getByRole("heading", { name: "Work on your textbook" }).waitFor();
+  assert.equal(stub.s.session, false);
+  stub.s.links["L".repeat(43)] = "signin";
   await signIn();
   stub.s.status401 = true;
   await page.getByRole("link", { name: "A Book of Things" }).click();
   await page.getByRole("heading", { name: "Work on your textbook" }).waitFor();
+});
+
+test("an invitation: confirm the name the book credits you by, Continue, and you're in the book", async () => {
+  await page.goto(`${origin}/#/invite/${"I".repeat(43)}`);
+  await page.getByRole("heading", { name: "Join A Book of Things" }).waitFor();
+  await page.getByText("Author One invited you to work on it.").waitFor();
+  const name = page.getByLabel("Your name as it appears in the book's credits");
+  assert.equal(await name.inputValue(), "New Person");
+  await name.fill("New Person-Smith");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.waitForURL(/#\/a-book$/);
+  assert.deepEqual(stub.s.own.find((c) => c.path === "/api/invite" && c.body.action === "accept").body, { kind: "invite", token: "I".repeat(43), action: "accept", name: "New Person-Smith" });
+  // Used: the link says so.
+  await page.goto(`${origin}/#/invite/${"I".repeat(43)}`);
+  await page.getByRole("heading", { name: "This invitation has expired" }).waitFor();
+});
+
+test("a copied invitation: nothing happens here but the invitation going to the address", async () => {
+  stub.s.session = false;
+  await page.goto(`${origin}/#/invite/${"J".repeat(43)}`);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByText("One more step: we've emailed this invitation to new@example.org. Open it there to join A Book of Things.").waitFor();
+  assert.equal(stub.s.session, false);
+});
+
+test("a claim link: confirm the address you'll sign in with", async () => {
+  await page.goto(`${origin}/#/claim/${"C".repeat(43)}`);
+  await page.getByText("Brandon, you'll sign in to the author site with brandon@example.org from now on.").waitFor();
+  await page.getByRole("button", { name: "Use this address" }).click();
+  await page.getByRole("heading", { name: "Your books" }).waitFor();
 });
 
 test("an account that is no book's author is told so, and how to fix it", async () => {
@@ -110,15 +152,15 @@ test("the guide opens in a new tab: from the header signed out, from the account
 
 test("the account menu on a phone: avatar only, the full login inside, no label broken inside a word; Escape closes it", async () => {
   await page.setViewportSize({ width: 360, height: 740 });
-  stub.s.signedIn = { ...stub.s.signedIn, login: "textbookproject2026-alt" };
+  stub.s.me = { ...stub.s.me, name: "Alexander Gordon-Whitfield", email: "a.very.long.address.for.testing@example.org" };
   await signIn();
-  const button = page.getByRole("button", { name: "Account: @textbookproject2026-alt" });
-  assert.equal(await button.locator(".login").isVisible(), false, "only the avatar under 720px");
+  const button = page.getByRole("button", { name: "Account: Alexander Gordon-Whitfield" });
+  assert.equal(await button.locator(".login").isVisible(), false, "only the initial under 720px");
   await button.click();
   assert.equal(await button.getAttribute("aria-expanded"), "true");
-  await page.locator(".account-name").getByText("@textbookproject2026-alt").waitFor();
-  for (const name of ["Guide for authors", "Settings", "Sign out"]) {
-    const lines = await page.getByRole("menuitem", { name }).evaluate((el) => {
+  await page.locator(".account-name").getByText("a.very.long.address.for.testing@example.org").waitFor();
+  for (const name of ["Guide for authors", "Settings", "Sign out", "Sign out everywhere"]) {
+    const lines = await page.getByRole("menuitem", { name, exact: true }).evaluate((el) => {
       const r = document.createRange();
       r.selectNodeContents(el);
       return new Set([...r.getClientRects()].map((x) => Math.round(x.top))).size;
@@ -580,7 +622,7 @@ test("drafts: a publish that fails says so in plain words, with Try again", asyn
   await signIn();
   stub.s.publish = { ...stub.s.publish, lint: [], lint_count: 0 };
   await page.goto(`${origin}/#/a-book/drafts`);
-  await page.route(`${API}author-act`, (route) => route.fulfill({ status: 409, contentType: "application/json", headers: { "access-control-allow-origin": origin }, body: JSON.stringify({ error: "x", userMessage: "What is waiting to go live has changed." }) }), { times: 1 });
+  await page.route(`${origin}/fn/author-act`, (route) => route.fulfill({ status: 409, contentType: "application/json", headers: { "access-control-allow-origin": origin }, body: JSON.stringify({ error: "x", userMessage: "What is waiting to go live has changed." }) }), { times: 1 });
   await page.getByRole("button", { name: "Publish 5 changes" }).click();
   await page.getByText("What is waiting to go live has changed.").waitFor();
   await page.getByRole("button", { name: "Try again" }).click();
@@ -599,93 +641,58 @@ test("old links land: Waiting for you and the publish screen open Drafts; a chap
 
 // --- people ---------------------------------------------------------------------------------
 
-test("people: the book's authors; invite by username; pending until live, and one change at a time", async () => {
-  await signIn();
-  await page.getByRole("link", { name: "A Book of Things" }).click();
-  await page.getByRole("link", { name: "People" }).click();
-  await page.getByRole("heading", { name: "Who can work on this book here" }).waitFor();
-  const rows = page.locator("ul.list > li");
-  assert.deepEqual(await rows.allInnerTexts().then((t) => t.map((x) => x.split("\n")[0])), ["@author-one you", "@co-author", "@textbookproject2026-alt looks after the platform"]);
-  // Never the platform owner; anyone else, yourself included.
-  assert.equal(await rows.nth(2).getByRole("button", { name: "Remove", exact: true }).count(), 0);
-  assert.equal(await rows.nth(0).getByRole("button", { name: "Remove", exact: true }).count(), 1);
-
-  await page.locator("#invite-login").fill("@co-author");
-  await page.getByRole("button", { name: "Invite" }).click();
-  await page.getByText("@co-author can already work on this book.").waitFor();
-  assert.equal(stub.s.requests.filter((r) => r.endpoint === "author-people-change").length, 0);
-
-  stub.s.peopleAnswers = [[404, { error: "no such account", userMessage: "There's no GitHub account called “nobdy”. Check the spelling." }]];
-  await page.locator("#invite-login").fill("nobdy");
-  await page.getByRole("button", { name: "Invite" }).click();
-  await page.getByText("There's no GitHub account called “nobdy”.", { exact: false }).waitFor();
-
-  await page.locator("#invite-login").fill("NewPerson");
-  await page.getByRole("button", { name: "Invite" }).click();
-  await page.getByText("@NewPerson is invited.", { exact: false }).waitFor();
-  assert.deepEqual(lastCall("author-people-change").body, { book: "a-book", action: "add", login: "NewPerson" });
-  await page.getByText("waiting for the registry's checks", { exact: false }).waitFor();
-  assert.equal(await page.getByRole("link", { name: "See it on GitHub" }).getAttribute("href"), "https://github.com/textbookproject2026-alt/textbook-registry/pull/61");
-  await page.getByText("One change at a time", { exact: false }).waitFor();
-  assert.equal(await page.locator("#invite-login").count(), 0);
-  assert.equal(await page.getByRole("button", { name: "Remove", exact: true }).count(), 0, "nothing else while one is open");
-});
-
-test("people: each author turns suggestion emails off for themselves, and on again", async () => {
+test("people: who works on the book; invite by name and email, sent or as a link; the change shows at once with an audit line", async () => {
   await signIn();
   await page.goto(`${origin}/#/a-book/people`);
-  await page.getByRole("heading", { name: "Emails about reader suggestions" }).waitFor();
-  await page.getByText(/you're @mentioned on it, so GitHub emails you/).waitFor();
-  await Promise.all([page.waitForResponse((r) => r.url().includes("author-people-change")), page.getByRole("button", { name: "Stop emailing me" }).click()]);
-  const sent = lastCall("author-people-change").body;
-  assert.deepEqual([sent.action, sent.login], ["mentions-off", "author-one"]);
-  await page.getByText(/new reader suggestions won't mention you/).waitFor();
-  await page.getByText(/Stopping suggestion emails for/).waitFor();
-
-  // Off, as the registry has it: the button turns them back on.
-  stub.s.people = { ...stub.s.people, mentionsOff: ["Author-One"], pending: [] };
-  await page.goto(`${origin}/#/a-book`);
-  await page.goto(`${origin}/#/a-book/people`);
-  await page.getByText(/don't mention you, so GitHub doesn't email you/).waitFor();
-  await Promise.all([page.waitForResponse((r) => r.url().includes("author-people-change")), page.getByRole("button", { name: "Email me again" }).click()]);
-  assert.equal(lastCall("author-people-change").body.action, "mentions-on");
+  await page.getByRole("heading", { name: "Who works on this book" }).waitFor();
+  const people = page.locator("ul.people > li");
+  assert.deepEqual(await people.locator("strong").allTextContents(), ["Author One", "Co Author", "Brandon"]);
+  await page.getByText("Author One invited Co Author · ").waitFor();
+  await page.getByLabel("Their name, as the book will credit them").fill("Dee Writer");
+  await page.getByLabel("Their email address").fill("dee@example.org");
+  await page.getByRole("button", { name: "Send the invitation" }).click();
+  await page.getByText("Invitation sent to dee@example.org.").waitFor();
+  await page.getByText("Dee Writer (dee@example.org)").waitFor();
+  await page.getByText(/^Author One invited Dee Writer · /).waitFor();
+  assert.deepEqual(stub.s.own.filter((c) => c.path === "/api/members" && c.method === "POST").at(-1).body, { book: "a-book", action: "invite", name: "Dee Writer", email: "dee@example.org", send: true });
+  // Or a link to send yourself.
+  await page.getByLabel("Their name, as the book will credit them").fill("Eve Editor");
+  await page.getByLabel("Their email address").fill("eve@example.org");
+  await page.getByRole("button", { name: "Copy a link instead" }).click();
+  assert.equal(await page.getByLabel("The invitation link").inputValue(), `${origin}/#/invite/${"I".repeat(43)}`);
 });
 
-test("people: remove asks first; the last author can't be removed; not switched on says so", async () => {
+test("people: remove asks first and takes effect at once; a member without an email gets a link sent for them", async () => {
   await signIn();
   await page.goto(`${origin}/#/a-book/people`);
-  await page.locator("ul.list > li").nth(1).getByRole("button", { name: "Remove", exact: true }).click();
-  await page.getByText("Remove @co-author? They lose access once the change has gone through.").waitFor();
-  await page.getByRole("button", { name: "Yes, remove" }).click();
-  await page.getByText("@co-author is being removed.", { exact: false }).waitFor();
-  assert.deepEqual(lastCall("author-people-change").body, { book: "a-book", action: "remove", login: "co-author" });
-
-  stub.s.people = { authors: ["author-one"], owner: "textbookproject2026-alt", registry: "r".repeat(40), pending: [] };
-  await page.goto(`${origin}/#/a-book/waiting`);
-  await page.goto(`${origin}/#/a-book/people`);
-  await page.getByRole("heading", { name: "Invite someone" }).waitFor();
-  assert.equal(await page.getByRole("button", { name: "Remove", exact: true }).count(), 0);
-
-  await context.route(`${API}author-people?**`, (route) => route.fulfill({ status: 404, contentType: "application/json", headers: { "access-control-allow-origin": origin }, body: "{}" }));
-  await page.goto(`${origin}/#/a-book/waiting`);
-  await page.goto(`${origin}/#/a-book/people`);
-  await page.getByText("isn't switched on yet", { exact: false }).waitFor();
+  await page.getByText("needs an email address").waitFor();
+  // Only the platform maintainer gives an address for someone else.
+  await page.getByText("Brandon adds it the next time they sign in with GitHub.", { exact: false }).waitFor();
+  assert.equal(await page.getByLabel("Brandon's email address").count(), 0);
+  stub.s.me = { ...stub.s.me, maintainer: true };
+  await page.reload();
+  await page.getByLabel("Brandon's email address").fill("brandon@example.org");
+  await page.getByRole("button", { name: "Send them a link" }).click();
+  await page.getByText("Once Brandon opens it, they sign in with it.").waitFor();
+  const row = page.locator("ul.people > li", { hasText: "Co Author" });
+  await row.getByRole("button", { name: "Remove" }).click();
+  assert.equal(stub.s.own.filter((c) => c.body?.action === "remove").length, 0, "asks first");
+  await page.getByRole("button", { name: "Remove Co Author" }).click();
+  await page.getByText("Co Author is no longer on this book.").waitFor();
+  assert.deepEqual(await page.locator("ul.people > li strong").allTextContents(), ["Author One", "Brandon"]);
+  await page.getByText(/^Author One removed Co Author · /).waitFor();
+  assert.equal(await page.locator("ul.people > li", { hasText: "Author One" }).getByRole("button", { name: "Remove" }).count(), 0, "not yourself");
 });
 
-// --- the book's lint before Send and Publish; reading order; People that failed ----------------
-test("people: a change that didn't go through says so, with the reasons, and doesn't hold up the next", async () => {
+test("people: your own reader-suggestion emails, off and on again", async () => {
   await signIn();
-  stub.s.people = { ...stub.s.people, pending: [{ number: 63, url: "https://github.com/textbookproject2026-alt/textbook-registry/pull/63", action: "add", login: "gobi10k", by: "author-one", state: "failed",
-    when: new Date(Date.now() - 4 * 86400e3).toISOString(), reasons: ["a-book authors: there is no GitHub account called gobi10k"] }] };
   await page.goto(`${origin}/#/a-book/people`);
-  await page.getByRole("heading", { name: "Didn't go through" }).waitFor();
-  await page.getByText("a-book authors: there is no GitHub account called gobi10k").waitFor();
-  assert.equal(await page.getByRole("heading", { name: "On its way" }).count(), 0);
-  assert.equal(await page.locator("#invite-login").count(), 1, "a new invite can be made");
+  await page.getByRole("button", { name: "Stop emailing me" }).click();
+  await page.getByRole("button", { name: "Email me again" }).waitFor();
+  assert.equal(stub.s.me.notify, false);
+  await page.getByRole("button", { name: "Email me again" }).click();
+  await page.getByRole("button", { name: "Stop emailing me" }).waitFor();
 });
-
-const INDEX_WITH_CONTENTS = "# A Book of Things\n\n## Contents\n\n- **[[chapters/chapter-01|Chapter 1]]**\n- **[[chapters/chapter-02|Chapter 2: Soils]]**\n- **[[chapters/chapter-03|Chapter 3]]**\n\n## About\n\nx\n";
-
 
 // --- history -----------------------------------------------------------------------------------
 
@@ -731,7 +738,7 @@ test("history: a page's, from the editor; Restore opens the old text in the edit
 test("history: a change that removed a page offers Bring it back, with its line in the reading order", async () => {
   await signIn();
   const sha = stub.s.history[0].sha;
-  await page.route(`${API}author-history?*`, (route) => route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": origin },
+  await page.route(`${origin}/fn/author-history?*`, (route) => route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": origin },
     body: JSON.stringify({ ...stub.s.history[0], message: "Remove “Rocks”", files: [], page: { path: "chapters/chapter-03.md", text: null, before: ROCKS } }) }));
   await page.goto(`${origin}/#/a-book/revision/${sha}/${encodeURIComponent("chapters/chapter-03.md")}`);
   await page.getByRole("button", { name: "Bring “Rocks” back" }).click();

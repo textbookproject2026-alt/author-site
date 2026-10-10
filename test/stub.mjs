@@ -70,6 +70,19 @@ export function createStub({ siteOrigin }) {
     status401: false,
     deepseekStatus: 200,
     people: { authors: ["author-one", "co-author", "textbookproject2026-alt"], owner: "textbookproject2026-alt", registry: "r".repeat(40), pending: [] },
+    // The author site's own backend (functions/, batch 2b), in memory: the session,
+    // the member, the book's people, the links that were "emailed".
+    session: false,
+    me: { id: "a1a1a1a1a1", name: "Author One", email: "author-one@example.org", github: null, notify: true, maintainer: false },
+    members: [
+      { id: "a1a1a1a1a1", name: "Author One", hasEmail: true, you: true },
+      { id: "c2c2c2c2c2", name: "Co Author", hasEmail: true, you: false },
+      { id: "b3b3b3b3b3", name: "Brandon", hasEmail: false, you: false },
+    ],
+    invitations: [],
+    log: [{ at: Date.now() - 86_400_000, text: "Author One invited Co Author" }],
+    links: { ["L".repeat(43)]: "signin", ["I".repeat(43)]: "invite", ["J".repeat(43)]: "invite", ["C".repeat(43)]: "claim" },
+    own: [], // calls to the site's own endpoints: { path, method, body, header }
     peopleAnswers: [], // successive answers for author-people-change: [status, body]
     // author-history: 31 commits on drafts, the newest 2 still waiting; page 2 is the oldest.
     history: Array.from({ length: 31 }, (_, i) => ({
@@ -83,10 +96,66 @@ export function createStub({ siteOrigin }) {
     headers: { "access-control-allow-origin": siteOrigin, vary: "Origin", ...headers },
   });
 
+  /** The site's own endpoints (functions/api/*), as the real ones answer. */
+  async function own(route) {
+    const req = route.request();
+    const url = new URL(req.url());
+    const path = url.pathname;
+    const body = req.postData() ? JSON.parse(req.postData()) : null;
+    const header = req.headers()["x-author-site"];
+    s.own.push({ path, method: req.method(), body, header });
+    const j = (status, b, headers = {}) => route.fulfill({ status, contentType: "application/json", headers, body: JSON.stringify(b) });
+    if (req.method() !== "GET" && header !== "1") return j(403, { error: "cross-site request" });
+    if (path === "/api/me" && req.method() === "GET") return j(200, s.session ? { member: s.me, books: ["a-book"], githubSignin: true } : { member: null, githubSignin: true });
+    if (path === "/api/me") {
+      if (!s.session) return j(401, { error: "signed out" });
+      if (typeof body.notify === "boolean") { s.me = { ...s.me, notify: body.notify }; return j(200, { ok: true }); }
+      return j(200, { ok: true, sent: true });
+    }
+    if (path === "/api/auth/request") return j(200, { ok: true, userMessage: "If that address has access, we've sent a link. It works once, for 15 minutes." });
+    if (path === "/api/auth/consume") {
+      if (s.links[body.token] !== "signin") return j(410, { error: "used", userMessage: "That link has been used or has expired. Ask for a new one below." });
+      delete s.links[body.token];
+      s.session = true;
+      return j(200, { ok: true, name: s.me.name });
+    }
+    if (path === "/api/auth/signout") { s.session = false; return j(200, { ok: true }); }
+    if (path === "/api/auth/github") { s.session = true; return j(200, { ok: true, needsEmail: !s.me.email }); }
+    if (path === "/api/invite") {
+      if (s.links[body.token] !== body.kind) return j(410, { error: "used", userMessage: "This invitation has been used or has expired. Ask whoever sent it for a new one." });
+      if (body.action === "info") return j(200, body.kind === "invite" ? { title: "A Book of Things", name: "New Person", email: "new@example.org", inviter: "Author One" } : { name: "Brandon", email: "brandon@example.org" });
+      delete s.links[body.token];
+      // "J…": an invitation the inviter copied, which signs nobody in.
+      if (body.token === "J".repeat(43)) return j(200, { ok: true, book: "a-book", joined: false, emailed: true });
+      s.session = true;
+      if (body.kind === "invite") s.me = { ...s.me, name: body.name || "New Person" };
+      return j(200, { ok: true, book: "a-book" });
+    }
+    if (path === "/api/members") {
+      if (!s.session) return j(401, { error: "signed out" });
+      if (req.method() === "GET") return j(200, { members: s.members, invitations: s.invitations, log: s.log });
+      if (body.action === "invite") {
+        s.invitations.unshift({ name: body.name, email: body.email, expires: Date.now() + 7 * 86_400_000 });
+        s.log.unshift({ at: Date.now(), text: `Author One invited ${body.name}` });
+        return j(200, body.send === false ? { ok: true, mailed: false, link: `${siteOrigin}/#/invite/${"I".repeat(43)}` } : { ok: true, mailed: true });
+      }
+      if (body.action === "remove") {
+        const m = s.members.find((x) => x.id === body.member);
+        s.members = s.members.filter((x) => x.id !== body.member);
+        s.log.unshift({ at: Date.now(), text: `Author One removed ${m.name}` });
+        return j(200, { ok: true });
+      }
+      if (body.action === "set-email") return j(200, { ok: true });
+    }
+    return j(404, { error: "not found" });
+  }
+
   async function fn(route) {
     const req = route.request();
     const url = new URL(req.url());
-    const endpoint = url.pathname.replace(/^\/api\//, "");
+    // Through this site's proxy (/fn/<endpoint>): the session, not a token, says who.
+    const proxied = url.pathname.startsWith("/fn/");
+    const endpoint = proxied ? url.pathname.slice(4) : url.pathname.replace(/^\/api\//, "");
     if (req.method() === "OPTIONS") {
       return route.fulfill({ status: 204, headers: {
         "access-control-allow-origin": siteOrigin, "access-control-allow-methods": "GET, POST, OPTIONS",
@@ -106,8 +175,8 @@ export function createStub({ siteOrigin }) {
         { kind: "note", number: 12, url: "https://github.com/o/a-book/issues/12", date: "2026-10-08T09:00:00Z", summary: "Say where this is from", who: { name: "Jo Reader" }, paragraph: 3 },
       ] });
     }
-    if (s.status401) return json(route, 401, { error: "identity required", userMessage: "Please sign in with GitHub again." });
-    if (req.headers().authorization !== `Bearer ${s.signedIn.token}`) return json(route, 401, { error: "identity required" });
+    if (s.status401) return json(route, 401, { error: "identity required", userMessage: "Please sign in again." });
+    if (proxied ? !s.session || req.headers()["x-author-site"] !== "1" : req.headers().authorization !== `Bearer ${s.signedIn.token}`) return json(route, 401, { error: "identity required" });
 
     if (endpoint === "author-read") {
       const what = url.searchParams.get("what");
@@ -260,6 +329,8 @@ export function createStub({ siteOrigin }) {
   async function install(context) {
     await context.route("https://api.deepseek.com/**", deepseek);
     await context.route(`${API}**`, fn);
+    await context.route(`${siteOrigin}/fn/**`, fn);
+    await context.route(`${siteOrigin}/api/**`, own);
     await context.route("https://api.github.com/**", github);
     await context.route("https://raw.githubusercontent.com/**", raw);
     await context.route("https://drafts.a-book.pages.dev/**", (route) => route.fulfill({

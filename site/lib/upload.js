@@ -32,11 +32,11 @@ export function fileProblem(file) {
 }
 
 /** Uploads every part in turn, reporting progress (0..1). Resolves to the receipts. */
-export async function uploadParts(file, onProgress = () => {}) {
+export async function uploadParts(book, file, onProgress = () => {}) {
   const receipts = [];
   for (let at = 0; at < file.size; at += PART) {
     const slice = file.slice(at, at + PART);
-    const { receipt } = await importPart(await readBase64(slice));
+    const { receipt } = await importPart(book, await readBase64(slice));
     receipts.push(receipt);
     onProgress(Math.min(1, (at + slice.size) / file.size));
   }
