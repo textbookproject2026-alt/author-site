@@ -81,7 +81,17 @@ export function createStub({ siteOrigin }) {
     ],
     invitations: [],
     log: [{ at: Date.now() - 86_400_000, text: "Author One invited Co Author" }],
-    links: { ["L".repeat(43)]: "signin", ["I".repeat(43)]: "invite", ["J".repeat(43)]: "invite", ["C".repeat(43)]: "claim" },
+    sessions: [
+      { id: "1111111111111111", device: "Chrome on macOS", created: Date.now() - 86_400_000, lastActive: Date.now() - 60_000, current: true },
+      { id: "2222222222222222", device: "Safari on iPhone", created: Date.now() - 3 * 86_400_000, lastActive: Date.now() - 7_200_000, current: false },
+    ],
+    // Declined items (batch 2c), as author-read what=declined answers.
+    declined: [
+      { kind: "edit", number: 14, url: "https://github.com/o/a-book/pull/14", date: "2026-10-09", proposed: "2026-10-08", summary: "A clearer opening", who: { name: "Jo Reader" }, files: ["chapters/chapter-01.md"], reason: "We keep the original wording.", decliner: "Co Author",
+        comments: [{ id: 801, member: "m-c2c2c2c2c2", name: "Co Author", date: "2026-10-09T12:00:00Z", text: "Thanks, though." }] },
+      { kind: "suggestion", number: 6, url: "https://github.com/o/a-book/issues/6", date: "2026-10-01", proposed: "2026-09-30", summary: "Make it weirder", who: { name: "Ann" }, files: ["chapters/chapter-02.md"], reason: null, decliner: "author-one", comments: [] },
+    ],
+    links: { ["R".repeat(43)]: "revoke", ["L".repeat(43)]: "signin", ["I".repeat(43)]: "invite", ["J".repeat(43)]: "invite", ["C".repeat(43)]: "claim" },
     own: [], // calls to the site's own endpoints: { path, method, body, header }
     peopleAnswers: [], // successive answers for author-people-change: [status, body]
     // author-history: 31 commits on drafts, the newest 2 still waiting; page 2 is the oldest.
@@ -120,6 +130,23 @@ export function createStub({ siteOrigin }) {
       return j(200, { ok: true, name: s.me.name });
     }
     if (path === "/api/auth/signout") { s.session = false; return j(200, { ok: true }); }
+    // Where you're signed in, and the new-browser alert's revoke (batch 2c).
+    if (path === "/api/sessions" && req.method() === "GET") return s.session ? j(200, { sessions: s.sessions }) : j(401, { error: "signed out" });
+    if (path === "/api/sessions") {
+      const one = s.sessions.find((x) => x.id === body.id);
+      if (!one) return j(404, { error: "not found", userMessage: "That browser is already signed out." });
+      s.sessions = s.sessions.filter((x) => x !== one);
+      if (one.current) s.session = false;
+      return j(200, { ok: true, current: one.current });
+    }
+    if (path === "/api/auth/revoke") {
+      if (s.links[body.token] !== "revoke") return j(410, { error: "used", userMessage: "This link has been used or has expired." });
+      if (body.action === "info") return j(200, { device: "Safari on iPhone", when: Date.parse("2026-10-10T09:30:00Z") });
+      delete s.links[body.token];
+      s.session = false;
+      s.sessions = [];
+      return j(200, { ok: true });
+    }
     if (path === "/api/auth/github") { s.session = true; return j(200, { ok: true, needsEmail: !s.me.email }); }
     if (path === "/api/invite") {
       if (s.links[body.token] !== body.kind) return j(410, { error: "used", userMessage: "This invitation has been used or has expired. Ask whoever sent it for a new one." });
@@ -169,7 +196,10 @@ export function createStub({ siteOrigin }) {
     }
     const body = req.postData() ? JSON.parse(req.postData()) : null;
     s.requests.push({ endpoint, method: req.method(), query: Object.fromEntries(url.searchParams), body, auth: req.headers().authorization });
-    // The public /api/history (no sign-in): what is proposed, as Page history shows readers.
+    // The public /api/history (no sign-in): what is proposed, as Page history shows readers;
+    // &change=<n>: a declined proposal's change (batch 2c).
+    if (endpoint === "history" && url.searchParams.has("change"))
+      return json(route, 200, { number: Number(url.searchParams.get("change")), files: [{ path: "chapters/chapter-01.md", before: "The old opening.\n", after: "The proposed opening.\n" }] });
     if (endpoint === "history") {
       return json(route, 200, { items: [
         { kind: "note", number: 12, url: "https://github.com/o/a-book/issues/12", date: "2026-10-08T09:00:00Z", summary: "Say where this is from", who: { name: "Jo Reader" }, paragraph: 3 },
@@ -180,6 +210,7 @@ export function createStub({ siteOrigin }) {
 
     if (endpoint === "author-read") {
       const what = url.searchParams.get("what");
+      if (what === "declined") return json(route, 200, { items: s.declined });
       if (what === "books") return json(route, 200, { login: s.signedIn.login, books: s.books });
       if (what === "tree") return json(route, 200, s.tree);
       if (what === "file") {
@@ -238,6 +269,16 @@ export function createStub({ siteOrigin }) {
       return json(route, status, answer);
     }
     if (endpoint === "author-act") {
+      const item = s.declined.find((d) => d.number === body.number);
+      if (body.action === "comment-add") {
+        const id = 900 + item.comments.length;
+        item.comments.push({ id, member: `m-${s.me.id}`, name: s.me.name, date: new Date().toISOString(), text: body.text });
+        return json(route, 200, { done: true, id, steps: ["Your comment was added."] });
+      }
+      if (body.action === "comment-delete") {
+        item.comments = item.comments.filter((c) => c.id !== body.id);
+        return json(route, 200, { done: true, steps: ["Your comment was deleted."] });
+      }
       if (body.action === "publish") return json(route, 200, { done: true, steps: ["The drafts were sent to the live book."] });
       if (body.action === "publish-prepare") return json(route, 200, { done: true, steps: ["The drafts are in line for the live book."], publish: s.publish });
       return json(route, 200, { done: true, steps: [`Did ${body.action}.`] });

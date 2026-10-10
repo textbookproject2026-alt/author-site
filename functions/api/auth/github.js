@@ -4,9 +4,10 @@
 // UPSTREAM) says whose it is. Only a member linked to that GitHub login is signed in
 // (moved over from the registry, or a new book's people adopted from it); they're
 // asked once for an email, which they confirm from that inbox.
-import { UPSTREAM, adoptNewBooks, body, booksOf, fail, json, sameSite, SITE, startSession } from "../../_lib/core.js";
+import { UPSTREAM, adoptNewBooks, body, booksOf, fail, json, sameSite, SITE } from "../../_lib/core.js";
+import { startSession } from "../../_lib/signin.js";
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost({ request, env, waitUntil }) {
   if (!sameSite(request)) return fail(403, "cross-site request");
   if (env.GITHUB_SIGNIN === "off") return fail(410, "github sign-in off", "Sign in with your email address instead.");
   const token = String((await body(request)).token ?? "");
@@ -26,7 +27,7 @@ export async function onRequestPost({ request, env }) {
   // Only to give an address: once a member has one, that is their only way in, so a
   // GitHub login that changes hands later opens nothing.
   if (member.email) return fail(403, "use email", "You sign in with your email address now: ask for a link above.");
-  return json({ ok: true, needsEmail: true }, 200, { "set-cookie": await startSession(env, member.id) });
+  return json({ ok: true, needsEmail: true }, 200, { "set-cookie": await startSession(env, member.id, request, waitUntil) });
 }
 
 /** Anything but POST. */

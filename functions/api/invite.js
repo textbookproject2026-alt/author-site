@@ -10,7 +10,8 @@
 // either way and nobody is added to a book, or named, without it. A claim confirms an address for a member who has
 // none (filled in by another member, or given after a GitHub sign-in): only someone
 // who can read that inbox can confirm it.
-import { audit, body, bookEntry, cleanName, fail, json, linkOrigin, mailBody, memberId, now, sameSite, sendMail, startSession } from "../_lib/core.js";
+import { audit, body, bookEntry, cleanName, fail, json, linkOrigin, mailBody, memberId, now, sameSite, sendMail } from "../_lib/core.js";
+import { startSession } from "../_lib/signin.js";
 import { createLink, markNotMailed, peekLink, useLink } from "../_lib/links.js";
 import { requestSync } from "../_lib/sync.js";
 
@@ -44,7 +45,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
     if (!m) return GONE("link");
     for (const book of (await env.DB.prepare("SELECT book FROM book_members WHERE member_id = ?").bind(m.id).all()).results.map((r) => r.book))
       await audit(env, book, m, "email-confirmed", m.display_name);
-    return json({ ok: true }, 200, { "set-cookie": await startSession(env, m.id) });
+    return json({ ok: true }, 200, { "set-cookie": await startSession(env, m.id, request, waitUntil) });
   }
 
   const entry = await bookEntry(link.book).catch(() => null);
@@ -76,6 +77,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
   // From the inbox: join. An existing member keeps the name they have (a name given
   // here is only for someone new).
   let member = await env.DB.prepare("SELECT id, display_name FROM members WHERE email = ?").bind(link.email).first();
+  const joined = !member;
   if (!member) {
     member = { id: memberId(), display_name: name };
     await env.DB.prepare("INSERT INTO members (id, display_name, email, created_at) VALUES (?, ?, ?, ?)").bind(member.id, name, link.email, now()).run();
@@ -83,7 +85,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
   await env.DB.prepare("INSERT OR IGNORE INTO book_members (book, member_id, added_by, added_at) VALUES (?, ?, ?, ?)").bind(link.book, member.id, link.created_by, now()).run();
   await audit(env, link.book, member, "joined", member.display_name);
   waitUntil(requestSync(env, link.book));
-  return json({ ok: true, book: link.book, joined: true }, 200, { "set-cookie": await startSession(env, member.id) });
+  return json({ ok: true, book: link.book, joined: true }, 200, { "set-cookie": await startSession(env, member.id, request, waitUntil, { joined }) });
 }
 
 /** Anything but POST. */

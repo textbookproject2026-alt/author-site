@@ -6,6 +6,7 @@
 
 import { h, clear, busy, note, errorNote, when } from "./dom.js";
 import { read, act } from "./api.js";
+import { declineButton } from "./decline.js";
 
 /** Both lists for a book; a list that can't be read is empty rather than an error. */
 export async function openSuggestions(slug) {
@@ -69,9 +70,9 @@ export function changeRow(slug, c, titles, after = () => {}) {
       await act(slug, "change-accept", { number: c.number, title: c.title });
       return answered("Accepted: it is in the drafts.")();
     }),
-    answerButton("Decline", "", out, "Declining it…", async () => {
-      await act(slug, "change-decline", { number: c.number });
-      return answered("Declined, with a note thanking them.")();
+    declineButton(out, async (reason) => {
+      await act(slug, "change-decline", { number: c.number, reason });
+      return answered("Declined: your reason is posted, with a note thanking them. It shows as Declined in the book's history.")();
     }));
   return h("li", {},
     h("div", { class: "row" }, h("div", { class: "grow" }, h("strong", { text: c.title }), h("span", { class: "muted", text: ` — ${c.who}, ${when(c.when)}` })), buttons),
@@ -89,10 +90,10 @@ export function writtenRow(slug, s, after = () => {}) {
         after();
         return "Accepted: the reader is thanked and told you'll make the change. Once it's made, say so on the suggestion's own screen (Drafts).";
       }),
-      answerButton("Decline", "", out, "Declining it…", async () => {
-        await act(slug, "suggestion-decline", { number: s.number });
+      declineButton(out, async (reason) => {
+        await act(slug, "suggestion-decline", { number: s.number, reason });
         after();
-        return "Declined, with a courteous reply.";
+        return "Declined: your reason is posted, with a courteous reply. It shows as Declined in the book's history.";
       }),
       h("a", { class: "btn link", href: `#/${slug}/suggestion/${s.number}`, text: "More" }));
   return h("li", {},

@@ -16,17 +16,16 @@ const DAY = 86_400_000;
 
 export const now = () => Date.now();
 
+/** A JSON answer. A "set-cookie" may be one value or several (an array). */
 export function json(data, status = 200, headers = {}) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-      "x-content-type-options": "nosniff",
-      "strict-transport-security": "max-age=31536000; includeSubDomains",
-      ...headers,
-    },
+  const h = new Headers({
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
   });
+  for (const [k, v] of Object.entries(headers)) for (const one of [v].flat()) h.append(k, one);
+  return new Response(JSON.stringify(data), { status, headers: h });
 }
 export const fail = (status, error, userMessage) => json(userMessage ? { error, userMessage } : { error }, status);
 
@@ -98,27 +97,26 @@ export function cookies(request) {
 export const sessionCookie = (token, maxAgeSeconds) =>
   `${SESSION_COOKIE}=${token ?? ""}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
 
-/** A new session for a member: the Set-Cookie header value. */
-export async function startSession(env, id) {
-  const token = randomToken();
-  const t = now();
-  await env.DB.prepare("INSERT INTO sessions (id_hash, member_id, created_at, expires_at) VALUES (?, ?, ?, ?)")
-    .bind(await hash(token), id, t, t + SESSION_DAYS * DAY)
-    .run();
-  return sessionCookie(token, SESSION_DAYS * 86_400);
-}
-
-/** The signed-in member, or null: { member, sessionHash }. Expired sessions don't count. */
+/**
+ * The signed-in member, or null: { member, sessionHash, sid }. Expired sessions don't
+ * count. "Last active" moves on at most every five minutes (one write, not one per request).
+ */
 export async function session(request, env) {
   const token = cookies(request)[SESSION_COOKIE];
   if (!token || !TOKEN_RE.test(token)) return null;
   const sessionHash = await hash(token);
-  const member = await env.DB.prepare(
-    "SELECT m.* FROM sessions s JOIN members m ON m.id = s.member_id WHERE s.id_hash = ? AND s.expires_at > ?",
+  const row = await env.DB.prepare(
+    "SELECT m.*, s.sid AS session_sid, s.last_active AS session_last_active FROM sessions s JOIN members m ON m.id = s.member_id WHERE s.id_hash = ? AND s.expires_at > ?",
   )
     .bind(sessionHash, now())
     .first();
-  return member ? { member, sessionHash } : null;
+  if (!row) return null;
+  const { session_sid: stored, session_last_active: last, ...member } = row;
+  // A session from before batch 2c has no public handle yet: it gets one now.
+  const sid = stored ?? [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  if (!stored || !last || now() - last > 300_000)
+    await env.DB.prepare("UPDATE sessions SET last_active = ?, sid = COALESCE(sid, ?) WHERE id_hash = ?").bind(now(), sid, sessionHash).run().catch(() => {});
+  return { member, sessionHash, sid };
 }
 
 export async function booksOf(env, id) {
@@ -269,6 +267,8 @@ export function prune(env, waitUntil) {
       env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(t),
       env.DB.prepare("DELETE FROM assertions WHERE expires_at < ?").bind(t - 3_600_000),
       env.DB.prepare("DELETE FROM rate WHERE expires_at < ?").bind(t),
+      // A browser not signed in on for 400 days (its cookie's life) is forgotten.
+      env.DB.prepare("DELETE FROM devices WHERE first_seen < ? AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.member_id = devices.member_id)").bind(t - 400 * DAY),
     ]).catch(() => {}),
   );
 }

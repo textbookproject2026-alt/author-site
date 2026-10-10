@@ -244,7 +244,7 @@ blockquote.said { margin: 0 0 0.75rem; padding: 0.6rem 0.9rem; border-left: 3px 
 .diff .hunk:first-of-type { border-top: 0; }
 .diff .hh { padding: 0.2rem 0.75rem; color: var(--portal-muted); background: var(--portal-bg); }
 .diff .line { display: grid; grid-template-columns: 1.5rem 1fr; white-space: pre-wrap; overflow-wrap: anywhere; }
-.diff .line > span:first-child { text-align: center; color: var(--portal-faint); user-select: none; }
+.diff .line > span:first-child { text-align: center; color: var(--portal-muted); user-select: none; }
 .diff .line > span:last-child { padding-right: 0.75rem; }
 .diff .del { background: var(--portal-del); }
 .diff .add { background: var(--portal-add); }
@@ -319,6 +319,16 @@ form.retitle { width: 100%; }
 .badge.status-published { background: var(--portal-bg-soft); color: var(--portal-muted); }
 .badge.status-edited { background: var(--portal-wash); color: var(--portal-accent); }
 .badge.status-new { background: var(--portal-accent); color: var(--portal-bg); }
+/* Declined (batch 2c): dotted and struck through, so it reads as different without colour. */
+.badge.status-declined { background: none; border: 1px dotted var(--portal-muted); color: var(--portal-muted); text-decoration: line-through; text-decoration-thickness: 1px; }
+.declined-list > li { display: block; }
+.declined-list blockquote.said { white-space: pre-line; overflow-wrap: anywhere; }
+.declined-list .comments { margin: 0 0 0.5rem; }
+.declined-list .comment p { margin: 0.1rem 0; overflow-wrap: anywhere; }
+.declined-list .comment .said { white-space: pre-line; }
+form.decline { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.5rem 0; }
+form.decline textarea { width: 100%; box-sizing: border-box; min-height: 6rem; padding: 0.5rem 0.6rem; font: inherit; border: 1px solid var(--portal-border, #ccc); border-radius: 8px; background: var(--portal-bg); color: inherit; }
+form.decline label { font-weight: 700; }
 .badge.status-removed { background: var(--portal-del); color: var(--portal-danger); }
 .badge.status-missing { background: transparent; color: var(--portal-danger); border: 1px dashed currentColor; }
 .btn.link.danger { color: var(--portal-danger); }
@@ -367,3 +377,7 @@ ul.people .row.wrap input, .note .row.wrap input { flex: 1 1 14rem; }
 ul.people > li { padding: 0.6rem 0; }
 ul.people .badge { display: inline-block; margin: 0.35rem 0 0.5rem; }
 .actions.wrap { flex-wrap: wrap; }
+
+/* Where you're signed in (batch 2c). */
+.sessions .badge { margin-left: 0.5rem; }
+.sessions p { margin: 0.15rem 0 0; }

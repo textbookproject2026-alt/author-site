@@ -20,6 +20,8 @@
 //   #/<book>/credits[/<path>]   the book's (or a chapter's) authors and editors
 //   #/<book>/revision/<sha>[/<path>]  one change; one page at it, Restore, Bring it back
 //   #/settings                  the author's own DeepSeek key, in this browser
+//   #/signed-in                 where the account is signed in, each with Sign out (batch 2c)
+//   #/revoke/<token>            a new-browser alert's "This wasn't me": one button signs out everywhere
 // Older links (#/<book>/waiting, /publish, /change/<n>, /chapter/<path>) still land.
 
 import { h, clear, busy, errorNote } from "./lib/dom.js";
@@ -36,6 +38,7 @@ import { suggestionScreen } from "./lib/screens-suggestion.js";
 import { privacyNote } from "./lib/privacy.js";
 import { newChapterScreen, newConceptScreen } from "./lib/screens-new.js";
 import { draftsScreen } from "./lib/screens-drafts.js";
+import { revokeScreen, signedInScreen } from "./lib/screens-sessions.js";
 
 const main = document.getElementById("main");
 
@@ -85,6 +88,7 @@ function showWho(id) {
     h("hr", {}),
     h("a", { role: "menuitem", href: "https://guide.confused4now.org", target: "_blank", rel: "noopener", text: "Guide for authors" }),
     h("a", { role: "menuitem", href: "#/settings", text: "Settings" }),
+    h("a", { role: "menuitem", href: "#/signed-in", text: "Where you're signed in" }),
     h("button", { type: "button", role: "menuitem", text: "Sign out", onclick: () => signOut() }),
     h("button", { type: "button", role: "menuitem", text: "Sign out everywhere", onclick: () => signOut(true) }));
   const onDoc = (e) => {
@@ -267,6 +271,7 @@ async function invitationScreen(kind, token) {
 const ROUTES = [
   [/^$/, () => booksScreen()],
   [/^settings$/, () => settingsScreen()],
+  [/^signed-in$/, () => signedInScreen()],
   [/^([a-z0-9-]+)$/, (book) => chaptersScreen(book)],
   [/^([a-z0-9-]+)\/chapter\/(.+)$/, (book, path) => chapterScreen(book, decodeURIComponent(path))],
   [/^([a-z0-9-]+)\/edit\/([^/]+)(?:\/line\/(\d+))?$/, (book, path, line) => editScreen(book, decodeURIComponent(path), line ? Number(line) : null)],
@@ -288,6 +293,7 @@ const OPEN_ROUTES = [
   [/^link\/([A-Za-z0-9_-]{43})$/, (t) => linkScreen(t)],
   [/^invite\/([A-Za-z0-9_-]{43})$/, (t) => invitationScreen("invite", t)],
   [/^claim\/([A-Za-z0-9_-]{43})$/, (t) => invitationScreen("claim", t)],
+  [/^revoke\/([A-Za-z0-9_-]{43})$/, (t) => revokeScreen(t)],
 ];
 
 async function route() {
