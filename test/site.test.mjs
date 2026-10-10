@@ -347,11 +347,19 @@ test("editor: the page's open reader suggestions, with Accept and Decline", asyn
   await box.getByText('"recieve" should be "receive"').waitFor();
   // The accepted one waits for the change; the other can be answered here.
   assert.equal(await box.getByText("Accepted").count(), 1);
-  await Promise.all([page.waitForResponse((r) => r.url().includes("author-act")), box.getByRole("button", { name: "Decline" }).click()]);
-  await box.getByText("Declined, with a courteous reply.").waitFor();
+  // Declining needs a reason (batch 2c): the button stays off until it has 10 characters.
+  await box.getByRole("button", { name: "Decline…" }).click();
+  const why = box.getByLabel("Why is this being declined?");
+  await why.fill("too short");
+  assert.equal(await box.getByRole("button", { name: "Decline", exact: true }).isDisabled(), true);
+  await box.getByText("At least 10 characters (9 so far).").waitFor();
+  await why.fill("The chapter already says this in ¶4.");
+  await Promise.all([page.waitForResponse((r) => r.url().includes("author-act")), box.getByRole("button", { name: "Decline", exact: true }).click()]);
+  await box.getByText(/^Declined: your reason is posted, with a courteous reply\./).waitFor();
   const done = lastCall("author-act").body;
   assert.equal(done.action, "suggestion-decline");
   assert.equal(done.number, 7);
+  assert.equal(done.reason, "The chapter already says this in ¶4.");
 });
 
 test("editor: a proposed edit to the page, accepted from the editor", async () => {
@@ -557,9 +565,12 @@ test("drafts: reader suggestions at the top — Accept folds one into the drafts
   await page.getByText("Accepted: it is in the drafts.").waitFor();
   assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "change-accept", number: 12, title: "Fix a typo" });
   await page.goto(`${origin}/#/a-book/drafts`);
-  await page.locator("li", { hasText: "Fix a typo" }).getByRole("button", { name: "Decline" }).click();
-  await page.getByText("Declined, with a note thanking them.").waitFor();
-  assert.equal(lastCall("author-act").body.action, "change-decline");
+  const typo = page.locator("li", { hasText: "Fix a typo" });
+  await typo.getByRole("button", { name: "Decline…" }).click();
+  await typo.getByLabel("Why is this being declined?").fill("We keep the original wording here.");
+  await typo.getByRole("button", { name: "Decline", exact: true }).click();
+  await page.getByText(/^Declined: your reason is posted, with a note thanking them\./).waitFor();
+  assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "change-decline", number: 12, reason: "We keep the original wording here." });
   await page.getByRole("link", { name: /recieve/ }).waitFor();
 });
 
@@ -696,7 +707,7 @@ test("people: your own reader-suggestion emails, off and on again", async () => 
 
 // --- history -----------------------------------------------------------------------------------
 
-test("history: the book's changes in this site, paged, in the three states readers see; not GitHub", async () => {
+test("history: the book's changes in this site, paged, in the states readers see; not GitHub", async () => {
   await signIn();
   await page.goto(`${origin}/#/a-book`);
   const link = page.getByRole("link", { name: "History", exact: true });
@@ -708,7 +719,7 @@ test("history: the book's changes in this site, paged, in the three states reade
   assert.match(await open.nth(0).textContent(), /Say where this is from — Jo Reader.*Proposed · Note/);
   assert.equal(await open.locator("a").getAttribute("href"), "#/a-book/suggestion/12");
   assert.deepEqual(lastCall("history").query, { book: "a-book" });
-  const items = page.locator("ul.history:not(.proposed) > li");
+  const items = page.locator("ul.history:not(.proposed):not(.declined-list) > li");
   assert.equal(await items.count(), 30);
   assert.match(await items.nth(0).textContent(), /Say it better — author-one.*Being edited/);
   assert.match(await items.nth(2).textContent(), /Change 2 — co-author.*Published/);
@@ -892,4 +903,66 @@ test("credits: a chapter's own authors and editors, said to replace the book's",
   const sent = sends()[0];
   assert.equal(sent.files[0].path, "chapters/chapter-01.md");
   assert.match(sent.files[0].text, /^---\nauthors:\n  - "Cee Writer"\n---\n\n# Chapter 1\n/);
+});
+
+// --- batch 2c ----------------------------------------------------------------------------------
+
+test("history: Declined, with who proposed and declined it, the reason (or none recorded), Show changes and comments; add one, delete your own", async () => {
+  await signIn();
+  await page.goto(`${origin}/#/a-book/history`);
+  await page.getByRole("heading", { name: "Declined (2)" }).waitFor();
+  const first = page.locator("li.declined", { hasText: "A clearer opening" });
+  await first.getByText("Declined · Proposed edit").waitFor();
+  await first.getByText(/Proposed by Jo Reader, .+\. Declined by Co Author, .+\./).waitFor();
+  await first.getByText("We keep the original wording.").waitFor();
+  await page.locator("li.declined", { hasText: "Make it weirder" }).getByText("No reason was recorded.").waitFor();
+  // Show changes: the proposal's change, from the function's public history.
+  await first.getByRole("button", { name: "Show changes" }).click();
+  await first.getByText("The proposed opening.").waitFor();
+  // Someone else's comment: no Delete. Add one: it shows, with Delete; delete it: gone.
+  await first.getByText("Thanks, though.").waitFor();
+  assert.equal(await first.getByRole("button", { name: "Delete" }).count(), 0);
+  await first.getByRole("button", { name: "Add a comment" }).click();
+  await first.getByLabel("Your comment").fill("We may revisit this next year.");
+  await first.getByRole("button", { name: "Post comment" }).click();
+  await page.getByText("Your comment was added.").waitFor();
+  const again = page.locator("li.declined", { hasText: "A clearer opening" });
+  await again.getByText("We may revisit this next year.").waitFor();
+  assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "comment-add", number: 14, text: "We may revisit this next year." });
+  await again.getByRole("button", { name: "Delete" }).click();
+  await page.getByText("Your comment was deleted.").waitFor();
+  assert.equal(await page.getByText("We may revisit this next year.").count(), 0);
+  assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "comment-delete", number: 14, id: 901 });
+});
+
+test("where you're signed in: from the account menu, each browser with its last activity, this one marked; Sign out ends another", async () => {
+  await signIn();
+  await page.getByRole("button", { name: /^Account:/ }).click();
+  await page.getByRole("menuitem", { name: "Where you're signed in" }).click();
+  await page.getByRole("heading", { name: "Where you're signed in" }).waitFor();
+  const rows = page.locator("ul.sessions > li");
+  assert.equal(await rows.count(), 2);
+  await rows.nth(0).getByText("This browser").waitFor();
+  await rows.nth(1).getByText(/^Last active /).waitFor();
+  await page.getByRole("button", { name: "Sign out Safari on iPhone" }).click();
+  await page.getByText("Safari on iPhone is signed out.").waitFor();
+  assert.equal(await page.locator("ul.sessions > li").count(), 1);
+  assert.deepEqual(stub.s.own.filter((c) => c.path === "/api/sessions" && c.method === "POST").at(-1).body, { id: "2222222222222222" });
+});
+
+test("a new-browser alert's link: opening it changes nothing; its button signs out everywhere, once", async () => {
+  await signIn();
+  for (let i = 0; i < 2; i++) {
+    if (i) await page.reload();
+    else await page.goto(`${origin}/#/revoke/${"R".repeat(43)}`);
+    await page.getByRole("heading", { name: "Wasn't you?" }).waitFor();
+    await page.getByText(/signed in on Safari on iPhone/).waitFor();
+  }
+  assert.equal(stub.s.own.filter((c) => c.path === "/api/auth/revoke" && c.body.action === "confirm").length, 0, "nothing on opening");
+  assert.equal(stub.s.session, true);
+  await page.getByRole("button", { name: "Sign out everywhere" }).click();
+  await page.getByText(/^Done: your account is signed out on every browser/).waitFor();
+  assert.equal(stub.s.session, false);
+  await page.reload();
+  await page.getByRole("heading", { name: "This link has expired" }).waitFor();
 });

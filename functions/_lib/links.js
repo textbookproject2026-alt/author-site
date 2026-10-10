@@ -1,17 +1,17 @@
 // Emailed links (batch 2b): sign-in (15 minutes), invitation and email claim (seven
-// days). The token is only in the email; the database keeps its SHA-256. Opening a
+// days), and since batch 2c the new-browser alert's "This wasn't me" (revoke, seven days). The token is only in the email; the database keeps its SHA-256. Opening a
 // link's page shows what it is for; the page's own button then uses it (POST), so a
 // mail scanner that fetches the link can't spend it.
 import { LINK_DAYS, SIGNIN_MINUTES, TOKEN_RE, hash, now, randomToken } from "./core.js";
 
-export async function createLink(env, { kind, book = null, email = null, name = null, memberId = null, createdBy = null, mailed = true }) {
+export async function createLink(env, { kind, book = null, email = null, name = null, memberId = null, createdBy = null, mailed = true, deviceHash = null }) {
   const token = randomToken();
   const t = now();
   const ttl = kind === "signin" ? SIGNIN_MINUTES * 60_000 : LINK_DAYS * 86_400_000;
   await env.DB.prepare(
-    "INSERT INTO links (token_hash, kind, book, email, name, member_id, created_by, created_at, expires_at, mailed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO links (token_hash, kind, book, email, name, member_id, created_by, created_at, expires_at, mailed, device_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   )
-    .bind(await hash(token), kind, book, email, name, memberId, createdBy, t, t + ttl, mailed ? 1 : 0)
+    .bind(await hash(token), kind, book, email, name, memberId, createdBy, t, t + ttl, mailed ? 1 : 0, deviceHash)
     .run();
   return token;
 }

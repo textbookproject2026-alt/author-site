@@ -16,17 +16,16 @@ const DAY = 86_400_000;
 
 export const now = () => Date.now();
 
+/** A JSON answer. A "set-cookie" may be one value or several (an array). */
 export function json(data, status = 200, headers = {}) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-      "x-content-type-options": "nosniff",
-      "strict-transport-security": "max-age=31536000; includeSubDomains",
-      ...headers,
-    },
+  const h = new Headers({
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
   });
+  for (const [k, v] of Object.entries(headers)) for (const one of [v].flat()) h.append(k, one);
+  return new Response(JSON.stringify(data), { status, headers: h });
 }
 export const fail = (status, error, userMessage) => json(userMessage ? { error, userMessage } : { error }, status);
 
@@ -98,27 +97,23 @@ export function cookies(request) {
 export const sessionCookie = (token, maxAgeSeconds) =>
   `${SESSION_COOKIE}=${token ?? ""}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
 
-/** A new session for a member: the Set-Cookie header value. */
-export async function startSession(env, id) {
-  const token = randomToken();
-  const t = now();
-  await env.DB.prepare("INSERT INTO sessions (id_hash, member_id, created_at, expires_at) VALUES (?, ?, ?, ?)")
-    .bind(await hash(token), id, t, t + SESSION_DAYS * DAY)
-    .run();
-  return sessionCookie(token, SESSION_DAYS * 86_400);
-}
-
-/** The signed-in member, or null: { member, sessionHash }. Expired sessions don't count. */
+/**
+ * The signed-in member, or null: { member, sessionHash, sid }. Expired sessions don't
+ * count. "Last active" moves on at most every five minutes (one write, not one per request).
+ */
 export async function session(request, env) {
   const token = cookies(request)[SESSION_COOKIE];
   if (!token || !TOKEN_RE.test(token)) return null;
   const sessionHash = await hash(token);
-  const member = await env.DB.prepare(
-    "SELECT m.* FROM sessions s JOIN members m ON m.id = s.member_id WHERE s.id_hash = ? AND s.expires_at > ?",
+  const row = await env.DB.prepare(
+    "SELECT m.*, s.sid AS session_sid, s.last_active AS session_last_active FROM sessions s JOIN members m ON m.id = s.member_id WHERE s.id_hash = ? AND s.expires_at > ?",
   )
     .bind(sessionHash, now())
     .first();
-  return member ? { member, sessionHash } : null;
+  if (!row) return null;
+  const { session_sid: sid, session_last_active: last, ...member } = row;
+  if (!last || now() - last > 300_000) await env.DB.prepare("UPDATE sessions SET last_active = ? WHERE id_hash = ?").bind(now(), sessionHash).run();
+  return { member, sessionHash, sid };
 }
 
 export async function booksOf(env, id) {

@@ -22,6 +22,18 @@ const SCREENS = [
   ["people", "#/a-book/people"],
   ["credits", "#/a-book/credits"],
   ["history", "#/a-book/history"],
+  ["history, a declined change open", "#/a-book/history", { setup: async (page) => {
+    const d = page.locator("li.declined").first();
+    await d.getByRole("button", { name: "Show changes" }).click();
+    await d.getByRole("button", { name: "Add a comment" }).click();
+    await page.getByText("The proposed opening.").waitFor();
+  } }],
+  ["drafts, declining", "#/a-book/drafts", { setup: async (page) => {
+    await page.locator("li", { hasText: "Fix a typo" }).getByRole("button", { name: "Decline…" }).click();
+    await page.getByLabel("Why is this being declined?").fill("x");
+  } }],
+  ["where you're signed in", "#/signed-in"],
+  ["this wasn't me", `#/revoke/${"R".repeat(43)}`, { signedOut: true }],
   ["settings", "#/settings"],
   ["account menu", "#/a-book", { menu: true }],
 ];
@@ -53,6 +65,7 @@ test("phone audit: every screen at 360, 390 and 412px, light and dark", async ()
         await page.goto(`${server.origin}/${hash}`, { waitUntil: "networkidle" });
         await page.waitForTimeout(500);
         if (opts.menu) await page.locator(".account-btn").click();
+        if (opts.setup) await opts.setup(page);
         await page.waitForFunction(() => {
           const nav = document.querySelector("nav.tabs");
           if (!nav) return true;

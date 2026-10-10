@@ -268,3 +268,80 @@ test("the public member list: ids and names, linked logins, never an email", asy
   assert.deepEqual(d.github, ["BrandonAndCaroline", "textbookproject2026-alt"]);
   assert.equal((await fetch(`${BASE}/api/internal/members?book=nope`)).status, 404);
 });
+
+// --- batch 2c, Part B: sign-in hardening -------------------------------------------------------
+
+const MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
+const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
+const deviceOf = (res) => /(__Host-tb_device=[^;]+)/.exec(res.headers.get("set-cookie") ?? "")?.[1];
+async function signInFrom(memberId, email, ua, device) {
+  const t = token();
+  sql(`INSERT INTO links (token_hash, kind, member_id, email, created_at, expires_at) VALUES ('${sha(t)}', 'signin', '${memberId}', '${email}', ${Date.now()}, ${Date.now() + 900000})`);
+  const res = await post("/api/auth/consume", { token: t }, { headers: { ...site, "user-agent": ua, ...(device ? { cookie: device } : {}) } });
+  assert.equal(res.status, 200);
+  return { session: cookieOf(res), device: deviceOf(res) };
+}
+
+test("scanner-safe: opening a sign-in or invitation link (GET, twice) uses nothing; the page's button (POST) does", async () => {
+  const t = token();
+  sql(`INSERT INTO links (token_hash, kind, member_id, email, created_at, expires_at) VALUES ('${sha(t)}', 'signin', '${ALEC.id}', '${ALEC.email}', ${Date.now()}, ${Date.now() + 900000})`);
+  const inv = token();
+  sql(`INSERT INTO links (token_hash, kind, book, email, name, created_by, mailed, created_at, expires_at) VALUES ('${sha(inv)}', 'invite', 'platform-test-book', 'scanned@example.org', 'Scanned', '${ALEC.id}', 1, ${Date.now()}, ${Date.now() + 86400000})`);
+  for (const url of [`/#/link/${t}`, `/#/link/${t}`, `/#/invite/${inv}`, `/#/invite/${inv}`, `/api/auth/consume?token=${t}`, `/api/invite?token=${inv}`]) {
+    const r = await fetch(`${BASE}${url}`, { headers: { "user-agent": "Microsoft Safe Links" } });
+    assert.ok([200, 405].includes(r.status), `${url}: ${r.status}`);
+    assert.equal(r.headers.get("set-cookie"), null, url);
+  }
+  assert.deepEqual(rows(`SELECT kind, used_at FROM links WHERE token_hash IN ('${sha(t)}', '${sha(inv)}') ORDER BY kind`), [{ kind: "invite", used_at: null }, { kind: "signin", used_at: null }]);
+  assert.equal((await post("/api/auth/consume", { token: t })).status, 200, "the button still signs in");
+  const joined = await post("/api/invite", { kind: "invite", token: inv, action: "accept", name: "Scanned" });
+  assert.equal((await joined.json()).joined, true, "the button still joins");
+  sql(`DELETE FROM book_members WHERE member_id = (SELECT id FROM members WHERE email = 'scanned@example.org')`);
+});
+
+test("a new browser: the first one is just remembered; a sign-in from another leaves a This-wasn't-me link; it signs out everywhere, once", async () => {
+  const BO = { id: "e5e5e5e5e5", email: "bo@example.org" };
+  sql(`INSERT INTO members (id, display_name, email, created_at) VALUES ('${BO.id}', 'Bo', '${BO.email}', ${NOW}); INSERT INTO book_members (book, member_id, added_at) VALUES ('platform-test-book', '${BO.id}', ${NOW});`);
+  const revokes = () => rows(`SELECT device_hash FROM links WHERE kind = 'revoke' AND member_id = '${BO.id}'`);
+  const mac = await signInFrom(BO.id, BO.email, MAC);
+  assert.ok(mac.device, "a device cookie");
+  assert.match(mac.session && rows(`SELECT label FROM devices WHERE member_id = '${BO.id}'`)[0].label, /^Chrome on macOS$/);
+  assert.equal(revokes().length, 0, "the first browser: nothing to compare with");
+  await signInFrom(BO.id, BO.email, MAC, mac.device);
+  assert.equal(revokes().length, 0, "the same browser again: no alert");
+  const phone = await signInFrom(BO.id, BO.email, IPHONE);
+  await eventually(() => revokes().length === 1);
+  assert.equal(rows(`SELECT label FROM devices WHERE member_id = '${BO.id}' ORDER BY first_seen DESC LIMIT 1`)[0].label, "Safari on iPhone");
+  // The alert's link: GETs change nothing; its page tells which sign-in; the button ends every session.
+  const t = token();
+  sql(`UPDATE links SET token_hash = '${sha(t)}' WHERE kind = 'revoke' AND member_id = '${BO.id}'`);
+  for (let i = 0; i < 2; i++) assert.equal((await fetch(`${BASE}/#/revoke/${t}`)).headers.get("set-cookie"), null);
+  const info = await (await post("/api/auth/revoke", { token: t, action: "info" })).json();
+  assert.equal(info.device, "Safari on iPhone");
+  assert.equal((await (await get("/api/me", { cookie: mac.session })).json()).member.name, "Bo", "still signed in until the button");
+  const done = await post("/api/auth/revoke", { token: t, action: "confirm" });
+  assert.equal(done.status, 200);
+  for (const s of [mac.session, phone.session]) assert.equal((await (await get("/api/me", { cookie: s })).json()).member, null);
+  assert.equal(rows(`SELECT COUNT(*) AS n FROM sessions WHERE member_id = '${BO.id}'`)[0].n, 0);
+  assert.equal(rows(`SELECT COUNT(*) AS n FROM devices WHERE member_id = '${BO.id}' AND label = 'Safari on iPhone'`)[0].n, 0, "that browser is forgotten: it alerts again");
+  assert.equal((await post("/api/auth/revoke", { token: t, action: "confirm" })).status, 410, "single use");
+  assert.equal((await fetch(`${BASE}/api/auth/revoke?token=${t}&action=confirm`)).status, 405, "never on GET");
+});
+
+test("where you're signed in: each session with its browser, this one marked; signing one out ends it at once", async () => {
+  const mac = await signInFrom(ALEC.id, ALEC.email, MAC);
+  const phone = await signInFrom(ALEC.id, ALEC.email, IPHONE);
+  const list = await (await get("/api/sessions", { cookie: mac.session })).json();
+  const mine = list.sessions.filter((s) => s.device === "Chrome on macOS" || s.device === "Safari on iPhone");
+  assert.ok(mine.length >= 2);
+  assert.ok(list.sessions.every((s) => /^[0-9a-f]{16}$/.test(s.id) && !("id_hash" in s)));
+  assert.equal(list.sessions.filter((s) => s.current).length, 1);
+  const other = (await (await get("/api/sessions", { cookie: phone.session })).json()).sessions.find((s) => s.current);
+  assert.equal((await post("/api/sessions", { id: other.id }, { cookie: mac.session })).status, 200);
+  assert.equal((await (await get("/api/me", { cookie: phone.session })).json()).member, null, "signed out at once");
+  assert.equal((await (await get("/api/me", { cookie: mac.session })).json()).member.name, "Alec Gordon");
+  // Someone else's session id: not found, and nothing happens.
+  const bo = rows(`SELECT sid FROM sessions WHERE member_id != '${ALEC.id}' LIMIT 1`)[0];
+  if (bo) assert.equal((await post("/api/sessions", { id: bo.sid }, { cookie: mac.session })).status, 404);
+  assert.equal((await post("/api/sessions", { id: "../x" }, { cookie: mac.session })).status, 400);
+});
