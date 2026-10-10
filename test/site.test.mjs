@@ -183,9 +183,11 @@ test("the account menu on a phone: avatar only, the full login inside, no label 
     const tops = new Set([...nav.querySelectorAll("a")].map((a) => Math.round(a.getBoundingClientRect().top)));
     const cur = nav.querySelector('[aria-current="page"]').getBoundingClientRect();
     const box = nav.getBoundingClientRect();
-    return { rows: tops.size, visible: cur.left >= box.left - 1 && cur.right <= box.right + 1 };
+    const state = { scrollLeft: nav.scrollLeft, maxScroll: nav.scrollWidth - nav.clientWidth, current: `${Math.round(cur.left)}–${Math.round(cur.right)}`, strip: `${Math.round(box.left)}–${Math.round(box.right)}`, labels: [...nav.querySelectorAll("a")].map((a) => a.textContent).join("|"), fonts: document.fonts.status };
+    return { rows: tops.size, visible: cur.left >= box.left - 1 && cur.right <= box.right + 1, state };
   });
-  assert.deepEqual(tabs, { rows: 1, visible: true });
+  // When it fails, say what the strip looked like (it has failed only now and then, in CI).
+  assert.deepEqual({ rows: tabs.rows, visible: tabs.visible }, { rows: 1, visible: true }, JSON.stringify(tabs.state));
 });
 
 test("theme: follows a dark system, the toggle switches to light and remembers it before first paint", async () => {
