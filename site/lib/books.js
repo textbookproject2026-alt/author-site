@@ -58,7 +58,8 @@ function tabStrip(nav) {
   let tries = 0;
   const show = () => {
     if (!nav.isConnected) {
-      if (tries++ < 20) requestAnimationFrame(show); // the screen is still being put together
+      // The screen is still being put together (it may wait on the network): up to ~10 s.
+      if (tries++ < 600) requestAnimationFrame(show);
       return;
     }
     const current = nav.querySelector('[aria-current="page"]');
