@@ -10,6 +10,8 @@ export async function onRequestGet({ request, env }) {
   if (!sameSite(request)) return fail(403, "cross-site request");
   const s = await session(request, env);
   if (!s) return fail(401, "signed out", "Please sign in again.");
+  // Sessions from before batch 2c get their handle here (each its own random one).
+  await env.DB.prepare("UPDATE sessions SET sid = lower(hex(randomblob(8))) WHERE member_id = ? AND sid IS NULL").bind(s.member.id).run();
   const { results } = await env.DB.prepare(
     "SELECT sid, label, created_at, last_active FROM sessions WHERE member_id = ? AND expires_at > ? ORDER BY last_active DESC",
   )

@@ -1,9 +1,11 @@
 // Starting a session (batch 2b), and since batch 2c knowing the browser: a
 // long-lived HttpOnly device cookie, kept hashed in `devices`. A sign-in from a
 // browser the member hasn't used before emails them (time, browser and system, and
-// "This wasn't me", a link to a page whose button signs them out everywhere). A
-// member with no browser on record yet (the first sign-in, ever or since this
-// change) gets no alert: there is nothing to compare with.
+// "This wasn't me", a link to a page whose button signs them out everywhere). The
+// only sign-in that never alerts is a new member's first, when they join from their
+// invitation: every other sign-in on an unknown browser does, including a member's
+// first since this change. If the alert can't be sent, the browser isn't remembered,
+// so the next sign-in there tries again.
 import { SESSION_DAYS, TOKEN_RE, cookies, hash, linkOrigin, mailBody, now, randomToken, sendMail, sessionCookie } from "./core.js";
 import { createLink } from "./links.js";
 
@@ -56,9 +58,10 @@ async function newBrowserAlert(env, memberId, label, deviceHash, origin, when) {
 
 /**
  * A new session for `memberId`: its Set-Cookie values (the session, and the device
- * cookie, renewed). Emails a new-browser alert after answering (`waitUntil`).
+ * cookie, renewed). Emails a new-browser alert after answering (`waitUntil`), except
+ * for `{ joined: true }` (a member created by this very request).
  */
-export async function startSession(env, memberId, request, waitUntil = (p) => p) {
+export async function startSession(env, memberId, request, waitUntil = (p) => p, { joined = false } = {}) {
   const t = now();
   const label = deviceLabel(request.headers.get("user-agent") ?? "");
   let device = cookies(request)[DEVICE_COOKIE];
@@ -66,9 +69,17 @@ export async function startSession(env, memberId, request, waitUntil = (p) => p)
   const deviceHash = await hash(device);
   const known = await env.DB.prepare("SELECT 1 AS x FROM devices WHERE member_id = ? AND device_hash = ?").bind(memberId, deviceHash).first();
   if (!known) {
-    const before = await env.DB.prepare("SELECT 1 AS x FROM devices WHERE member_id = ? LIMIT 1").bind(memberId).first();
-    await env.DB.prepare("INSERT OR IGNORE INTO devices (member_id, device_hash, label, first_seen) VALUES (?, ?, ?, ?)").bind(memberId, deviceHash, label, t).run();
-    if (before) waitUntil(newBrowserAlert(env, memberId, label, deviceHash, linkOrigin(request), at(t)).catch((err) => console.error(`new-browser alert: ${err.message}`)));
+    // Inserted first so two sign-ins at once from one new browser alert once.
+    const fresh = await env.DB.prepare("INSERT OR IGNORE INTO devices (member_id, device_hash, label, first_seen) VALUES (?, ?, ?, ?) RETURNING device_hash")
+      .bind(memberId, deviceHash, label, t)
+      .first();
+    if (fresh && !joined)
+      waitUntil(
+        newBrowserAlert(env, memberId, label, deviceHash, linkOrigin(request), at(t)).catch(async (err) => {
+          console.error(`new-browser alert: ${err.message}`);
+          await env.DB.prepare("DELETE FROM devices WHERE member_id = ? AND device_hash = ?").bind(memberId, deviceHash).run().catch(() => {});
+        }),
+      );
   }
   const token = randomToken();
   const sid = [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, "0")).join("");

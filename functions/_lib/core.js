@@ -111,8 +111,11 @@ export async function session(request, env) {
     .bind(sessionHash, now())
     .first();
   if (!row) return null;
-  const { session_sid: sid, session_last_active: last, ...member } = row;
-  if (!last || now() - last > 300_000) await env.DB.prepare("UPDATE sessions SET last_active = ? WHERE id_hash = ?").bind(now(), sessionHash).run();
+  const { session_sid: stored, session_last_active: last, ...member } = row;
+  // A session from before batch 2c has no public handle yet: it gets one now.
+  const sid = stored ?? [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  if (!stored || !last || now() - last > 300_000)
+    await env.DB.prepare("UPDATE sessions SET last_active = ?, sid = COALESCE(sid, ?) WHERE id_hash = ?").bind(now(), sid, sessionHash).run().catch(() => {});
   return { member, sessionHash, sid };
 }
 
@@ -264,6 +267,8 @@ export function prune(env, waitUntil) {
       env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(t),
       env.DB.prepare("DELETE FROM assertions WHERE expires_at < ?").bind(t - 3_600_000),
       env.DB.prepare("DELETE FROM rate WHERE expires_at < ?").bind(t),
+      // A browser not signed in on for 400 days (its cookie's life) is forgotten.
+      env.DB.prepare("DELETE FROM devices WHERE first_seen < ? AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.member_id = devices.member_id)").bind(t - 400 * DAY),
     ]).catch(() => {}),
   );
 }

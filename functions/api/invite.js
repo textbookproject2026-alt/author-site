@@ -77,6 +77,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
   // From the inbox: join. An existing member keeps the name they have (a name given
   // here is only for someone new).
   let member = await env.DB.prepare("SELECT id, display_name FROM members WHERE email = ?").bind(link.email).first();
+  const joined = !member;
   if (!member) {
     member = { id: memberId(), display_name: name };
     await env.DB.prepare("INSERT INTO members (id, display_name, email, created_at) VALUES (?, ?, ?, ?)").bind(member.id, name, link.email, now()).run();
@@ -84,7 +85,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
   await env.DB.prepare("INSERT OR IGNORE INTO book_members (book, member_id, added_by, added_at) VALUES (?, ?, ?, ?)").bind(link.book, member.id, link.created_by, now()).run();
   await audit(env, link.book, member, "joined", member.display_name);
   waitUntil(requestSync(env, link.book));
-  return json({ ok: true, book: link.book, joined: true }, 200, { "set-cookie": await startSession(env, member.id, request, waitUntil) });
+  return json({ ok: true, book: link.book, joined: true }, 200, { "set-cookie": await startSession(env, member.id, request, waitUntil, { joined }) });
 }
 
 /** Anything but POST. */

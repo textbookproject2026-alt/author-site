@@ -33,7 +33,7 @@ before(async () => {
   execFileSync("npx", ["-y", "wrangler@4", "d1", "migrations", "apply", "c4n-author-members", "--local", "--persist-to", ".wrangler/test-state"], { cwd: ROOT, stdio: "ignore", env: { ...process.env, CI: "1" } });
   sql(`INSERT INTO members (id, display_name, email, github, created_at) VALUES ('${ALEC.id}', 'Alec Gordon', '${ALEC.email}', 'textbookproject2026-alt', ${NOW}), ('${BRANDON.id}', 'Brandon', NULL, 'BrandonAndCaroline', ${NOW});
        INSERT INTO book_members (book, member_id, added_at) VALUES ('platform-test-book', '${ALEC.id}', ${NOW}), ('ontology-for-social-research-a-criti', '${ALEC.id}', ${NOW}), ('ontology-for-social-research-a-criti', '${BRANDON.id}', ${NOW});`);
-  server = spawn("npx", ["-y", "wrangler@4", "pages", "dev", "site", "--port", String(PORT), "--persist-to", ".wrangler/test-state", "--ip", "127.0.0.1"], { cwd: ROOT, stdio: "ignore" });
+  server = spawn("npx", ["-y", "wrangler@4", "pages", "dev", "site", "--port", String(PORT), "--persist-to", ".wrangler/test-state", "--ip", "127.0.0.1"], { cwd: ROOT, stdio: process.env.WRANGLER_LOG ? ["ignore", "inherit", "inherit"] : "ignore" });
   for (let i = 0; i < 120; i++) {
     try {
       if ((await fetch(`${BASE}/api/me`)).ok) return;
@@ -296,21 +296,32 @@ test("scanner-safe: opening a sign-in or invitation link (GET, twice) uses nothi
   assert.equal((await post("/api/auth/consume", { token: t })).status, 200, "the button still signs in");
   const joined = await post("/api/invite", { kind: "invite", token: inv, action: "accept", name: "Scanned" });
   assert.equal((await joined.json()).joined, true, "the button still joins");
+  // A new member's first sign-in, from their invitation, is the one that never alerts.
+  assert.equal(rows(`SELECT COUNT(*) AS n FROM links WHERE kind = 'revoke' AND member_id = (SELECT id FROM members WHERE email = 'scanned@example.org')`)[0].n, 0);
   sql(`DELETE FROM book_members WHERE member_id = (SELECT id FROM members WHERE email = 'scanned@example.org')`);
 });
 
-test("a new browser: the first one is just remembered; a sign-in from another leaves a This-wasn't-me link; it signs out everywhere, once", async () => {
+test("a new browser: a sign-in from one leaves a This-wasn't-me link (not the same browser again); it signs out everywhere and ends every way back in, once", async () => {
   const BO = { id: "e5e5e5e5e5", email: "bo@example.org" };
   sql(`INSERT INTO members (id, display_name, email, created_at) VALUES ('${BO.id}', 'Bo', '${BO.email}', ${NOW}); INSERT INTO book_members (book, member_id, added_at) VALUES ('platform-test-book', '${BO.id}', ${NOW});`);
   const revokes = () => rows(`SELECT device_hash FROM links WHERE kind = 'revoke' AND member_id = '${BO.id}'`);
   const mac = await signInFrom(BO.id, BO.email, MAC);
   assert.ok(mac.device, "a device cookie");
-  assert.match(mac.session && rows(`SELECT label FROM devices WHERE member_id = '${BO.id}'`)[0].label, /^Chrome on macOS$/);
-  assert.equal(revokes().length, 0, "the first browser: nothing to compare with");
-  await signInFrom(BO.id, BO.email, MAC, mac.device);
-  assert.equal(revokes().length, 0, "the same browser again: no alert");
-  const phone = await signInFrom(BO.id, BO.email, IPHONE);
+  // No Resend key locally: the alert fails, so the browser isn't remembered (it tries again next time).
   await eventually(() => revokes().length === 1);
+  await eventually(() => rows(`SELECT COUNT(*) AS n FROM devices WHERE member_id = '${BO.id}'`)[0].n === 0);
+  // As if the alert had gone: the browser is remembered; the same browser again doesn't alert.
+  sql(`INSERT INTO devices (member_id, device_hash, label, first_seen) VALUES ('${BO.id}', '${sha(mac.device.split("=")[1])}', 'Chrome on macOS', ${NOW})`);
+  await signInFrom(BO.id, BO.email, MAC, mac.device);
+  await new Promise((r) => setTimeout(r, 1000));
+  assert.equal(revokes().length, 1, "the same browser again: no alert");
+  const phone = await signInFrom(BO.id, BO.email, IPHONE);
+  await eventually(() => revokes().length === 2);
+  sql(`DELETE FROM links WHERE kind = 'revoke' AND member_id = '${BO.id}' AND device_hash = '${sha(mac.device.split("=")[1])}'`);
+  sql(`INSERT OR IGNORE INTO devices (member_id, device_hash, label, first_seen) SELECT member_id, device_hash, 'Safari on iPhone', ${Date.now()} FROM links WHERE kind = 'revoke' AND member_id = '${BO.id}'`);
+  // Ways back in that revoking ends: an unused sign-in link, and an invitation to the address.
+  sql(`INSERT INTO links (token_hash, kind, member_id, email, created_at, expires_at) VALUES ('${sha(token())}', 'signin', '${BO.id}', '${BO.email}', ${Date.now()}, ${Date.now() + 900000});
+       INSERT INTO links (token_hash, kind, book, email, name, created_by, created_at, expires_at) VALUES ('${sha(token())}', 'invite', 'platform-test-book', '${BO.email}', 'Bo', '${ALEC.id}', ${Date.now()}, ${Date.now() + 86400000});`);
   assert.equal(rows(`SELECT label FROM devices WHERE member_id = '${BO.id}' ORDER BY first_seen DESC LIMIT 1`)[0].label, "Safari on iPhone");
   // The alert's link: GETs change nothing; its page tells which sign-in; the button ends every session.
   const t = token();
@@ -324,6 +335,7 @@ test("a new browser: the first one is just remembered; a sign-in from another le
   for (const s of [mac.session, phone.session]) assert.equal((await (await get("/api/me", { cookie: s })).json()).member, null);
   assert.equal(rows(`SELECT COUNT(*) AS n FROM sessions WHERE member_id = '${BO.id}'`)[0].n, 0);
   assert.equal(rows(`SELECT COUNT(*) AS n FROM devices WHERE member_id = '${BO.id}' AND label = 'Safari on iPhone'`)[0].n, 0, "that browser is forgotten: it alerts again");
+  assert.equal(rows(`SELECT COUNT(*) AS n FROM links WHERE used_at IS NULL AND (member_id = '${BO.id}' OR email = '${BO.email}')`)[0].n, 0, "no unused link left to get back in with");
   assert.equal((await post("/api/auth/revoke", { token: t, action: "confirm" })).status, 410, "single use");
   assert.equal((await fetch(`${BASE}/api/auth/revoke?token=${t}&action=confirm`)).status, 405, "never on GET");
 });
