@@ -67,6 +67,8 @@ function tabStrip(nav) {
   };
   requestAnimationFrame(show);
   nav.addEventListener("tb-tabs-changed", () => requestAnimationFrame(show));
+  // The web fonts arriving change the tabs' widths: once more when they have.
+  document.fonts?.ready.then(() => requestAnimationFrame(show));
   return nav;
 }
 
