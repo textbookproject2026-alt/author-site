@@ -198,8 +198,6 @@ export function createStub({ siteOrigin }) {
     s.requests.push({ endpoint, method: req.method(), query: Object.fromEntries(url.searchParams), body, auth: req.headers().authorization });
     // The public /api/history (no sign-in): what is proposed, as Page history shows readers;
     // &change=<n>: a declined proposal's change (batch 2c).
-    if (endpoint === "history" && url.searchParams.has("change"))
-      return json(route, 200, { number: Number(url.searchParams.get("change")), files: [{ path: "chapters/chapter-01.md", before: "The old opening.\n", after: "The proposed opening.\n" }] });
     if (endpoint === "history") {
       return json(route, 200, { items: [
         { kind: "note", number: 12, url: "https://github.com/o/a-book/issues/12", date: "2026-10-08T09:00:00Z", summary: "Say where this is from", who: { name: "Jo Reader" }, paragraph: 3 },
@@ -211,6 +209,7 @@ export function createStub({ siteOrigin }) {
     if (endpoint === "author-read") {
       const what = url.searchParams.get("what");
       if (what === "declined") return json(route, 200, { items: s.declined });
+      if (what === "declined-change") return json(route, 200, { number: Number(url.searchParams.get("number")), files: [{ path: "chapters/chapter-01.md", before: "The old opening.\n", after: "The proposed opening.\n" }] });
       if (what === "books") return json(route, 200, { login: s.signedIn.login, books: s.books });
       if (what === "tree") return json(route, 200, s.tree);
       if (what === "file") {

@@ -60,16 +60,12 @@ export const history = (book, query = {}) => call("author-history", { query: { b
  * suggestions, from the function's public /api/history, the same the book's readers
  * see in Page history. No sign-in; [] when it can't be had.
  */
-/** A declined proposal's change (batch 2c), from the function's public /api/history: { files: [{ path, before, after }] }. */
-export async function declinedChange(book, number) {
-  const url = new URL("history", apiBase());
-  url.searchParams.set("book", book);
-  url.searchParams.set("change", String(number));
-  const res = await fetch(url);
-  const data = await res.json().catch(() => null);
-  if (!res.ok) throw new ApiError(res.status, data ?? { userMessage: "What was proposed couldn't be loaded just now." });
-  return data;
-}
+/**
+ * A declined proposal's change (batch 2c): { files: [{ path, before, after }] }.
+ * Through this site's proxy, not the function's public endpoint: a browser can be
+ * stopped by the host's bot checks there, the site's own server isn't.
+ */
+export const declinedChange = (book, number) => read("declined-change", { book, number: String(number) });
 
 export async function proposed(book, path) {
   try {
