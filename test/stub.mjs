@@ -221,6 +221,15 @@ export function createStub({ siteOrigin }) {
       if (what === "suggestion-changes") return json(route, 200, { page: "chapter-01", changes: [{ sha: SENT, url: `https://github.com/${REPO}/commit/${SENT}`, who: "author-one", when: new Date().toISOString(), message: "Reword" }] });
       if (what === "changes") return json(route, 200, { changes: s.changes });
       if (what === "change") return json(route, 200, s.change);
+      if (what === "lint") {
+        // The author-lint job: answered on the second ask, when s.lintAnswer is set.
+        s.lintAsks = (s.lintAsks ?? 0) + 1;
+        if (s.lintAnswer && s.lintAsks >= 2) {
+          s.publish = s.lintAnswer;
+          return json(route, 200, { lint: { state: "done", problems: [], count: 0 } });
+        }
+        return json(route, 200, { lint: { state: "checking" } });
+      }
       if (what === "publish") return s.publishError ? json(route, 502, { error: "x", userMessage: "GitHub didn't answer." }) : json(route, 200, { publish: s.publish });
       if (what === "drafts") {
         const paths = new Set([...s.liveFiles.keys(), ...s.bookFiles.keys()]);
