@@ -7,6 +7,9 @@
 name = "c4n-author-site"
 pages_build_output_dir = "site"
 compatibility_date = "2026-10-02"
+# The proxy's upstream (api.confused4now.org, the c4n-api Worker) is on this zone too:
+# without this, a same-zone fetch to a Worker can fail (error 1042).
+compatibility_flags = ["global_fetch_strictly_public"]
 
 [vars]
 NODE_VERSION = "22"
