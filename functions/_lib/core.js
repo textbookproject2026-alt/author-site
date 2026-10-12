@@ -3,7 +3,7 @@
 // and tokens are never logged.
 
 /** The suggest-edit function, production. The only upstream; never from a request. */
-export const UPSTREAM = "https://api.confused4now.org"; // batch 2d measurement window: revert after
+export const UPSTREAM = "https://suggest-edit-function.vercel.app";
 /** This site in production: links in emails, and what the function reads back from. */
 export const SITE = "https://author.confused4now.org";
 
