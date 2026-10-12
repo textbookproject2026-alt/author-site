@@ -7,7 +7,7 @@
 # Plausible (pageviews, production hostname only: analytics.js). The identity token
 # only ever goes to the function.
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self' https://cdn.jsdelivr.net https://plausible.io 'wasm-unsafe-eval'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' blob: https://avatars.githubusercontent.com https://raw.githubusercontent.com https://camo.githubusercontent.com https://*.githubusercontent.com; connect-src 'self' https://plausible.io https://cdn.jsdelivr.net https://suggest-edit-function.vercel.app https://api.github.com https://raw.githubusercontent.com https://*.pages.dev https://api.deepseek.com; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; manifest-src 'self'
+  Content-Security-Policy: default-src 'none'; script-src 'self' https://cdn.jsdelivr.net https://plausible.io 'wasm-unsafe-eval'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' blob: https://avatars.githubusercontent.com https://raw.githubusercontent.com https://camo.githubusercontent.com https://*.githubusercontent.com; connect-src 'self' https://plausible.io https://cdn.jsdelivr.net https://suggest-edit-function.vercel.app https://api.confused4now.org https://api.github.com https://raw.githubusercontent.com https://*.pages.dev https://api.deepseek.com; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; manifest-src 'self'
   X-Content-Type-Options: nosniff
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   Referrer-Policy: strict-origin-when-cross-origin
