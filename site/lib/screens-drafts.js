@@ -150,6 +150,9 @@ function publishPart(book, state, pub, n) {
   if (pub.error) {
     checks.push(note([h("p", { text: "The checks couldn't be fetched just now, so publishing waits for them." }), h("div", { class: "actions" }, again())], "warn"));
     reason = "The checks couldn't be fetched just now.";
+  } else if (p && !Array.isArray(p.lint) && p.lint_job?.sha) {
+    checks.push(lintChecking(slug, p.lint_job.sha, again));
+    reason = "The formatting is being checked.";
   } else if (p && !Array.isArray(p.lint)) {
     checks.push(note([h("p", { text: "The formatting check couldn't be run just now, so publishing waits for it." }), h("div", { class: "actions" }, again())], "warn"));
     reason = "The formatting check couldn't be run just now.";
@@ -222,6 +225,37 @@ function publishPart(book, state, pub, n) {
     h("div", { class: "publish" }, why, go),
     outcome,
   ];
+}
+
+/**
+ * The book's lint runs as a job off the function (book-requests' author-lint, about a
+ * minute). While it runs this says so, with the time so far, and asks whether it has
+ * answered: after 2 s, then every 4 s, for 3 minutes at most, and never once the screen
+ * is gone. When it has, the screen is drawn again with the answer.
+ */
+const LINT_DEADLINE_MS = 3 * 60 * 1000;
+function lintChecking(slug, sha, again) {
+  const started = Date.now();
+  const time = h("span", { class: "muted small", text: "" });
+  const box = note([h("p", {}, "Checking the formatting of what would go live. This takes about a minute. ", time)]);
+  box.setAttribute("aria-live", "polite");
+  box.setAttribute("aria-busy", "true");
+  const ask = async () => {
+    if (!box.isConnected) return;
+    const waited = Date.now() - started;
+    if (waited > LINT_DEADLINE_MS) {
+      box.setAttribute("aria-busy", "false");
+      clear(box, h("p", { text: "The formatting check is taking longer than it should. Press Check again in a moment." }), h("div", { class: "actions" }, again()));
+      return;
+    }
+    time.textContent = `(${Math.round(waited / 1000)} s so far)`;
+    const answer = await read("lint", { book: slug, sha }).catch(() => null);
+    if (!box.isConnected) return;
+    if (answer?.lint?.state && answer.lint.state !== "checking") reload();
+    else setTimeout(ask, 4000);
+  };
+  setTimeout(ask, 2000);
+  return box;
 }
 
 // --- the automatic jobs (nothing to do, unless one fails) --------------------------------------

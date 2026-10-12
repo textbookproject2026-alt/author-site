@@ -597,6 +597,22 @@ test("drafts: formatting problems block Publish — each with its chapter and Fi
   await page.waitForFunction(() => document.querySelector("#editor-text")?.selectionEnd > 0);
 });
 
+test("drafts: while the formatting is being checked it says so and waits, then shows the answer by itself", async () => {
+  await signIn();
+  const sha = "c".repeat(40);
+  stub.s.lintAsks = 0;
+  stub.s.publish = { ...stub.s.publish, state: "checking", can_publish: false, state_words: "The pages' formatting is being checked.", lint: undefined, lint_count: undefined, lint_job: { sha } };
+  stub.s.lintAnswer = { ...stub.s.publish, state: "clean", can_publish: true, lint: [], lint_count: 0, lint_job: undefined };
+  await page.goto(`${origin}/#/a-book/drafts`);
+  await page.getByText("Checking the formatting of what would go live.", { exact: false }).waitFor();
+  assert.equal(await page.locator(".publish-reason").textContent(), "The formatting is being checked.");
+  assert.equal(await page.getByRole("button", { name: "Publish 5 changes" }).isDisabled(), true);
+  await page.getByText("✓ Formatting: nothing to fix.").waitFor({ timeout: 15000 });
+  assert.equal(await page.getByRole("button", { name: "Publish 5 changes" }).isDisabled(), false);
+  assert.deepEqual(lastCall("author-read", (c) => c.query.what === "lint")?.query, { what: "lint", book: "a-book", sha });
+  stub.s.lintAnswer = null;
+});
+
 test("drafts: a check that couldn't run says so with Check again, never an empty warning", async () => {
   await signIn();
   stub.s.publish = { ...stub.s.publish, state: "unchecked", can_publish: false, state_words: "The pages' formatting couldn't be checked just now." };

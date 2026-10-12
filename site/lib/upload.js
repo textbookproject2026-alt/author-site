@@ -1,11 +1,12 @@
-// A document goes up in 2.5 MB parts, one request each, exactly as the portal's
-// request form sends a manuscript: the function's host refuses request bodies over
-// 4.5 MB, and base64 adds a third. Each part comes back with a receipt good for this
-// author only; the import is then started with the receipts, in order.
+// A document goes up in 1 MB parts, one request each, exactly as the portal's request
+// form sends a manuscript: each request, here and in the function, then stays well
+// inside its CPU limit (the function takes parts of up to 2.5 MB, and 20 of them).
+// Each part comes back with a receipt good for this author only; the import is then
+// started with the receipts, in order.
 
 import { importPart } from "./api.js";
 
-export const PART = 2.5 * 1024 * 1024;
+export const PART = 1024 * 1024;
 export const MAX_BYTES = 20 * 1024 * 1024;
 
 function readBase64(blob) {
