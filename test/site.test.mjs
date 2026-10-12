@@ -172,7 +172,9 @@ test("the account menu on a phone: avatar only, the full login inside, no label 
   // The book's tabs: one row, the current one in view.
   await page.goto(`${origin}/#/a-book/history`);
   await page.getByRole("heading", { name: "History", exact: true }).waitFor();
-  // The strip scrolls the current tab into view a frame or two after it is drawn.
+  // The strip scrolls the current tab into view a frame or two after it is drawn, and again a
+  // frame after the drafts count widens the Drafts tab: check once the count is in.
+  await page.locator("nav.tabs").getByText(/^Drafts \(\d+\)$/).waitFor();
   await page.waitForFunction(() => {
     const nav = document.querySelector("nav.tabs");
     const cur = nav?.querySelector('[aria-current="page"]')?.getBoundingClientRect();
