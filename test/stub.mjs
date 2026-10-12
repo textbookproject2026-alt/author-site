@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-export const API = "https://api.confused4now.org/api/";
+export const API = "https://suggest-edit-function.vercel.app/api/";
 export const REPO = "someone/a-book";
 export const HEAD = "a".repeat(40);
 export const MOVED = "b".repeat(40);
