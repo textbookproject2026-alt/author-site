@@ -95,7 +95,16 @@ async function call(endpoint, { method = "GET", query, body } = {}) {
   try {
     res = await once(url, method, text);
   } catch {
-    if (!write) throw new ApiError(0, null);
+    if (!write) res = null;
+  }
+  // A read that died on the way (the API's CPU limit, a dropped connection) is tried
+  // once more before anyone is told: reads change nothing, and one retry clears most.
+  if (!write && (!res || res.status >= 500)) {
+    try {
+      res = await once(url, method, text);
+    } catch {
+      throw new ApiError(0, null);
+    }
   }
   if (write && (!res || res.status >= 500 || res.status === 202)) {
     try {

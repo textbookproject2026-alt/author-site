@@ -60,6 +60,7 @@ export function createStub({ siteOrigin }) {
     importState: [], // successive answers for GET author-import status
     importResult: null,
     sendAnswers: [], // successive answers for author-send: [status, body]
+    suggestionsFail: 0, // asks for the written suggestions that answer 503 first
     fallbacks: new Map(), // write_key -> the fallback's answer (route.fulfill options)
     suggestions: [
       { number: 7, who: "Ada", path: "chapters/chapter-01.md", page: "chapter-01", suggestion: '"recieve" should be "receive"', reasoning: "Spelling.", when: new Date(Date.now() - 3600e3).toISOString(), url: "https://github.com/someone/a-book/issues/7", open: true, accepted: false },
@@ -233,7 +234,14 @@ export function createStub({ siteOrigin }) {
         const text = s.bookFiles.has(path) ? s.bookFiles.get(path).toString("utf8") : `# ${path}\n`;
         return json(route, 200, { path, sha: "1".repeat(40), text, last: { who: "author-one", when: new Date().toISOString(), message: "Tidy", url: "" } });
       }
-      if (what === "suggestions") return json(route, 200, { suggestions: s.suggestions });
+      if (what === "suggestions") {
+        // suggestionsFail: how many asks answer 503 first (the API's CPU limit, say).
+        if (s.suggestionsFail > 0) {
+          s.suggestionsFail -= 1;
+          return json(route, 503, { error: "worker" });
+        }
+        return json(route, 200, { suggestions: s.suggestions });
+      }
       if (what === "suggestion-changes") return json(route, 200, { page: "chapter-01", changes: [{ sha: SENT, url: `https://github.com/${REPO}/commit/${SENT}`, who: "author-one", when: new Date().toISOString(), message: "Reword" }] });
       if (what === "changes") return json(route, 200, { changes: s.changes });
       if (what === "change") return json(route, 200, s.change);
