@@ -11,10 +11,11 @@ import { declineButton } from "./decline.js";
 /** Both lists for a book; a list that can't be read is empty rather than an error. */
 export async function openSuggestions(slug) {
   const [written, changes] = await Promise.all([
-    read("suggestions", { book: slug }).then((r) => r.suggestions ?? [], () => []),
-    read("changes", { book: slug }).then((r) => r.changes ?? [], () => []),
+    read("suggestions", { book: slug }).then((r) => r.suggestions ?? [], () => null),
+    read("changes", { book: slug }).then((r) => r.changes ?? [], () => null),
   ]);
-  return { written, changes };
+  // failed: a list that couldn't be read, said so where the page lists suggestions.
+  return { written: written ?? [], changes: changes ?? [], failed: written === null || changes === null };
 }
 
 /** path -> how many open suggestions name it. */
@@ -110,9 +111,10 @@ export function pageSuggestions(slug, path, data, titles) {
   const written = data.written.filter((s) => s.path === path);
   const changes = data.changes.filter((c) => c.path === path);
   const n = written.length + changes.length;
-  if (!n) return null;
+  if (!n && !data.failed) return null;
   return h("section", { class: "page-suggestions", id: "suggestions", "aria-label": "Reader suggestions on this page" },
-    h("h2", { class: "small-heading", text: `Reader suggestions on this page (${n})` }),
+    h("h2", { class: "small-heading", text: n ? `Reader suggestions on this page (${n})` : "Reader suggestions on this page" }),
+    data.failed ? note([h("p", { text: "Reader suggestions couldn't be loaded just now, so some may be missing." }), h("button", { type: "button", class: "secondary", text: "Try again", onclick: () => window.dispatchEvent(new HashChangeEvent("hashchange")) })], "warn") : null,
     changes.length ? [
       h("p", { class: "muted small", text: "Edits readers made on the book's site. Accept puts one into the drafts (reload the page to see it here); Decline closes it with a note thanking them." }),
       h("ul", { class: "list" }, changes.map((c) => changeRow(slug, c, titles))),

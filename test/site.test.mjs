@@ -376,6 +376,15 @@ test("editor: a proposed edit to the page, accepted from the editor", async () =
   assert.deepEqual([lastCall("author-act").body.action, lastCall("author-act").body.number], ["change-accept", 12]);
 });
 
+test("editor: suggestions that couldn't be loaded say so on the page, never as no suggestions", async () => {
+  await signIn();
+  stub.s.suggestionsFail = 2;
+  await openEditor();
+  const box = page.getByRole("region", { name: "Reader suggestions on this page" });
+  await box.getByText("Reader suggestions couldn't be loaded just now, so some may be missing.").waitFor();
+  await box.getByRole("button", { name: "Try again" }).waitFor();
+});
+
 test("editor: no suggestions, no list", async () => {
   await signIn();
   await openEditor("chapters/chapter-04.md");
@@ -588,6 +597,23 @@ test("drafts: reader suggestions at the top — Accept folds one into the drafts
   await page.getByText(/^Declined: your reason is posted, with a note thanking them\./).waitFor();
   assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "change-decline", number: 12, reason: "We keep the original wording here." });
   await page.getByRole("link", { name: /recieve/ }).waitFor();
+});
+
+test("drafts: written suggestions that couldn't be loaded say so with Try again, never an empty list; one failed try is retried unseen", async () => {
+  await signIn();
+  // One 503 (the API's CPU limit, say): the read is tried again and the list shows.
+  stub.s.suggestionsFail = 1;
+  await page.goto(`${origin}/#/a-book/drafts`);
+  await page.getByRole("heading", { name: "Written suggestions" }).waitFor();
+  await page.getByRole("link", { name: /recieve/ }).waitFor();
+  // Both tries fail: it says so, instead of showing no suggestions.
+  stub.s.suggestionsFail = 2;
+  await page.reload();
+  await page.getByText("Readers' written suggestions couldn't be loaded just now, so some may be missing here.").waitFor();
+  assert.equal(await page.getByRole("link", { name: /recieve/ }).count(), 0);
+  await page.getByRole("button", { name: "Try again" }).click();
+  await page.getByRole("link", { name: /recieve/ }).waitFor();
+  assert.equal(await page.getByText(/couldn't be loaded just now/).count(), 0);
 });
 
 test("drafts: formatting problems block Publish — each with its chapter and Fix; dead links don't; the reason is right above the button", async () => {

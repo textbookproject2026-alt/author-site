@@ -32,7 +32,8 @@ export async function draftsScreen(slug) {
     draftItems(book),
     read("publish", { book: slug }).catch((error) => ({ error })),
     read("changes", { book: slug }).catch((error) => ({ error })),
-    read("suggestions", { book: slug }).catch(() => ({ suggestions: [] })),
+    // Never an empty list for a read that failed: that hid real suggestions (13 Oct).
+    read("suggestions", { book: slug }).catch((error) => ({ error })),
     registryBook(slug),
   ]);
   forgetCount(slug);
@@ -41,7 +42,7 @@ export async function draftsScreen(slug) {
   header[2].querySelector('[aria-current="page"]').textContent = `Drafts (${n})`;
   return [
     ...header,
-    readerSuggestions(book, changes, suggestions.suggestions ?? [], state.titles),
+    readerSuggestions(book, changes, suggestions, state.titles),
     h("h2", { text: n ? `What's in the drafts (${n})` : "What's in the drafts" }),
     n ? h("ul", { class: "list drafts" }, state.items.map((it) => draftLine(book, it, state)))
       : h("p", { class: "muted", text: "Nothing: readers have everything the drafts have." }),
@@ -54,13 +55,15 @@ export async function draftsScreen(slug) {
 
 // --- reader suggestions --------------------------------------------------------------------
 
-function readerSuggestions(book, changes, written, titles) {
+function readerSuggestions(book, changes, suggestions, titles) {
   const slug = book.slug;
   const list = changes.error ? null : changes.changes;
-  if (!changes.error && !list.length && !written.length) return null;
+  const written = suggestions.error ? [] : suggestions.suggestions ?? [];
+  if (!changes.error && !suggestions.error && !list.length && !written.length) return null;
   return [
     h("h2", { text: "Reader suggestions" }),
     changes.error ? errorNote(changes.error) : null,
+    suggestions.error ? couldntLoad() : null,
     list?.length ? [h("p", { class: "muted small", text: "Edits readers proposed on the book's site. Accept puts one into the drafts; Decline closes it with a note thanking them." }), h("ul", { class: "list" }, list.map((c) => changeRow(slug, c, titles, () => setTimeout(reload, 1200))))] : null,
     written.length ? [
       h("h3", { text: "Written suggestions" }),
@@ -71,6 +74,10 @@ function readerSuggestions(book, changes, written, titles) {
     ] : null,
   ];
 }
+
+/** In place of a list that couldn't be had: say so, with Try again. */
+const couldntLoad = () =>
+  note([h("p", { text: "Readers' written suggestions couldn't be loaded just now, so some may be missing here." }), h("button", { type: "button", class: "secondary", text: "Try again", onclick: reload })], "warn");
 
 // --- one line of the drafts ----------------------------------------------------------------
 
