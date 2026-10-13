@@ -60,6 +60,7 @@ export function createStub({ siteOrigin }) {
     importState: [], // successive answers for GET author-import status
     importResult: null,
     sendAnswers: [], // successive answers for author-send: [status, body]
+    fallbacks: new Map(), // write_key -> the fallback's answer (route.fulfill options)
     suggestions: [
       { number: 7, who: "Ada", path: "chapters/chapter-01.md", page: "chapter-01", suggestion: '"recieve" should be "receive"', reasoning: "Spelling.", when: new Date(Date.now() - 3600e3).toISOString(), url: "https://github.com/someone/a-book/issues/7", open: true, accepted: false },
       { number: 8, who: "Grace", path: "chapters/chapter-01.md", page: "chapter-01", suggestion: "Could this be clearer?", reasoning: "", when: new Date(Date.now() - 86400e3).toISOString(), url: "https://github.com/someone/a-book/issues/8", open: true, accepted: true },
@@ -193,6 +194,21 @@ export function createStub({ siteOrigin }) {
       const msg = JSON.stringify({ type: "tb-github-identity", ...s.signedIn });
       return route.fulfill({ status: 200, contentType: "text/html",
         body: `<!doctype html><p>Signed in.</p><script>window.opener.postMessage(${msg}, ${JSON.stringify(siteOrigin)}); window.close();</script>` });
+    }
+    // A write the page queued for the fallback (&fallback=, suggest-edit-function
+    // worker/writes.mjs): answered 202, done as the job would, its answer kept for
+    // /fn/write-status.
+    if (proxied && endpoint === "write-status") {
+      const done = s.fallbacks.get(url.searchParams.get("write_key"));
+      return done ? route.fulfill(done) : json(route, 404, { error: "no such write" });
+    }
+    if (req.method() === "POST" && url.searchParams.has("fallback")) {
+      const plain = new URL(url);
+      plain.searchParams.delete("fallback");
+      let done;
+      await fn({ request: () => ({ url: () => plain.toString(), method: () => "POST", postData: () => req.postData(), headers: () => req.headers() }), fulfill: async (o) => (done = o) });
+      s.fallbacks.set(url.searchParams.get("write_key"), done);
+      return json(route, 202, { pending: true, state: "queued", userMessage: "Saving… this can take up to a minute." });
     }
     const body = req.postData() ? JSON.parse(req.postData()) : null;
     s.requests.push({ endpoint, method: req.method(), query: Object.fromEntries(url.searchParams), body, auth: req.headers().authorization });

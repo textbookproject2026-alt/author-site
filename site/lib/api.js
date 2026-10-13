@@ -18,19 +18,91 @@ export class ApiError extends Error {
   }
 }
 
+// Writes (suggest-edit-function worker/writes.mjs): each POST carries a key from this page
+// load and the body, so the same thing sent twice is one write. If the API can't finish
+// it (its CPU limit, Cloudflare's 1102, or any 5xx), the same request and key go again
+// with &fallback=, a GitHub Actions job does the write, and the page asks for the answer
+// (/fn/write-status) while it says so.
+export const WAIT_MESSAGE = "Saving… this can take up to a minute.";
+export const timing = { pollMs: 3000, waitMs: 3 * 60_000 };
+const PAGE = Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+async function keyOf(endpoint, text) {
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${PAGE}\n${endpoint}\n${text}`)));
+  return Array.from(hash.slice(0, 16), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** "Saving… this can take up to a minute", at the foot of the page, while a fallback runs. */
+function waiting(on) {
+  let n = document.getElementById("write-wait");
+  if (!n && on) {
+    n = document.createElement("div");
+    n.id = "write-wait";
+    n.className = "write-wait";
+    n.setAttribute("role", "status");
+    document.body.append(n);
+  }
+  if (n) {
+    n.textContent = on ? WAIT_MESSAGE : "";
+    n.hidden = !on;
+  }
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function once(url, method, text) {
+  return fetch(url, {
+    method,
+    credentials: "same-origin",
+    headers: { "x-author-site": "1", ...(text ? { "Content-Type": "application/json" } : {}) },
+    body: text,
+  });
+}
+
+/** A write that failed (or is still running): queue it, then wait for its answer. */
+async function fallback(url, text, book, res) {
+  waiting(true);
+  try {
+    const key = url.searchParams.get("write_key");
+    if (!res || res.status >= 500) {
+      const q = new URL(url);
+      q.searchParams.set("fallback", res ? String(res.status) : "network");
+      const queued = await once(q, "POST", text);
+      if (queued.status !== 202) return queued;
+    }
+    const status = new URL("/fn/write-status", location.origin);
+    status.searchParams.set("book", book);
+    status.searchParams.set("write_key", key);
+    const start = Date.now();
+    while (Date.now() - start < timing.waitMs) {
+      await sleep(timing.pollMs);
+      const r = await once(status, "GET").catch(() => null);
+      if (r && r.status !== 202) return r;
+    }
+    return new Response(JSON.stringify({ error: "timeout", userMessage: "This is taking longer than it should. Nothing you wrote is lost: reload in a few minutes to see if it went in." }), { status: 504 });
+  } finally {
+    waiting(false);
+  }
+}
+
 async function call(endpoint, { method = "GET", query, body } = {}) {
   const url = new URL(`/fn/${endpoint}`, location.origin);
   for (const [k, v] of Object.entries(query ?? {})) if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
-  let res;
+  const text = body ? JSON.stringify(body) : undefined;
+  const write = method === "POST";
+  if (write) url.searchParams.set("write_key", await keyOf(endpoint, text ?? ""));
+  let res = null;
   try {
-    res = await fetch(url, {
-      method,
-      credentials: "same-origin",
-      headers: { "x-author-site": "1", ...(body ? { "Content-Type": "application/json" } : {}) },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    res = await once(url, method, text);
   } catch {
-    throw new ApiError(0, null);
+    if (!write) throw new ApiError(0, null);
+  }
+  if (write && (!res || res.status >= 500 || res.status === 202)) {
+    try {
+      res = await fallback(url, text, body?.book ?? "", res);
+    } catch {
+      throw new ApiError(0, null);
+    }
   }
   let payload = {};
   try {
