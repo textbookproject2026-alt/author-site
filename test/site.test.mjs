@@ -413,16 +413,28 @@ test("editor: the book's lint as you type — fixes what it can away from the ca
   assert.equal(await box.evaluate((t) => t.value.slice(t.selectionStart, t.selectionEnd)), "![](x.png)");
 });
 
-test("editor: a save that fails says so with Try again; the drafts moved elsewhere — saved on the new commit by itself", async () => {
+test("editor: a save that fails goes to the fallback (Saving… this can take up to a minute); failing there too says so with Try again; the drafts moved elsewhere — saved on the new commit by itself", async () => {
   await signIn();
-  stub.s.sendAnswers = [[502, { error: "x", userMessage: "GitHub didn't answer." }], [201, { sha: SENT, url: "", steps: [] }]];
+  // The Worker answers 5xx; the page queues the same save (same key) and waits for the job.
+  stub.s.sendAnswers = [[503, { error: "x" }], [201, { sha: SENT, url: "", steps: [] }]];
   const box = await openEditor();
   await box.press("End");
   await box.type(" More.");
+  await page.getByRole("status").filter({ hasText: "Saving… this can take up to a minute." }).waitFor();
+  await page.getByText(/^Draft saved/).waitFor();
+  assert.equal(sends().length, 2);
+  const [inline, queued] = stub.s.requests.filter((r) => r.endpoint === "author-send");
+  assert.match(inline.query.write_key, /^[0-9a-f]{32}$/);
+  assert.equal(queued.query.write_key, inline.query.write_key);
+  assert.equal(await page.locator("#write-wait").isHidden(), true);
+
+  // The job fails too: the page says so, and Try again sends it once more.
+  stub.s.sendAnswers = [[502, { error: "x" }], [502, { error: "x", userMessage: "GitHub didn't answer." }], [201, { sha: SENT, url: "", steps: [] }]];
+  await box.type(" Again.");
   await page.getByText("Not saved.").waitFor();
   await page.getByRole("button", { name: "Try again" }).click();
   await page.getByText(/^Draft saved/).waitFor();
-  assert.equal(sends().length, 2);
+  assert.equal(sends().length, 5);
 
   stub.s.sendAnswers = [[409, { error: "conflict", conflict: { head: MOVED, commits: [], files: [{ path: "chapters/chapter-02.md", status: "modified", patch: "" }] } }], [201, { sha: SENT, url: "", steps: [] }]];
   await page.goto(`${origin}/#/a-book/edit/${encodeURIComponent("glossary.md")}`);
@@ -653,7 +665,7 @@ test("drafts: a publish that fails says so in plain words, with Try again", asyn
   await signIn();
   stub.s.publish = { ...stub.s.publish, lint: [], lint_count: 0 };
   await page.goto(`${origin}/#/a-book/drafts`);
-  await page.route(`${origin}/fn/author-act`, (route) => route.fulfill({ status: 409, contentType: "application/json", headers: { "access-control-allow-origin": origin }, body: JSON.stringify({ error: "x", userMessage: "What is waiting to go live has changed." }) }), { times: 1 });
+  await page.route(`${origin}/fn/author-act?*`, (route) => route.fulfill({ status: 409, contentType: "application/json", headers: { "access-control-allow-origin": origin }, body: JSON.stringify({ error: "x", userMessage: "What is waiting to go live has changed." }) }), { times: 1 });
   await page.getByRole("button", { name: "Publish 5 changes" }).click();
   await page.getByText("What is waiting to go live has changed.").waitFor();
   await page.getByRole("button", { name: "Try again" }).click();

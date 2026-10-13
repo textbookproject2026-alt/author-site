@@ -25,6 +25,8 @@ const ROUTES = {
   "author-import": ["GET", "POST"],
   "author-send": ["POST"],
   "author-act": ["POST"],
+  // A write's answer from the fallback (worker/writes.mjs), asked for by key.
+  "write-status": ["GET"],
 };
 /** Word imports go up in parts of a few MB each (the function's own limit is lower). */
 const MAX_BODY = 6 * 1024 * 1024;
