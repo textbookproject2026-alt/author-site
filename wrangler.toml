@@ -12,6 +12,8 @@ compatibility_date = "2026-10-02"
 NODE_VERSION = "22"
 # Where sign-in links, invitations and reader-suggestion emails come from.
 MAIL_FROM = "Confused for Now <no-reply@confused4now.org>"
+# Where replies go: Cloudflare Email Routing forwards it to the maintainer.
+MAIL_REPLY_TO = "hello@confused4now.org"
 # GitHub sign-in, kept only while members move to email links; "off" when all have.
 GITHUB_SIGNIN = "on"
 # The platform maintainer's GitHub login: sees the registry sync's status.
@@ -30,6 +32,7 @@ migrations_dir = "migrations"
 [env.preview.vars]
 NODE_VERSION = "22"
 MAIL_FROM = "Confused for Now <no-reply@confused4now.org>"
+MAIL_REPLY_TO = "hello@confused4now.org"
 GITHUB_SIGNIN = "off"
 PLATFORM_OWNER = "textbookproject2026-alt"
 
