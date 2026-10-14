@@ -7,7 +7,7 @@
 import { h, clear, busy, note, errorNote, when } from "./dom.js";
 import { read, act } from "./api.js";
 import { declineButton } from "./decline.js";
-import { renderOps } from "./diff.js";
+import { diff, renderOps, tokens } from "./diff.js";
 
 /** Both lists for a book; a list that can't be read is empty rather than an error. */
 export async function openSuggestions(slug) {
@@ -90,43 +90,58 @@ export function changeRow(slug, c, titles, after = () => {}) {
     view, out);
 }
 
-const OUTDATED = "The paragraph has changed since this suggestion was made, so it no longer applies as written.";
+/** Old words struck, new ones underlined: `from` → `to`, word by word. */
+function words(from, to) {
+  // Runs of one kind together, so "a Word file." is one insertion, not five.
+  const runs = [];
+  for (const o of diff(tokens(from), tokens(to))) {
+    if (runs.at(-1)?.t === o.t) runs.at(-1).v += o.v;
+    else runs.push({ ...o });
+  }
+  return runs.map((o) => (o.t === "=" ? document.createTextNode(o.v)
+    : h(o.t === "-" ? "del" : "ins", {}, h("span", { class: "sr-only", text: o.t === "-" ? "[removed: " : "[added: " }), o.v, h("span", { class: "sr-only", text: "]" }))));
+}
 
 /**
- * Accept found the paragraph changed since the suggestion was made, under the same words:
- * the paragraph as it is now and as suggested, and three ways on. Nothing was written yet.
+ * One paragraph a suggestion and the drafts both changed: as the reader saw it, as they
+ * suggest it and as it is in the drafts now, side by side, each change against the old.
+ */
+export function threeWay(p) {
+  const col = (label, body) => h("div", { class: "col" }, h("p", { class: "muted small", text: label }), h("blockquote", { class: "said" }, body));
+  return h("div", { class: "three-way" },
+    col("When it was suggested", p.base ?? ""),
+    col("Suggested", p.suggested ? words(p.base ?? "", p.suggested) : "(the suggestion removes this paragraph)"),
+    col("In the drafts now", p.current ? words(p.base ?? "", p.current) : "(removed from the drafts since)"));
+}
+
+/** sessionStorage: a suggestion the author opened in the editor, read (once) by screens-edit.js. */
+export const openedKey = (slug, path) => `tb-suggestion:${slug}:${path}`;
+
+/**
+ * Accept found the paragraph changed since the suggestion was made: refused, nothing
+ * written. Taking the suggestion as it is would put back the old wording of whatever
+ * changed there since, so the ways on are the editor (current text, the suggestion
+ * beside it) and Decline with a comment.
  */
 function overlapChoice(slug, c, body, out, after) {
   const paragraphs = body.overlap.paragraphs ?? [];
   const first = paragraphs[0];
-  const status = h("div", { "aria-live": "polite" });
-  const choose = (text, cls, working, fn) => answerButton(text, cls, status, working, fn);
-  const accept = () => act(slug, "change-accept", { number: c.number, title: c.title, resolve: "suggestion" });
   return note([
-    h("p", {}, h("strong", { text: body.userMessage || "This paragraph has changed since this suggestion was made." })),
-    paragraphs.map((p) => h("div", { class: "overlap" },
-      h("p", { class: "muted small", text: "Now in the drafts:" }),
-      h("blockquote", { class: "said", text: p.current || "(this paragraph has been removed from the drafts since)" }),
-      h("p", { class: "muted small", text: "Suggested:" }),
-      h("blockquote", { class: "said", text: p.suggested || "(the suggestion removes this paragraph)" }))),
+    h("p", {}, h("strong", { text: body.userMessage || "This suggestion was made on an older version of this paragraph." })),
+    paragraphs.map(threeWay),
     h("div", { class: "row" },
-      choose("Use the suggestion", "primary", "Putting the suggestion in the drafts…", async () => {
-        await accept();
+      first?.path ? h("a", { class: "btn primary", href: `#/${slug}/edit/${encodeURIComponent(first.path)}/line/${(first.line ?? 0) + 1}`, text: "Open in editor", onclick: () => {
+        try {
+          sessionStorage.setItem(openedKey(slug, first.path), JSON.stringify({ number: c.number, title: c.title, who: c.who, paragraphs: paragraphs.filter((p) => p.path === first.path) }));
+        } catch {
+          /* storage blocked: the editor opens without the suggestion beside it */
+        }
+      } }) : null,
+      declineButton(out, async (reason) => {
+        await act(slug, "change-decline", { number: c.number, reason });
         after();
-        return "Accepted: the paragraph is now as suggested, in the drafts.";
-      }),
-      first?.path ? choose("Edit before accepting", "", "Opening it in the editor…", async () => {
-        // In the drafts as suggested (not yet live), then straight into the editor to change it.
-        await accept();
-        location.hash = `#/${slug}/edit/${encodeURIComponent(first.path)}/line/${(first.line ?? 0) + 1}`;
-        return "Opening the editor…";
-      }) : null,
-      choose("Decline as outdated", "", "Declining it…", async () => {
-        await act(slug, "change-decline", { number: c.number, reason: OUTDATED });
-        after();
-        return "Declined as outdated: the reader is thanked. It shows as Declined in the book's history.";
-      })),
-    status,
+        return "Declined: your comment is posted, with a note thanking them. It shows as Declined in the book's history.";
+      }, "Decline with comment…")),
   ]);
 }
 
