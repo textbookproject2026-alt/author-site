@@ -411,6 +411,30 @@ test("editor: no Send; typing is saved to the drafts by itself, Saving… then D
   await page.locator("#ed-panel-2 ins").first().waitFor();
 });
 
+test("editor: after autosave, reopening the editor and reloading the page load the drafts as saved, never the live text", async () => {
+  stub.s.applySends = true;
+  await signIn();
+  const box = await openEditor();
+  await box.press("End");
+  await box.type(" Saved by itself.");
+  await page.getByText(/^Draft saved \d\d:\d\d$/).waitFor();
+  const saved = await box.inputValue();
+  const fileReads = () => stub.s.requests.filter((r) => r.endpoint === "author-read" && r.query.what === "file" && r.query.path === "chapters/chapter-01.md");
+  // Away and back: a fresh read, at the drafts' new head.
+  await page.goto(`${origin}/#/a-book`);
+  await page.getByRole("heading", { name: "Chapters, in reading order" }).waitFor();
+  const reopened = await openEditor();
+  assert.equal(await reopened.inputValue(), saved);
+  assert.equal(fileReads().at(-1).query.ref, SENT);
+  // A reload: the same.
+  await page.reload();
+  await page.getByRole("tab", { name: "Edit" }).waitFor();
+  assert.equal(await page.locator("#editor-text").inputValue(), saved);
+  assert.equal(fileReads().at(-1).query.ref, SENT);
+  assert.notEqual(saved, stub.s.liveFiles.get("chapters/chapter-01.md").toString());
+  assert.equal(await page.getByText("Your changes from before weren't saved yet.").count(), 0);
+});
+
 test("editor: the book's lint as you type — fixes what it can away from the caret, lists the rest with Go to line", async () => {
   await signIn();
   const box = await openEditor();
@@ -635,41 +659,49 @@ test("drafts: reader suggestions at the top — Accept folds one into the drafts
   await page.getByRole("link", { name: /recieve/ }).waitFor();
 });
 
-test("drafts: a suggestion whose paragraph changed shows both texts and three ways on, never an error", async () => {
+test("drafts: a suggestion whose paragraph changed is refused: old, suggested and now side by side; Open in editor or Decline with comment", async () => {
   await signIn();
   stub.s.changes[0].needsLook = true;
-  const overlap = { number: 12, paragraphs: [{ path: "chapters/chapter-02.md", line: 2, current: "Converted from Word, then edited.", suggested: "Converted from a Word file." }] };
-  stub.s.acceptAnswers.push([409, { error: "overlap", userMessage: "This paragraph has changed since this suggestion was made.", overlap }]);
+  const overlap = { number: 12, paragraphs: [{ path: "chapters/chapter-02.md", line: 2, base: "Converted from Word.", current: "Converted from Word, then edited.", suggested: "Converted from a Word file." }] };
+  const refused = [409, { error: "overlap", userMessage: "This suggestion was made on an older version of this paragraph.", overlap }];
+  stub.s.acceptAnswers.push(refused);
   await page.goto(`${origin}/#/a-book/drafts`);
   const row = page.locator("li", { hasText: "Fix a typo" });
   await row.getByText("needs a look — paragraph changed").waitFor();
   await row.getByRole("button", { name: "Accept", exact: true }).click();
-  await row.getByText("This paragraph has changed since this suggestion was made.").waitFor();
-  await row.getByText("Converted from Word, then edited.").waitFor();
-  await row.getByText("Converted from a Word file.").waitFor();
+  await row.getByText("This suggestion was made on an older version of this paragraph.").waitFor();
+  const cols = row.locator(".three-way .col");
+  assert.deepEqual(await cols.locator("p").allInnerTexts(), ["When it was suggested", "Suggested", "In the drafts now"]);
+  assert.equal(await cols.nth(0).locator("blockquote").innerText(), "Converted from Word.");
+  // Changed words marked by more than colour: struck through, underlined, and said for screen readers.
+  assert.deepEqual(await cols.nth(1).locator("ins").allTextContents(), ["[added: a Word file.]"]);
+  assert.deepEqual(await cols.nth(1).locator("del").allTextContents(), ["[removed: Word.]"]);
+  assert.equal(await cols.nth(1).locator("del").evaluate((e) => getComputedStyle(e).textDecorationLine), "line-through");
+  assert.equal(await cols.nth(2).locator("ins").evaluate((e) => getComputedStyle(e).textDecorationLine), "underline");
+  assert.deepEqual(await cols.nth(2).locator("ins").allTextContents(), ["[added: Word, then edited.]"]);
+  // Nothing takes the suggestion over the changed paragraph any more.
+  for (const gone of ["Use the suggestion", "Edit before accepting", "Decline as outdated"]) assert.equal(await row.getByRole("button", { name: gone }).count(), 0);
   assert.equal(await row.getByText(/Something went wrong/).count(), 0);
-  await row.getByRole("button", { name: "Use the suggestion" }).click();
-  await page.getByText("Accepted: the paragraph is now as suggested, in the drafts.").waitFor();
-  assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "change-accept", number: 12, title: "Fix a typo", resolve: "suggestion" });
 
-  // Decline as outdated: the reason is said for the author.
-  stub.s.acceptAnswers.push([409, { error: "overlap", userMessage: "This paragraph has changed since this suggestion was made.", overlap }]);
+  // Decline with comment: the author's own reason.
+  await row.getByRole("button", { name: "Decline with comment…" }).click();
+  await row.getByRole("textbox", { name: "Why is this being declined?" }).fill("I rewrote this paragraph myself; thank you for the nudge.");
+  await row.getByRole("button", { name: "Decline", exact: true }).click();
+  await page.getByText(/^Declined: your comment is posted/).waitFor();
+  assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "change-decline", number: 12, reason: "I rewrote this paragraph myself; thank you for the nudge." });
+
+  // Open in editor: the drafts' text in the box, the suggestion beside it.
+  stub.s.acceptAnswers.push(refused);
   await page.reload();
   const again = page.locator("li", { hasText: "Fix a typo" });
   await again.getByRole("button", { name: "Accept", exact: true }).click();
-  await again.getByRole("button", { name: "Decline as outdated" }).click();
-  await page.getByText(/^Declined as outdated/).waitFor();
-  assert.equal(lastCall("author-act").body.action, "change-decline");
-  assert.match(lastCall("author-act").body.reason, /changed since this suggestion was made/);
-
-  // Edit before accepting: in the drafts as suggested, then the editor at that paragraph.
-  stub.s.acceptAnswers.push([409, { error: "overlap", userMessage: "This paragraph has changed since this suggestion was made.", overlap }]);
-  await page.reload();
-  const third = page.locator("li", { hasText: "Fix a typo" });
-  await third.getByRole("button", { name: "Accept", exact: true }).click();
-  await third.getByRole("button", { name: "Edit before accepting" }).click();
+  await again.getByRole("link", { name: "Open in editor" }).click();
   await page.waitForURL(/#\/a-book\/edit\/chapters%2Fchapter-02\.md\/line\/3$/);
-  assert.equal(lastCall("author-act").body.resolve, "suggestion");
+  const beside = page.getByRole("region", { name: "The reader's suggestion" });
+  await beside.getByText("This suggestion was made on an older version of this paragraph.", { exact: false }).waitFor();
+  assert.deepEqual(await beside.locator(".three-way ins").allTextContents(), ["[added: a Word file.]", "[added: Word, then edited.]"]);
+  assert.equal(await page.locator("#editor-text").inputValue(), stub.s.bookFiles.get("chapters/chapter-02.md").toString());
+  assert.equal(stub.s.requests.filter((r) => r.endpoint === "author-act" && r.body?.resolve).length, 0, "never accepted as suggested");
 });
 
 test("errors on accept say why in plain words, never a bare 'Something went wrong'", async () => {

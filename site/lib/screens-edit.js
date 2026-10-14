@@ -17,9 +17,10 @@
 // reload doesn't lose it.
 
 import { h, clear, busy, note, errorNote, when } from "./dom.js";
-import { read, send } from "./api.js";
+import { act, read, send } from "./api.js";
 import { bookBySlug, bookHeader, pageSlug, rawUrl } from "./books.js";
-import { openSuggestions, pageSuggestions } from "./suggestions.js";
+import { openSuggestions, openedKey, pageSuggestions, threeWay } from "./suggestions.js";
+import { declineButton } from "./decline.js";
 import { renderChapter } from "./preview.js";
 import { renderDiff } from "./diff.js";
 import { goToLine, lintView, savedAt } from "./screens-shared.js";
@@ -62,6 +63,20 @@ window.addEventListener("hashchange", () => {
   guard(false);
 });
 
+/** The suggestion this editor was opened for: what it changed and the drafts now, and Decline with comment. */
+function suggestionBeside(slug, s) {
+  const out = h("div", { "aria-live": "polite" });
+  return h("section", { class: "card suggestion-beside", "aria-label": "The reader's suggestion" },
+    h("h2", { class: "small-heading", text: `${s.title || "A reader's suggestion"} — ${s.who || "a reader"}` }),
+    h("p", { class: "muted small", text: "This suggestion was made on an older version of this paragraph. The box below has the drafts as they are now: make the change you want there, and it is saved as you type. Then decline the suggestion with a comment saying what you did." }),
+    (s.paragraphs ?? []).map(threeWay),
+    h("div", { class: "row" }, declineButton(out, async (reason) => {
+      await act(slug, "change-decline", { number: s.number, reason });
+      return "Declined: your comment is posted, with a note thanking them.";
+    }, "Decline with comment…")),
+    out);
+}
+
 export async function editScreen(slug, path, line = null) {
   const book = await bookBySlug(slug);
   const tree = await read("tree", { book: slug });
@@ -83,6 +98,9 @@ export async function editScreen(slug, path, line = null) {
   const kept = store.get(key);
   const restored = kept?.restored ? kept : null;
   const unsaved = !restored && kept?.base === tree.head ? kept.text : null;
+  // Opened from a suggestion Accept refused (its paragraph changed since): shown beside the text.
+  const opened = store.get(openedKey(slug, path));
+  store.set(openedKey(slug, path), null);
 
   const textarea = h("textarea", { class: "editor-text", id: "editor-text", spellcheck: "true", "aria-label": `${title}, as Markdown` });
   textarea.value = restored?.text ?? unsaved ?? original;
@@ -305,6 +323,7 @@ export async function editScreen(slug, path, line = null) {
     status.node,
     restored ? note([h("p", { text: `This is the page as it was ${when(restored.restored.when)}, from its history. It is being saved to the drafts as a new change; Changes shows what it does to the page readers have.` })]) : null,
     unsaved ? note([h("p", { text: "Your changes from before weren't saved yet. They are back in the box and are being saved now." })]) : null,
+    opened ? suggestionBeside(slug, opened) : null,
     h("div", { class: "editor" },
       h("div", { class: "editor-bar" },
         h("div", { role: "tablist", "aria-label": "Editor view" }, tabs),

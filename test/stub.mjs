@@ -60,6 +60,7 @@ export function createStub({ siteOrigin }) {
     importState: [], // successive answers for GET author-import status
     importResult: null,
     sendAnswers: [], // successive answers for author-send: [status, body]
+    applySends: false, // a 201 send changes the drafts the next reads see
     suggestionsFail: 0, // asks for the written suggestions that answer 503 first
     fallbacks: new Map(), // write_key -> the fallback's answer (route.fulfill options)
     suggestions: [
@@ -280,6 +281,11 @@ export function createStub({ siteOrigin }) {
     }
     if (endpoint === "author-send") {
       const [status, answer] = s.sendAnswers.length > 1 ? s.sendAnswers.shift() : s.sendAnswers[0] ?? [201, sentAnswer()];
+      // applySends: the drafts take what was sent, as author-send does (the tree's head moves to the new commit).
+      if (s.applySends && status === 201) {
+        for (const f of body.files ?? []) s.bookFiles.set(f.path, Buffer.from(f.text));
+        s.tree = { ...s.tree, head: answer.sha };
+      }
       return json(route, status, answer);
     }
     if (endpoint === "author-history") {

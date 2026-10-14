@@ -389,3 +389,11 @@ ul.people .badge { display: inline-block; margin: 0.35rem 0 0.5rem; }
 .write-wait[hidden] { display: none; }
 .badge.look { border-color: var(--portal-accent); color: var(--portal-accent); }
 .overlap blockquote { margin: 0.25rem 0 0.75rem; }
+
+/* A suggestion whose paragraph changed since (lib/suggestions.js threeWay): old, suggested, now. */
+.three-way { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0.25rem 1rem; margin: 0.5rem 0; }
+.three-way .col { min-width: 0; }
+.three-way blockquote { margin: 0.25rem 0 0.5rem; overflow-wrap: anywhere; }
+.three-way del { text-decoration: line-through; background: var(--portal-del-strong); color: inherit; border-radius: 2px; }
+.three-way ins { text-decoration: underline; background: var(--portal-add-strong); color: inherit; border-radius: 2px; }
+.suggestion-beside { margin: 0.75rem 0; }
