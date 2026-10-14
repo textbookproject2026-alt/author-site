@@ -422,6 +422,42 @@ test("editor: the book's lint as you type — fixes what it can away from the ca
   assert.equal(await box.evaluate((t) => t.value.slice(t.selectionStart, t.selectionEnd)), "![](x.png)");
 });
 
+test("editor: Go to line and Drafts' Fix land on the line itself, front matter counted and long paragraphs wrapped", async () => {
+  // A page as books have them: front matter, then paragraphs that are one line each and
+  // wrap over many rows, each ending in a space the editor takes off on opening (which
+  // moves every line below it). Problems near the top (line 12) and the bottom (line 64).
+  const long = (i) => `Paragraph ${i}. ${"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor. ".repeat(8)}`;
+  const paras = Array.from({ length: 30 }, (_, i) => long(i + 1));
+  paras[1] = `TOP ![](top.png) ${paras[1]}`;
+  paras[27] = `BOTTOM ![](bottom.png) ${paras[27]}`;
+  const text = `---\ntitle: "Chapter 1"\nauthors:\n  - Someone\ndate: 2026-10-01\n---\n\n# Chapter 1\n\n${paras.join("\n\n")}\n\nEnd\n`;
+  const bottomLine = text.split("\n").findIndex((l) => l.startsWith("BOTTOM")) + 1;
+  assert.equal(bottomLine, 64);
+  stub.s.bookFiles.set(CH1_PATH, Buffer.from(text));
+  await signIn();
+  const where = (box) => box.evaluate((t) => ({
+    selected: t.value.slice(t.selectionStart, t.selectionStart + 6),
+    // How far down the box is scrolled, as a share of how far it can go.
+    down: t.scrollTop / (t.scrollHeight - t.clientHeight),
+  }));
+  // Drafts' Fix link opens the editor at the line.
+  await page.goto(`${origin}/#/a-book/edit/${encodeURIComponent(CH1_PATH)}/line/${bottomLine}`);
+  const box = page.locator("#editor-text");
+  await page.getByRole("button", { name: `Go to line ${bottomLine}` }).waitFor();
+  let w = await where(box);
+  assert.equal(w.selected, "BOTTOM");
+  assert.ok(w.down > 0.85, `scrolled to the bottom paragraph (${w.down.toFixed(2)} of the way down), not to row ${bottomLine}`);
+  // Go to line, from the list under the editor.
+  await page.getByRole("button", { name: "Go to line 12" }).click();
+  w = await where(box);
+  assert.equal(w.selected, "TOP ![");
+  assert.ok(w.down < 0.1);
+  await page.getByRole("button", { name: `Go to line ${bottomLine}` }).click();
+  w = await where(box);
+  assert.equal(w.selected, "BOTTOM");
+  assert.ok(w.down > 0.85);
+});
+
 test("editor: a save that fails goes to the fallback (Saving… this can take up to a minute); failing there too says so with Try again; the drafts moved elsewhere — saved on the new commit by itself", async () => {
   await signIn();
   // The Worker answers 5xx; the page queues the same save (same key) and waits for the job.
