@@ -169,14 +169,19 @@ export async function bookEntry(slug) {
 export const isMaintainer = (env, member) =>
   !!member?.github && member.github.toLowerCase() === String(env.PLATFORM_OWNER ?? "").toLowerCase();
 
-/** One email through Resend: { to, subject, text, html }. Returns Resend's id or throws. */
+/**
+ * One email through Resend: { to, subject, text, html }. Returns Resend's id or throws.
+ * MAIL_REPLY_TO (optional) must be an address on the sending domain: a freemail
+ * Reply-To under a confused4now.org From costs 2.75 SpamAssassin points
+ * (FREEMAIL_FORGED_REPLYTO, mail-tester 14 Oct), so none is better than that.
+ */
 export async function sendMail(env, { to, subject, text, html }) {
   if (!env.RESEND_API_KEY || !env.MAIL_FROM) throw new Error("mail: not configured");
   const res = await fetch("https://api.resend.com/emails", {
     signal: AbortSignal.timeout(10000),
     method: "POST",
     headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
-    body: JSON.stringify({ from: env.MAIL_FROM, to: [to], subject, text, html }),
+    body: JSON.stringify({ from: env.MAIL_FROM, to: [to], ...(env.MAIL_REPLY_TO ? { reply_to: env.MAIL_REPLY_TO } : {}), subject, text, html }),
   });
   const out = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`mail: Resend answered ${res.status}`);
