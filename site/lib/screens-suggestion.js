@@ -8,6 +8,7 @@ import { read, act, send } from "./api.js";
 import { bookBySlug, bookHeader, pageSlug } from "./books.js";
 import { sentView } from "./screens-shared.js";
 import { declineButton } from "./decline.js";
+import { renderOps } from "./diff.js";
 
 /** A button that runs `fn`, showing progress and then what happened in `out`. */
 function doButton(text, cls, out, fn) {
@@ -129,8 +130,7 @@ function exactReplacement(book, s, out, onMade) {
     });
     box.append(
       h("p", { class: "muted small", text: `Line ${plan.line_no}` }),
-      h("p", { class: "prose-change before" }, h("span", { class: "sr-only", text: "Before: " }), plan.before),
-      h("p", { class: "prose-change after" }, h("span", { class: "sr-only", text: "After: " }), plan.after),
+      renderOps([{ t: "-", v: plan.before }, { t: "+", v: plan.after }]),
       h("p", { class: "muted small", text: "It goes to the drafts area as one change made by you; the reader is sent a link to it and the suggestion is closed. If the drafts area changed meanwhile, nothing is sent." }),
       h("div", { class: "actions" }, make));
   });
