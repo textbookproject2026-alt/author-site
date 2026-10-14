@@ -599,6 +599,52 @@ test("drafts: reader suggestions at the top — Accept folds one into the drafts
   await page.getByRole("link", { name: /recieve/ }).waitFor();
 });
 
+test("drafts: a suggestion whose paragraph changed shows both texts and three ways on, never an error", async () => {
+  await signIn();
+  stub.s.changes[0].needsLook = true;
+  const overlap = { number: 12, paragraphs: [{ path: "chapters/chapter-02.md", line: 2, current: "Converted from Word, then edited.", suggested: "Converted from a Word file." }] };
+  stub.s.acceptAnswers.push([409, { error: "overlap", userMessage: "This paragraph has changed since this suggestion was made.", overlap }]);
+  await page.goto(`${origin}/#/a-book/drafts`);
+  const row = page.locator("li", { hasText: "Fix a typo" });
+  await row.getByText("needs a look — paragraph changed").waitFor();
+  await row.getByRole("button", { name: "Accept", exact: true }).click();
+  await row.getByText("This paragraph has changed since this suggestion was made.").waitFor();
+  await row.getByText("Converted from Word, then edited.").waitFor();
+  await row.getByText("Converted from a Word file.").waitFor();
+  assert.equal(await row.getByText(/Something went wrong/).count(), 0);
+  await row.getByRole("button", { name: "Use the suggestion" }).click();
+  await page.getByText("Accepted: the paragraph is now as suggested, in the drafts.").waitFor();
+  assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "change-accept", number: 12, title: "Fix a typo", resolve: "suggestion" });
+
+  // Decline as outdated: the reason is said for the author.
+  stub.s.acceptAnswers.push([409, { error: "overlap", userMessage: "This paragraph has changed since this suggestion was made.", overlap }]);
+  await page.reload();
+  const again = page.locator("li", { hasText: "Fix a typo" });
+  await again.getByRole("button", { name: "Accept", exact: true }).click();
+  await again.getByRole("button", { name: "Decline as outdated" }).click();
+  await page.getByText(/^Declined as outdated/).waitFor();
+  assert.equal(lastCall("author-act").body.action, "change-decline");
+  assert.match(lastCall("author-act").body.reason, /changed since this suggestion was made/);
+
+  // Edit before accepting: in the drafts as suggested, then the editor at that paragraph.
+  stub.s.acceptAnswers.push([409, { error: "overlap", userMessage: "This paragraph has changed since this suggestion was made.", overlap }]);
+  await page.reload();
+  const third = page.locator("li", { hasText: "Fix a typo" });
+  await third.getByRole("button", { name: "Accept", exact: true }).click();
+  await third.getByRole("button", { name: "Edit before accepting" }).click();
+  await page.waitForURL(/#\/a-book\/edit\/chapters%2Fchapter-02\.md\/line\/3$/);
+  assert.equal(lastCall("author-act").body.resolve, "suggestion");
+});
+
+test("errors on accept say why in plain words, never a bare 'Something went wrong'", async () => {
+  await signIn();
+  stub.s.acceptAnswers.push([409, { error: "github: PUT merge failed (status 405)" }]);
+  await page.goto(`${origin}/#/a-book/drafts`);
+  const row = page.locator("li", { hasText: "Fix a typo" });
+  await row.getByRole("button", { name: "Accept" }).click();
+  await row.getByText(/This changed since the page was loaded\. Nothing was changed\./).waitFor();
+});
+
 test("drafts: written suggestions that couldn't be loaded say so with Try again, never an empty list; one failed try is retried unseen", async () => {
   await signIn();
   // One 503 (the API's CPU limit, say): the read is tried again and the list shows.

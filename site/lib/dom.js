@@ -47,5 +47,16 @@ export const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many
 /** A busy line, a note, an error: the three things a screen says while it works. */
 export const busy = (text) => h("p", { class: "busy", role: "status", text });
 export const note = (children, kind = "") => h("div", { class: `note ${kind}`.trim(), role: kind === "warn" ? "alert" : null }, children);
+/** What an answer's status means, in plain words, when the server gave no reason of its own. */
+export function reasonFor(status) {
+  if (status === 0) return "The author site couldn't be reached. Check you're online, then try again.";
+  if (status === 401) return "You've been signed out. Sign in again, then try once more.";
+  if (status === 403) return "You aren't allowed to do this in this book. Nothing was changed.";
+  if (status === 404) return "That isn't there any more: it may already have been dealt with. Nothing was changed. Reload to see the list as it is now.";
+  if (status === 409) return "This changed since the page was loaded. Nothing was changed. Reload to see it as it is now.";
+  if (status === 429) return "That's a lot very quickly. Nothing was changed. Please wait a minute, then try again.";
+  if (status >= 500) return `The server couldn't finish this just now (error ${status}). Nothing was changed. Please try again in a minute.`;
+  return `This couldn't be done (error ${status ?? "unknown"}). Nothing was changed. Reload, then try again.`;
+}
 export const errorNote = (err) =>
-  note([h("p", { text: err?.userMessage || err?.message || "Something went wrong. Please try again." })], "warn");
+  note([h("p", { text: err?.userMessage || reasonFor(err?.status) })], "warn");

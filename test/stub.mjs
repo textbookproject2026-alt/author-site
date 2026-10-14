@@ -96,6 +96,7 @@ export function createStub({ siteOrigin }) {
     links: { ["R".repeat(43)]: "revoke", ["L".repeat(43)]: "signin", ["I".repeat(43)]: "invite", ["J".repeat(43)]: "invite", ["C".repeat(43)]: "claim" },
     own: [], // calls to the site's own endpoints: { path, method, body, header }
     peopleAnswers: [], // successive answers for author-people-change: [status, body]
+    acceptAnswers: [], // successive answers for author-act change-accept: [status, body]
     // author-history: 31 commits on drafts, the newest 2 still waiting; page 2 is the oldest.
     history: Array.from({ length: 31 }, (_, i) => ({
       sha: (i + 1).toString(16).padStart(40, "e"), who: i === 0 ? "author-one" : "co-author",
@@ -301,6 +302,7 @@ export function createStub({ siteOrigin }) {
       return json(route, status, answer);
     }
     if (endpoint === "author-act") {
+      if (body.action === "change-accept" && s.acceptAnswers.length) return json(route, ...s.acceptAnswers.shift());
       const item = s.declined.find((d) => d.number === body.number);
       if (body.action === "comment-add") {
         const id = 900 + item.comments.length;
