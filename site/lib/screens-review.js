@@ -183,10 +183,12 @@ async function draw(stage, book, v, ticked, said) {
   // The list of what is waiting, with a box for each proposal that changes several paragraphs.
   const listItem = (it) => {
     const tickables = it.hunks.filter((id) => tickable(byId.get(id)));
-    const stale = it.hunks.length - tickables.length;
+    const stale = it.hunks.filter((id) => byId.get(id).stale).length;
+    const already = it.hunks.filter((id) => byId.get(id).already).length;
     const words = [it.kind === "note" ? "in the margin" : it.why ? `can't be ticked here: ${it.why}` : null,
       it.hunks.length > 1 ? plural(it.hunks.length, "change") : null,
-      stale ? `${stale} made on an older version` : null].filter(Boolean).join(" · ");
+      stale ? `${stale} made on an older version` : null,
+      already ? `${already} already in the drafts` : null].filter(Boolean).join(" · ");
     let group = null;
     if (tickables.length > 1) {
       group = h("input", { type: "checkbox", id: `rv-g-${it.key}`, "aria-label": `All of ${itemName(it)}` });

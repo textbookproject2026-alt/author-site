@@ -1250,6 +1250,7 @@ test("review: the whole chapter with every suggestion in place; nothing ticked; 
   assert.match(await note.innerText(), /Note — Grace\s+Which farmers\?/);
   const [n, p] = [await note.boundingBox(), await hunkBox("Ann Smith").boundingBox()];
   assert.ok(n.x > p.x + p.width - 5, "in the margin, to the right");
+  assert.match(await page.locator(".rv-item").first().innerText(), /\(3 changes · 1 made on an older version\)$/);
   // Jo's whole-page proposal: one box ticks its parts that can be ticked.
   await page.getByRole("checkbox", { name: "All of “Tighten the soil chapter”" }).check();
   assert.equal(await page.locator(".rv-hunk input:checked").count(), 2);
