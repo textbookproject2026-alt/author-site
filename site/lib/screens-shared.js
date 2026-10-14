@@ -84,12 +84,38 @@ export function lintView(problems, { go, href, title = () => "" } = {}) {
       : href ? h("a", { class: "btn link", href: href(p.path, p.line), text: "Fix" }) : null)));
 }
 
-/** Selects line `n` (1-based) of a textarea and scrolls it into view. */
+/**
+ * Where line `n` is in `text`, as [start, end) offsets without its newline. `n` is
+ * 1-based and counts every line of the file, front matter included, as markdownlint
+ * (in the editor and before Publish) numbers them; out-of-range lines go to the nearest.
+ */
+export function lineSpan(text, n) {
+  const lines = text.split("\n");
+  const i = Math.min(Math.max(Math.trunc(n) || 1, 1), lines.length) - 1;
+  const start = lines.slice(0, i).reduce((a, l) => a + l.length + 1, 0);
+  return [start, start + lines[i].length];
+}
+
+/**
+ * Selects line `n` (1-based) of a textarea and scrolls it into view. A paragraph is one
+ * line that wraps over several rows, so where the line is gets measured on a hidden copy
+ * of the box (same width, padding and font), never worked out by counting lines.
+ */
 export function goToLine(textarea, n) {
-  const lines = textarea.value.split("\n");
-  const start = lines.slice(0, n - 1).reduce((a, l) => a + l.length + 1, 0);
-  textarea.focus();
-  textarea.setSelectionRange(start, start + (lines[n - 1] ?? "").length);
-  const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 20;
-  textarea.scrollTop = Math.max(0, (n - 4) * lineHeight);
+  const [start, end] = lineSpan(textarea.value, n);
+  const cs = getComputedStyle(textarea);
+  const copy = document.createElement("div");
+  for (const p of ["fontFamily", "fontSize", "fontWeight", "fontStyle", "lineHeight", "letterSpacing", "wordSpacing", "tabSize", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "textIndent"]) copy.style[p] = cs[p];
+  Object.assign(copy.style, { position: "absolute", top: "0", left: "0", visibility: "hidden", boxSizing: "border-box", width: `${textarea.clientWidth}px`, whiteSpace: "pre-wrap", overflowWrap: "break-word" });
+  copy.textContent = textarea.value.slice(0, start);
+  const mark = copy.appendChild(document.createElement("span"));
+  mark.textContent = "\u200b";
+  document.body.append(copy);
+  const y = mark.offsetTop;
+  copy.remove();
+  textarea.focus({ preventScroll: true });
+  textarea.setSelectionRange(start, end);
+  const row = parseFloat(cs.lineHeight) || 20;
+  textarea.scrollTop = Math.max(0, y - parseFloat(cs.paddingTop || "0") - 3 * row);
+  textarea.scrollIntoView({ block: "nearest" });
 }

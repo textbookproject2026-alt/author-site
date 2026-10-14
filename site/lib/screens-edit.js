@@ -144,6 +144,9 @@ export async function editScreen(slug, path, line = null) {
     select(0);
     goToLine(textarea, n);
   };
+  // Opened at a line (Drafts' Fix): that line, also once the first check has put right
+  // what it can above it, which moves the line's place in the box.
+  let jumpTo = line;
   const check = async () => {
     const before = textarea.value;
     let r;
@@ -161,7 +164,9 @@ export async function editScreen(slug, path, line = null) {
       textarea.value = r.text;
       if (focused) textarea.setSelectionRange(r.caret, r.caret);
       textarea.scrollTop = scroll;
+      if (jumpTo) goToLine(textarea, r.text.slice(0, r.caret).split("\n").length);
     }
+    jumpTo = null;
     const fixed = fixedWords(r.fixed);
     clear(lintBox,
       r.problems.length
@@ -215,6 +220,7 @@ export async function editScreen(slug, path, line = null) {
     await save();
   };
   textarea.addEventListener("input", () => {
+    jumpTo = null;
     guard(true);
     store.set(key, { base, text: textarea.value });
     clearTimeout(timer);
@@ -311,9 +317,10 @@ export async function editScreen(slug, path, line = null) {
       h("a", { href: `#/${slug}/history/${encodeURIComponent(path)}`, text: "History of this page" })),
   ];
   // The restored or unsaved text goes to the drafts straight away; the check runs either way.
+  // The jump comes first, so the check keeps the caret on that line.
   setTimeout(() => {
-    tick();
     if (line) goToLine(textarea, line);
+    tick();
   }, 0);
 
   return [...bookHeader(book, "chapters", title), ...stage];
