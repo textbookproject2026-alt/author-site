@@ -195,7 +195,7 @@ test("a reader's exact replacement, found exactly once, made and thanked in one 
   await page.goto(`${server.origin}/#/a-book/suggestion/7`);
   await page.getByRole("button", { name: "Look for it" }).click();
   await page.getByRole("button", { name: "Make this change and thank the reader" }).waitFor({ timeout: PYODIDE_TIMEOUT });
-  await page.locator(".prose-change.after", { hasText: "The three domains of reality are layered." }).waitFor();
+  await page.locator(".diff .add", { hasText: "The three domains of reality are layered." }).waitFor();
   await page.getByRole("button", { name: "Make this change and thank the reader" }).click();
   await page.getByRole("heading", { name: "Changed, and the reader thanked" }).waitFor();
   const sent = lastSend();

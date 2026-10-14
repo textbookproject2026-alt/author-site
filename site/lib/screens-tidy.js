@@ -18,6 +18,7 @@ import { parseContents } from "./contents.js";
 import { analyse, changes } from "./python.js";
 import { deepseekKey } from "./deepseek.js";
 import { conflictView, sentView } from "./screens-shared.js";
+import { renderOps } from "./diff.js";
 
 const CONCEPT_FOLDERS = /(^|\/)(definitions|concepts|terms|glossary terms|key concepts)(\/|$)/i;
 
@@ -296,8 +297,7 @@ async function preview(book, path, stage, opts, result, state, snap) {
       h("h3", { text: "Your chapter" }),
       p.diff.length ? p.diff.map((d) => h("div", { class: "card" },
         h("p", { class: "muted small", text: `Line ${d.line_no}` }),
-        h("p", { class: "prose-change before" }, h("span", { class: "sr-only", text: "Before: " }), d.before),
-        h("p", { class: "prose-change after" }, h("span", { class: "sr-only", text: "After: " }), d.after)))
+        renderOps([{ t: "-", v: d.before }, { t: "+", v: d.after }])))
         : h("p", { class: "muted", text: "No lines of the chapter itself will change." }),
       p.glossary_added.length ? [
         h("h3", { text: "Your glossary" }),

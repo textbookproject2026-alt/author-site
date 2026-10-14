@@ -240,19 +240,21 @@ blockquote.said { margin: 0 0 0.75rem; padding: 0.6rem 0.9rem; border-left: 3px 
   font-family: var(--portal-font-mono); font-size: 0.8rem; }
 .diff .file { padding: 0.35rem 0.75rem; border-bottom: 1px solid var(--portal-border); background: var(--portal-wash); font-family: var(--portal-font-ui);
   font-size: 0.9rem; font-weight: 600; }
-.diff .hunk { border-top: 1px solid var(--portal-border); }
-.diff .hunk:first-of-type { border-top: 0; }
+.diff :is(.hunk, .patch-hunk, .same) + :is(.hunk, .patch-hunk, .same) { border-top: 1px solid var(--portal-border); }
+.diff .same > summary { padding: 0.25rem 0.75rem; color: var(--portal-muted); font-family: var(--portal-font-ui); font-size: 0.85rem; cursor: pointer; }
 .diff .hh { padding: 0.2rem 0.75rem; color: var(--portal-muted); background: var(--portal-bg); }
 .diff .line { display: grid; grid-template-columns: 1.5rem 1fr; white-space: pre-wrap; overflow-wrap: anywhere; }
 .diff .line > span:first-child { text-align: center; color: var(--portal-muted); user-select: none; }
 .diff .line > span:last-child { padding-right: 0.75rem; }
 .diff .del { background: var(--portal-del); }
 .diff .add { background: var(--portal-add); }
-.diff del { background: var(--portal-del-strong); text-decoration: none; border-radius: 2px; }
-.diff ins { background: var(--portal-add-strong); text-decoration: none; border-radius: 2px; }
-.prose-change { margin: 0 0 0.35rem; padding: 0.35rem 0.6rem; border-radius: 6px; font-family: var(--portal-font-text); white-space: pre-wrap; }
-.prose-change.before { background: var(--portal-del); }
-.prose-change.after { background: var(--portal-add); }
+/* Not colour alone: removed words struck, added words underlined, and named for screen readers. */
+.diff del { background: var(--portal-del-strong); text-decoration: line-through; border-radius: 2px; }
+.diff ins { background: var(--portal-add-strong); text-decoration: underline; text-underline-offset: 0.15em; border-radius: 2px; }
+.diff :is(del, ins)::before, .diff :is(del, ins)::after { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.diff del::before { content: " [removed: "; }
+.diff ins::before { content: " [added: "; }
+.diff :is(del, ins)::after { content: "] "; }
 
 @media (max-width: 640px) {
   .preview { padding: 1rem; }

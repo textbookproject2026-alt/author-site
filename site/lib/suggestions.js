@@ -7,6 +7,7 @@
 import { h, clear, busy, note, errorNote, when } from "./dom.js";
 import { read, act } from "./api.js";
 import { declineButton } from "./decline.js";
+import { renderOps } from "./diff.js";
 
 /** Both lists for a book; a list that can't be read is empty rather than an error. */
 export async function openSuggestions(slug) {
@@ -62,7 +63,7 @@ export function changeRow(slug, c, titles, after = () => {}) {
       try {
         const d = await read("change", { book: slug, number: String(c.number) });
         clear(view, d.readable
-          ? d.pages.map((p) => [h("h4", { text: p.path ? titles.get(p.path) : p.page }), p.lines.map((l) => h("p", { class: `prose-change ${l.kind}` }, h("span", { class: "sr-only", text: l.kind === "before" ? "Before: " : "After: " }), l.text || " "))])
+          ? d.pages.map((p) => renderOps(p.lines.map((l) => ({ t: l.kind === "before" ? "-" : "+", v: l.text })), p.path ? titles.get(p.path) : p.page))
           : note([h("p", { text: d.why })]));
       } catch (err) {
         clear(view, errorNote(err));

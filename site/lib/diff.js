@@ -1,5 +1,5 @@
-// Differences, shown the way the books' in-site editor shows them. diff, tokens and
-// hunks are copied from quartz-edition-extras plugins/edit-on-github
+// Differences, shown the way the books' in-site editor shows them. diff, tokens,
+// blocks and pairRuns are copied from quartz-edition-extras plugins/edit-on-github
 // src/components/scripts/source.ts, and renderDiff from its editor.ts, turned into
 // plain modules (copied, not shared: the editor ships inside every book's build, and
 // this site has no build step). Keep them in step by hand.
@@ -52,77 +52,88 @@ export const diff = (a, b) => {
 /** Words and the whitespace between them, so a word diff re-joins exactly. */
 export const tokens = (line) => line.split(/(\s+)/).filter((t) => t !== "");
 
-/** Line diff grouped into hunks with `context` unchanged lines around each change. */
-export const hunks = (before, after, context = 2) => {
-  const ops = diff(before.split("\n"), after.split("\n"));
+/**
+ * A line diff in runs: `same` holds unchanged paragraphs, shown collapsed as
+ * "N unchanged paragraphs"; `ops` holds a run of changed lines, word-diffed. Blank
+ * lines are dropped: they only separate paragraphs.
+ */
+export const blocks = (before, after) => {
   const out = [];
-  let la = 1;
-  let lb = 1;
-  let current = null;
-  let trailing = 0;
-  ops.forEach((op, k) => {
-    const changedNear = ops.slice(Math.max(0, k - context), k + context + 1).some((o) => o.t !== "=");
-    if (changedNear) {
-      if (!current || (op.t === "=" && trailing > 2 * context)) {
-        current = { a: la, b: lb, ops: [] };
-        out.push(current);
-      }
-      current.ops.push(op);
-      trailing = op.t === "=" ? trailing + 1 : 0;
-    } else {
-      current = null;
-      trailing = 0;
+  for (const op of diff(before.split("\n"), after.split("\n"))) {
+    const last = out[out.length - 1];
+    if (!op.v.trim()) continue;
+    if (op.t === "=") {
+      if (last?.same) last.same.push(op.v);
+      else out.push({ same: [op.v] });
+    } else if (last?.ops) last.ops.push(op);
+    else out.push({ ops: [op] });
+  }
+  return out.some((b) => b.ops) ? out : [];
+};
+
+export const unchangedLabel = (n) => `${n} unchanged paragraph${n === 1 ? "" : "s"}`;
+
+/**
+ * Runs of removed lines then added ones, paired line by line and word-diffed: each
+ * line's words marked kept or changed (neighbours with the same mark joined).
+ * Unpaired lines are changed throughout.
+ */
+export const pairRuns = (ops) => {
+  const out = [];
+  for (let k = 0; k < ops.length; ) {
+    const dels = [];
+    const adds = [];
+    while (ops[k]?.t === "=") k++;
+    while (ops[k]?.t === "-") dels.push(ops[k++].v);
+    while (ops[k]?.t === "+") adds.push(ops[k++].v);
+    const d = dels.map((v) => ({ t: "-", words: [{ v, changed: true }] }));
+    const a = adds.map((v) => ({ t: "+", words: [{ v, changed: true }] }));
+    for (let i = 0; i < Math.min(dels.length, adds.length); i++) {
+      const w = diff(tokens(dels[i]), tokens(adds[i]));
+      d[i].words = w.filter((o) => o.t !== "+").map((o) => ({ v: o.v, changed: o.t === "-" }));
+      a[i].words = w.filter((o) => o.t !== "-").map((o) => ({ v: o.v, changed: o.t === "+" }));
     }
-    if (op.t !== "+") la++;
-    if (op.t !== "-") lb++;
-  });
+    for (const r of [...d, ...a])
+      r.words = r.words.reduce((ws, w) => {
+        const last = ws[ws.length - 1];
+        if (last && last.changed === w.changed) last.v += w.v;
+        else ws.push({ ...w });
+        return ws;
+      }, []);
+    out.push(...d, ...a);
+  }
   return out;
 };
 
 const line = (kind, content) =>
   h("div", { class: `line${kind === "-" ? " del" : kind === "+" ? " add" : ""}` },
-    h("span", { text: kind === "=" ? " " : kind }),
+    h("span", { "aria-hidden": "true", text: kind === "=" ? " " : kind === "-" ? "−" : "+" }),
     typeof content === "string" ? h("span", { text: content || " " }) : h("span", {}, content));
 
-/** Removals then additions, paired line by line and word-diffed, as the editor does. */
-function runs(ops, out) {
-  for (let k = 0; k < ops.length; ) {
-    const op = ops[k];
-    if (op.t === "=") {
-      out.append(line("=", op.v));
-      k++;
-      continue;
-    }
-    const dels = [];
-    const adds = [];
-    while (ops[k]?.t === "-") dels.push(ops[k++].v);
-    while (ops[k]?.t === "+") adds.push(ops[k++].v);
-    const paired = Math.min(dels.length, adds.length);
-    const words = dels.map((d, i) => (i < paired ? diff(tokens(d), tokens(adds[i])) : null));
-    dels.forEach((d, i) => {
-      const w = words[i];
-      out.append(line("-", w ? w.filter((o) => o.t !== "+").map((o) => (o.t === "-" ? h("del", { text: o.v }) : document.createTextNode(o.v))) : d));
-    });
-    adds.forEach((a, i) => {
-      const w = words[i];
-      out.append(line("+", w ? w.filter((o) => o.t !== "-").map((o) => (o.t === "+" ? h("ins", { text: o.v }) : document.createTextNode(o.v))) : a));
-    });
+/** One changed line's words: the changed ones in <del> or <ins>. */
+export const marked = (r) => r.words.map((w) => (w.changed ? h(r.t === "-" ? "del" : "ins", { text: w.v }) : document.createTextNode(w.v)));
+
+/** Changed lines word-diffed, and each run of unchanged ones collapsed: into `out`. */
+function render(bs, out) {
+  for (const b of bs) {
+    if (b.same) out.append(h("details", { class: "same" }, h("summary", { text: unchangedLabel(b.same.length) }), b.same.map((v) => line("=", v))));
+    else out.append(h("div", { class: "hunk" }, pairRuns(b.ops).map((r) => line(r.t, marked(r)))));
   }
 }
 
 /** Two versions of one file, side by side in time. */
 export function renderDiff(before, after, title) {
   const box = h("div", { class: "diff" }, title ? h("div", { class: "file", text: title }) : null);
-  const hs = hunks(before, after);
-  if (!hs.length) {
-    box.append(h("p", { class: "hh", text: "No differences." }));
-    return box;
-  }
-  for (const hk of hs) {
-    const hunk = h("div", { class: "hunk" }, h("div", { class: "hh", text: `Line ${hk.b}` }));
-    runs(hk.ops, hunk);
-    box.append(hunk);
-  }
+  const bs = blocks(before, after);
+  if (!bs.length) box.append(h("p", { class: "hh", text: "No differences." }));
+  else render(bs, box);
+  return box;
+}
+
+/** Removed and added lines alone (a patch's - and + lines), word-diffed. */
+export function renderOps(ops, title) {
+  const box = h("div", { class: "diff" }, title ? h("div", { class: "file", text: title }) : null);
+  render([{ ops: ops.filter((o) => o.v.trim()) }], box);
   return box;
 }
 
@@ -133,26 +144,34 @@ export function renderPatch(patch, title) {
     box.append(h("p", { class: "hh", text: "Too large, or not text, to show here." }));
     return box;
   }
+  // Each @@ hunk keeps its line number; its context lines collapse as unchanged paragraphs.
   let hunk = null;
-  let ops = [];
+  let bs = [];
   const flush = () => {
-    if (hunk) runs(ops, hunk);
-    ops = [];
+    if (hunk) render(bs, hunk);
+    bs = [];
   };
   for (const raw of patch.split("\n")) {
     const m = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(raw);
     if (m) {
       flush();
-      hunk = h("div", { class: "hunk" }, h("div", { class: "hh", text: `Line ${m[1]}` }));
+      hunk = h("div", { class: "patch-hunk" }, h("div", { class: "hh", text: `Line ${m[1]}` }));
       box.append(hunk);
       continue;
     }
     if (!hunk) {
-      hunk = h("div", { class: "hunk" });
+      hunk = h("div", { class: "patch-hunk" });
       box.append(hunk);
     }
-    if (raw.startsWith("\\")) continue; // "\ No newline at end of file"
-    ops.push({ t: raw[0] === "+" ? "+" : raw[0] === "-" ? "-" : "=", v: raw.slice(1) });
+    const v = raw.slice(1);
+    if (raw.startsWith("\\") || !v.trim()) continue; // "\ No newline at end of file", blank lines
+    const t = raw[0] === "+" ? "+" : raw[0] === "-" ? "-" : "=";
+    const last = bs[bs.length - 1];
+    if (t === "=") {
+      if (last?.same) last.same.push(v);
+      else bs.push({ same: [v] });
+    } else if (last?.ops) last.ops.push({ t, v });
+    else bs.push({ ops: [{ t, v }] });
   }
   flush();
   return box;
