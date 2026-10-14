@@ -1,7 +1,7 @@
 // Views more than one screen uses: what moved in the drafts area when a send was
 // refused, and what happened when one went through.
 
-import { h, clear, note, when, plural } from "./dom.js";
+import { h, clear, note, when, plural, reasonFor } from "./dom.js";
 import { renderPatch } from "./diff.js";
 
 /**
@@ -59,7 +59,7 @@ export function savedAt() {
       node.classList.add("not-saved");
       const conflict = err?.status === 409 && err.body?.error === "conflict";
       clear(node, h("strong", { text: "Not saved. " }),
-        conflict ? "Something else changed the drafts at the same moment. Reload to see it, then make your change again." : (err?.userMessage || "Something went wrong."), " ",
+        conflict ? "Something else changed the drafts at the same moment. Reload to see it, then make your change again." : (err?.userMessage || reasonFor(err?.status)), " ",
         conflict
           ? h("button", { type: "button", class: "btn link", text: "Reload", onclick: () => window.dispatchEvent(new HashChangeEvent("hashchange")) })
           : retry ? h("button", { type: "button", class: "btn link", text: "Try again", onclick: () => {

@@ -29,14 +29,15 @@ export function countsByPath({ written, changes }) {
 export const countBadge = (n, href) =>
   n ? h("a", { class: "badge suggestions", href, text: `${n} ${n === 1 ? "suggestion" : "suggestions"}` }) : null;
 
-/** One button that runs `fn` once, showing progress and then what happened in `out`. */
+/** One button that runs `fn` once, showing progress and then what happened in `out` (words, or nodes). */
 function answerButton(text, cls, out, working, fn) {
   const b = h("button", { type: "button", class: `btn ${cls}`.trim(), text });
   b.addEventListener("click", async () => {
     for (const x of b.parentElement?.querySelectorAll("button") ?? []) x.disabled = true;
     clear(out, busy(working));
     try {
-      clear(out, note([h("p", { text: await fn() })]));
+      const said = await fn();
+      clear(out, typeof said === "string" ? note([h("p", { text: said })]) : said);
     } catch (err) {
       for (const x of b.parentElement?.querySelectorAll("button") ?? []) x.disabled = false;
       clear(out, errorNote(err));
@@ -68,7 +69,13 @@ export function changeRow(slug, c, titles, after = () => {}) {
       }
     } }),
     answerButton("Accept", "primary", out, "Folding it into the drafts…", async () => {
-      await act(slug, "change-accept", { number: c.number, title: c.title });
+      try {
+        await act(slug, "change-accept", { number: c.number, title: c.title });
+      } catch (err) {
+        // The paragraph changed under the same words: the author chooses, nothing is an error.
+        if (err?.status === 409 && err.body?.overlap) return overlapChoice(slug, c, err.body, out, after);
+        throw err;
+      }
       return answered("Accepted: it is in the drafts.")();
     }),
     declineButton(out, async (reason) => {
@@ -76,8 +83,50 @@ export function changeRow(slug, c, titles, after = () => {}) {
       return answered("Declined: your reason is posted, with a note thanking them. It shows as Declined in the book's history.")();
     }));
   return h("li", {},
-    h("div", { class: "row" }, h("div", { class: "grow" }, h("strong", { text: c.title }), h("span", { class: "muted", text: ` — ${c.who}, ${when(c.when)}` })), buttons),
+    h("div", { class: "row" }, h("div", { class: "grow" },
+      h("strong", { text: c.title }), h("span", { class: "muted", text: ` — ${c.who}, ${when(c.when)}` }),
+      c.needsLook ? [" ", h("span", { class: "badge look", text: "needs a look — paragraph changed" })] : null), buttons),
     view, out);
+}
+
+const OUTDATED = "The paragraph has changed since this suggestion was made, so it no longer applies as written.";
+
+/**
+ * Accept found the paragraph changed since the suggestion was made, under the same words:
+ * the paragraph as it is now and as suggested, and three ways on. Nothing was written yet.
+ */
+function overlapChoice(slug, c, body, out, after) {
+  const paragraphs = body.overlap.paragraphs ?? [];
+  const first = paragraphs[0];
+  const status = h("div", { "aria-live": "polite" });
+  const choose = (text, cls, working, fn) => answerButton(text, cls, status, working, fn);
+  const accept = () => act(slug, "change-accept", { number: c.number, title: c.title, resolve: "suggestion" });
+  return note([
+    h("p", {}, h("strong", { text: body.userMessage || "This paragraph has changed since this suggestion was made." })),
+    paragraphs.map((p) => h("div", { class: "overlap" },
+      h("p", { class: "muted small", text: "Now in the drafts:" }),
+      h("blockquote", { class: "said", text: p.current || "(this paragraph has been removed from the drafts since)" }),
+      h("p", { class: "muted small", text: "Suggested:" }),
+      h("blockquote", { class: "said", text: p.suggested || "(the suggestion removes this paragraph)" }))),
+    h("div", { class: "row" },
+      choose("Use the suggestion", "primary", "Putting the suggestion in the drafts…", async () => {
+        await accept();
+        after();
+        return "Accepted: the paragraph is now as suggested, in the drafts.";
+      }),
+      first?.path ? choose("Edit before accepting", "", "Opening it in the editor…", async () => {
+        // In the drafts as suggested (not yet live), then straight into the editor to change it.
+        await accept();
+        location.hash = `#/${slug}/edit/${encodeURIComponent(first.path)}/line/${(first.line ?? 0) + 1}`;
+        return "Opening the editor…";
+      }) : null,
+      choose("Decline as outdated", "", "Declining it…", async () => {
+        await act(slug, "change-decline", { number: c.number, reason: OUTDATED });
+        after();
+        return "Declined as outdated: the reader is thanked. It shows as Declined in the book's history.";
+      })),
+    status,
+  ]);
 }
 
 /** A written suggestion: what the reader wrote, Accept (you'll make it) and Decline (politely), or its own screen. */

@@ -385,3 +385,5 @@ ul.people .badge { display: inline-block; margin: 0.35rem 0 0.5rem; }
 /* A write the fallback is doing (lib/api.js): "Saving… this can take up to a minute". */
 .write-wait { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 50; max-width: calc(100vw - 2rem); padding: 0.6rem 1rem; border: 1px solid var(--portal-border); border-radius: 6px; background: var(--portal-bg); color: var(--portal-ink); box-shadow: 0 2px 10px rgb(0 0 0 / 0.15); }
 .write-wait[hidden] { display: none; }
+.badge.look { border-color: var(--portal-accent); color: var(--portal-accent); }
+.overlap blockquote { margin: 0.25rem 0 0.75rem; }

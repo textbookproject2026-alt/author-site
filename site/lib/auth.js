@@ -5,6 +5,7 @@
 // own server turns that into the same kind of session.
 
 import { apiBase } from "./api.js";
+import { reasonFor } from "./dom.js";
 
 let me = null; // { id, name, email, github, notify, maintainer, books }
 let githubSignin = false;
@@ -32,7 +33,7 @@ export async function own(path, { method = "GET", body } = {}) {
     throw Object.assign(new Error("offline"), { status: 0, userMessage: "The author site couldn't be reached. Check you're online, then try again." });
   }
   const payload = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(payload.error ?? String(res.status)), { status: res.status, body: payload, userMessage: payload.userMessage || "Something went wrong. Please try again." });
+  if (!res.ok) throw Object.assign(new Error(payload.error ?? String(res.status)), { status: res.status, body: payload, userMessage: payload.userMessage || reasonFor(res.status) });
   return payload;
 }
 

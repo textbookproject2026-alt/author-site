@@ -4,6 +4,7 @@
 // (signed out elsewhere, removed from the book): the page asks to sign in again.
 
 import { signedOut } from "./auth.js";
+import { reasonFor } from "./dom.js";
 
 export const apiBase = () => document.querySelector('meta[name="tb-api"]')?.content ?? "";
 
@@ -12,9 +13,7 @@ export class ApiError extends Error {
     super(body?.userMessage || body?.error || `The author site's server answered ${status}.`);
     this.status = status;
     this.body = body ?? {};
-    this.userMessage = body?.userMessage || (status === 0
-      ? "The author site couldn't be reached. Check you're online, then try again."
-      : "Something went wrong. Nothing was changed. Please try again.");
+    this.userMessage = body?.userMessage || reasonFor(status);
   }
 }
 
@@ -32,8 +31,8 @@ async function keyOf(endpoint, text) {
   return Array.from(hash.slice(0, 16), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** "Saving… this can take up to a minute", at the foot of the page, while a fallback runs. */
-function waiting(on) {
+/** "Saving… this can take up to a minute" (or `text`), at the foot of the page, while a fallback runs. */
+function waiting(on, text = WAIT_MESSAGE) {
   let n = document.getElementById("write-wait");
   if (!n && on) {
     n = document.createElement("div");
@@ -43,7 +42,7 @@ function waiting(on) {
     document.body.append(n);
   }
   if (n) {
-    n.textContent = on ? WAIT_MESSAGE : "";
+    n.textContent = on ? text : "";
     n.hidden = !on;
   }
 }
@@ -60,8 +59,8 @@ async function once(url, method, text) {
 }
 
 /** A write that failed (or is still running): queue it, then wait for its answer. */
-async function fallback(url, text, book, res) {
-  waiting(true);
+async function fallback(url, text, book, res, wait) {
+  waiting(true, wait);
   try {
     const key = url.searchParams.get("write_key");
     if (!res || res.status >= 500) {
@@ -85,7 +84,7 @@ async function fallback(url, text, book, res) {
   }
 }
 
-async function call(endpoint, { method = "GET", query, body } = {}) {
+async function call(endpoint, { method = "GET", query, body, wait } = {}) {
   const url = new URL(`/fn/${endpoint}`, location.origin);
   for (const [k, v] of Object.entries(query ?? {})) if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
   const text = body ? JSON.stringify(body) : undefined;
@@ -108,7 +107,7 @@ async function call(endpoint, { method = "GET", query, body } = {}) {
   }
   if (write && (!res || res.status >= 500 || res.status === 202)) {
     try {
-      res = await fallback(url, text, body?.book ?? "", res);
+      res = await fallback(url, text, body?.book ?? "", res, wait);
     } catch {
       throw new ApiError(0, null);
     }
@@ -129,7 +128,11 @@ async function call(endpoint, { method = "GET", query, body } = {}) {
 
 export const read = (what, query = {}) => call("author-read", { query: { what, ...query } });
 export const send = (body) => call("author-send", { method: "POST", body });
-export const act = (book, action, extra = {}) => call("author-act", { method: "POST", body: { book, action, ...extra } });
+// Accepting a reader's edit may have to merge it again with the drafts: if the API can't
+// finish that in time, Actions does it, and the page says so meanwhile.
+export const APPLYING = "Applying… this can take up to a minute.";
+export const act = (book, action, extra = {}) =>
+  call("author-act", { method: "POST", body: { book, action, ...extra }, wait: action === "change-accept" ? APPLYING : undefined });
 // The book goes with each part only so this site's server can check you're on it.
 export const importPart = (book, part) => call("author-import", { method: "POST", body: { book, part } });
 export const importStart = (body) => call("author-import", { method: "POST", body: { action: "start", ...body } });
