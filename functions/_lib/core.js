@@ -138,8 +138,8 @@ export async function audit(env, book, actor, action, subjectName) {
 }
 
 /** At most `limit` uses of `key` per window of `seconds`; true when this one is allowed. */
-export async function allow(env, key, limit, seconds) {
-  const window = Math.floor(now() / (seconds * 1000));
+export async function allow(env, key, limit, seconds, t = now()) {
+  const window = Math.floor(t / (seconds * 1000));
   const row = await env.DB.prepare(
     "INSERT INTO rate (key, window, count, expires_at) VALUES (?, ?, 1, ?) ON CONFLICT(key, window) DO UPDATE SET count = count + 1 RETURNING count",
   )
@@ -147,6 +147,33 @@ export async function allow(env, key, limit, seconds) {
     .first();
   return (row?.count ?? 1) <= limit;
 }
+
+// Rate-limit keys never hold an IP address: HMAC-SHA256(IP, a random salt per UTC day),
+// as the suggest-edit Worker does (its lib/common.mjs hashKey). The salt lives in this
+// site's own D1 (`salts`, migration 0003), so every isolate agrees; the first request
+// of a new day makes the next salt and deletes the days before, so once a day is over
+// its keys can't be tied to an address.
+const hexOf = (bytes) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
+let salted = { day: -1, key: null };
+
+/** The caller's address as a limiter key: "h:" + 64 hex. The address itself goes nowhere. */
+export async function ipKey(env, request, t = now()) {
+  const day = Math.floor(t / DAY);
+  if (salted.day !== day) {
+    const [, row] = await env.DB.batch([
+      env.DB.prepare("DELETE FROM salts WHERE day < ?").bind(day),
+      env.DB.prepare("INSERT INTO salts (day, salt) VALUES (?, ?) ON CONFLICT (day) DO UPDATE SET day = day RETURNING salt")
+        .bind(day, hexOf(crypto.getRandomValues(new Uint8Array(32)))),
+    ]);
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(row.results[0].salt), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    salted = { day, key };
+  }
+  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+  return `h:${hexOf(await crypto.subtle.sign("HMAC", salted.key, new TextEncoder().encode(ip)))}`;
+}
+
+/** The salt is per isolate: tests start each day fresh. */
+export const testing = { resetSalt: () => { salted = { day: -1, key: null }; } };
 
 /** The registry, public (raw GitHub), cached for a minute in this isolate. */
 let registryCache = null;

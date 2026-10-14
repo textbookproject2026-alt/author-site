@@ -12,7 +12,7 @@
 // (recorded in D1 before sending). Rate-limited per caller before the check, and per
 // book and overall once an item has passed it, so a burst of real items can't use up
 // the sending quota and a burst of junk can't use up the real items' budget.
-import { UPSTREAM, allow, body, bookEntry, fail, json, linkOrigin, mailBody, now, sendMail } from "../../_lib/core.js";
+import { UPSTREAM, allow, body, bookEntry, fail, ipKey, json, linkOrigin, mailBody, now, sendMail } from "../../_lib/core.js";
 
 const PER_BOOK_PER_HOUR = 30;
 const OVERALL_PER_HOUR = 120;
@@ -24,7 +24,7 @@ export async function onRequestPost({ request, env }) {
   const number = Number(b.number);
   const entry = await bookEntry(b.book).catch(() => null);
   if (!entry || !Number.isInteger(number) || number < 1 || number > 1e7) return fail(404, "not found");
-  if (!(await allow(env, `notify:ip:${request.headers.get("cf-connecting-ip") ?? "unknown"}`, PER_CALLER_PER_HOUR, 3600))) return fail(429, "rate limited");
+  if (!(await allow(env, `notify:${await ipKey(env, request)}`, PER_CALLER_PER_HOUR, 3600))) return fail(429, "rate limited");
 
   const res = await fetch(`${UPSTREAM}/api/page-revision?mode=item&book=${encodeURIComponent(entry.slug)}&number=${number}`, { redirect: "manual", signal: AbortSignal.timeout(8000) });
   if (res.status === 404) return fail(404, "not found");

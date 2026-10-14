@@ -1,8 +1,8 @@
 // POST /api/auth/request { email } — "Email me a sign-in link". The answer is the
 // same whether or not the address belongs to a member (and arrives after the same
 // work either way), so the form tells nobody who is registered. A member gets a
-// single-use link, good for 15 minutes. Rate-limited per address and per IP.
-import { allow, body, fail, hash, json, linkOrigin, mailBody, normEmail, sameSite, sendMail, validEmail } from "../../_lib/core.js";
+// single-use link, good for 15 minutes. Rate-limited per address and per caller (a daily hash of the IP, never the IP).
+import { allow, body, ipKey, fail, hash, json, linkOrigin, mailBody, normEmail, sameSite, sendMail, validEmail } from "../../_lib/core.js";
 import { createLink } from "../../_lib/links.js";
 
 export const SAME_ANSWER = { ok: true, userMessage: "If that address has access, we've sent a link. It works once, for 15 minutes." };
@@ -11,8 +11,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
   if (!sameSite(request)) return fail(403, "cross-site request");
   const email = normEmail((await body(request)).email);
   if (!validEmail(email)) return fail(400, "bad email", "That doesn't look like an email address.");
-  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
-  if (!(await allow(env, `signin:ip:${ip}`, 20, 3600))) return fail(429, "rate limited", "Too many sign-in links asked for. Wait a little, then try again.");
+  if (!(await allow(env, `signin:${await ipKey(env, request)}`, 20, 3600))) return fail(429, "rate limited", "Too many sign-in links asked for. Wait a little, then try again.");
   // Everything about the address happens after the answer, so a member's address and a
   // stranger's are answered alike and as fast. At most five links an hour to an
   // address, counted only when one is sent (asking for a stranger's costs nobody).
