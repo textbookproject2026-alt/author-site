@@ -1,0 +1,294 @@
+{
+ "view": {
+  "path": "chapters/chapter-02.md",
+  "drafts": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "paragraphs": [
+   "# Chapter 2: Soils\n\n",
+   "Soil forms slowly from weathered rock and living things.\n\n",
+   "A soil profile has layers called horizons, from the topsoil down to the bedrock.\n\n",
+   "Clay soils hold water; sandy soils drain fast.\n\n",
+   "Farmers test their soil every few years.\n\n",
+   "Erosion can carry off topsoil in a single storm.\n"
+  ],
+  "items": [
+   {
+    "key": "p21",
+    "kind": "edit",
+    "number": 21,
+    "who": "Jo Reader",
+    "title": "Tighten the soil chapter",
+    "url": "https://github.com/someone/a-book/pull/21",
+    "hunks": [
+     "p21-c4sgo1",
+     "p21-yyge7x",
+     "p21-wyy2li"
+    ]
+   },
+   {
+    "key": "p22",
+    "kind": "edit",
+    "number": 22,
+    "who": "Sam Lee",
+    "title": "Clay and sand",
+    "url": "https://github.com/someone/a-book/pull/22",
+    "hunks": [
+     "p22-vffdtv"
+    ]
+   },
+   {
+    "key": "p23",
+    "kind": "edit",
+    "number": 23,
+    "who": "Ann Smith",
+    "title": "Testing",
+    "url": "https://github.com/someone/a-book/pull/23",
+    "hunks": [
+     "p23-20vndj"
+    ]
+   },
+   {
+    "key": "i31",
+    "kind": "suggestion",
+    "number": 31,
+    "who": "Ada",
+    "title": "layers known as horizons",
+    "url": "https://github.com/someone/a-book/issues/31",
+    "hunks": [
+     "i31"
+    ]
+   },
+   {
+    "key": "i32",
+    "kind": "note",
+    "number": 32,
+    "who": "Grace",
+    "title": "Which farmers? A source would help here.",
+    "url": "https://github.com/someone/a-book/issues/32",
+    "hunks": [],
+    "why": "a note to the authors"
+   }
+  ],
+  "hunks": [
+   {
+    "id": "p21-c4sgo1",
+    "item": "p21",
+    "at": 1,
+    "end": 2,
+    "from": "Soil forms slowly from weathered rock and living things.\n\n",
+    "to": "Soil forms very slowly from weathered rock and living things.\n\n",
+    "overlaps": []
+   },
+   {
+    "id": "p21-yyge7x",
+    "item": "p21",
+    "at": 3,
+    "end": 4,
+    "from": "Clay soils hold water; sandy soils drain fast.\n\n",
+    "to": "Clay soils hold water, while sandy soils drain fast.\n\n",
+    "overlaps": [
+     "p22-vffdtv"
+    ]
+   },
+   {
+    "id": "p21-wyy2li",
+    "item": "p21",
+    "at": 5,
+    "end": 5,
+    "stale": [
+     {
+      "line": 10,
+      "base": "Erosion can remove topsoil in a single storm.",
+      "current": "Erosion can carry off topsoil in a single storm.",
+      "suggested": "Erosion can strip topsoil in one storm.",
+      "merged": "Erosion can carry off topsoil in one storm."
+     }
+    ]
+   },
+   {
+    "id": "p22-vffdtv",
+    "item": "p22",
+    "at": 3,
+    "end": 4,
+    "from": "Clay soils hold water; sandy soils drain fast.\n\n",
+    "to": "Clay soils hold water well; sandy soils drain quickly.\n\n",
+    "overlaps": [
+     "p21-yyge7x"
+    ]
+   },
+   {
+    "id": "p23-20vndj",
+    "item": "p23",
+    "at": 4,
+    "end": 5,
+    "from": "Farmers test their soil every few years.\n\n",
+    "to": "Farmers should test their soil every two or three years.\n\n",
+    "overlaps": []
+   },
+   {
+    "id": "i31",
+    "item": "i31",
+    "at": 2,
+    "end": 3,
+    "from": "A soil profile has layers called horizons, from the topsoil down to the bedrock.\n\n",
+    "to": "A soil profile has layers known as horizons, from the topsoil down to the bedrock.\n\n",
+    "overlaps": []
+   }
+  ],
+  "notes": [
+   {
+    "item": "i32",
+    "at": 4,
+    "text": "Which farmers? A source would help here."
+   }
+  ]
+ },
+ "moved": {
+  "path": "chapters/chapter-02.md",
+  "drafts": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "paragraphs": [
+   "# Chapter 2: Soils\n\n",
+   "Soil forms quite slowly from weathered rock and living things.\n\n",
+   "A soil profile has layers called horizons, from the topsoil down to the bedrock.\n\n",
+   "Clay soils hold water; sandy soils drain fast.\n\n",
+   "Farmers test their soil every few years.\n\n",
+   "Erosion can carry off topsoil in a single storm.\n"
+  ],
+  "items": [
+   {
+    "key": "p21",
+    "kind": "edit",
+    "number": 21,
+    "who": "Jo Reader",
+    "title": "Tighten the soil chapter",
+    "url": "https://github.com/someone/a-book/pull/21",
+    "hunks": [
+     "p21-c4sgo1",
+     "p21-yyge7x",
+     "p21-wyy2li"
+    ]
+   },
+   {
+    "key": "p22",
+    "kind": "edit",
+    "number": 22,
+    "who": "Sam Lee",
+    "title": "Clay and sand",
+    "url": "https://github.com/someone/a-book/pull/22",
+    "hunks": [
+     "p22-vffdtv"
+    ]
+   },
+   {
+    "key": "p23",
+    "kind": "edit",
+    "number": 23,
+    "who": "Ann Smith",
+    "title": "Testing",
+    "url": "https://github.com/someone/a-book/pull/23",
+    "hunks": [
+     "p23-20vndj"
+    ]
+   },
+   {
+    "key": "i31",
+    "kind": "suggestion",
+    "number": 31,
+    "who": "Ada",
+    "title": "layers known as horizons",
+    "url": "https://github.com/someone/a-book/issues/31",
+    "hunks": [
+     "i31"
+    ]
+   },
+   {
+    "key": "i32",
+    "kind": "note",
+    "number": 32,
+    "who": "Grace",
+    "title": "Which farmers? A source would help here.",
+    "url": "https://github.com/someone/a-book/issues/32",
+    "hunks": [],
+    "why": "a note to the authors"
+   }
+  ],
+  "hunks": [
+   {
+    "id": "p21-c4sgo1",
+    "item": "p21",
+    "at": 1,
+    "end": 1,
+    "stale": [
+     {
+      "line": 2,
+      "base": "Soil forms slowly from weathered rock and living things.",
+      "current": "Soil forms quite slowly from weathered rock and living things.",
+      "suggested": "Soil forms very slowly from weathered rock and living things.",
+      "merged": "Soil forms quite slowly from weathered rock and living things."
+     }
+    ]
+   },
+   {
+    "id": "p21-yyge7x",
+    "item": "p21",
+    "at": 3,
+    "end": 4,
+    "from": "Clay soils hold water; sandy soils drain fast.\n\n",
+    "to": "Clay soils hold water, while sandy soils drain fast.\n\n",
+    "overlaps": [
+     "p22-vffdtv"
+    ]
+   },
+   {
+    "id": "p21-wyy2li",
+    "item": "p21",
+    "at": 5,
+    "end": 5,
+    "stale": [
+     {
+      "line": 10,
+      "base": "Erosion can remove topsoil in a single storm.",
+      "current": "Erosion can carry off topsoil in a single storm.",
+      "suggested": "Erosion can strip topsoil in one storm.",
+      "merged": "Erosion can carry off topsoil in one storm."
+     }
+    ]
+   },
+   {
+    "id": "p22-vffdtv",
+    "item": "p22",
+    "at": 3,
+    "end": 4,
+    "from": "Clay soils hold water; sandy soils drain fast.\n\n",
+    "to": "Clay soils hold water well; sandy soils drain quickly.\n\n",
+    "overlaps": [
+     "p21-yyge7x"
+    ]
+   },
+   {
+    "id": "p23-20vndj",
+    "item": "p23",
+    "at": 4,
+    "end": 5,
+    "from": "Farmers test their soil every few years.\n\n",
+    "to": "Farmers should test their soil every two or three years.\n\n",
+    "overlaps": []
+   },
+   {
+    "id": "i31",
+    "item": "i31",
+    "at": 2,
+    "end": 3,
+    "from": "A soil profile has layers called horizons, from the topsoil down to the bedrock.\n\n",
+    "to": "A soil profile has layers known as horizons, from the topsoil down to the bedrock.\n\n",
+    "overlaps": []
+   }
+  ],
+  "notes": [
+   {
+    "item": "i32",
+    "at": 4,
+    "text": "Which farmers? A source would help here."
+   }
+  ]
+ }
+}

@@ -394,6 +394,44 @@ ul.people .badge { display: inline-block; margin: 0.35rem 0 0.5rem; }
 .three-way { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0.25rem 1rem; margin: 0.5rem 0; }
 .three-way .col { min-width: 0; }
 .three-way blockquote { margin: 0.25rem 0 0.5rem; overflow-wrap: anywhere; }
-.three-way del { text-decoration: line-through; background: var(--portal-del-strong); color: inherit; border-radius: 2px; }
-.three-way ins { text-decoration: underline; background: var(--portal-add-strong); color: inherit; border-radius: 2px; }
+.three-way del, .rv-words del { text-decoration: line-through; background: var(--portal-del-strong); color: inherit; border-radius: 2px; }
+.three-way ins, .rv-words ins { text-decoration: underline; text-underline-offset: 0.15em; background: var(--portal-add-strong); color: inherit; border-radius: 2px; }
+
+/* Review all in chapter: the chapter, its changed paragraphs as boxes, notes in the margin. */
+.rv-items { margin: 1rem 0; }
+.rv-item label { cursor: pointer; }
+.rv-doc { margin: 1rem 0 0; }
+.rv-row { display: grid; grid-template-columns: minmax(0, 1fr) 14rem; gap: 0 1.25rem; align-items: start; }
+.rv-main { min-width: 0; }
+.rv-main > .preview { padding: 0.25rem 0.75rem; border: 0; margin: 0; background: none; box-shadow: none; border-radius: 0; }
+.rv-words del + ins, .three-way del + ins { margin-left: 0.2em; }
+.rv-side { grid-column: 2; }
+.rv-note { margin: 0.5rem 0; padding: 0.5rem 0.75rem; border-left: 3px solid var(--portal-accent-soft); background: var(--portal-wash); font-size: 0.95rem; overflow-wrap: anywhere; }
+.rv-note p { margin: 0 0 0.25rem; }
+.rv-hunk { margin: 0.5rem 0; padding: 0.6rem 0.75rem; border: 1px solid var(--portal-border); border-radius: 8px; background: var(--portal-bg-soft); }
+.rv-hunk.ticked { border-color: var(--portal-accent); box-shadow: inset 3px 0 0 var(--portal-accent); }
+.rv-hunk.stale { border-style: dashed; }
+.rv-hunk .rv-label { display: flex; gap: 0.5rem; align-items: baseline; cursor: pointer; }
+.rv-hunk input[type="checkbox"], .rv-item input[type="checkbox"] { width: 1.15rem; height: 1.15rem; flex: none; accent-color: var(--portal-accent); }
+.rv-hunk input:disabled + span, .rv-hunk input:disabled { opacity: 0.55; cursor: not-allowed; }
+.rv-words { font-family: var(--portal-font-text); white-space: pre-line; overflow-wrap: anywhere; margin: 0.4rem 0 0.25rem; }
+.rv-why:empty { display: none; }
+.rv-why { margin: 0; }
+.rv-plain p { font-family: var(--portal-font-text); }
+.rv-bar { position: sticky; bottom: 0; z-index: 5; margin: 1rem 0; padding: 0.75rem 1rem; border: 1px solid var(--portal-border); border-radius: 8px; background: var(--portal-bg); box-shadow: 0 -2px 8px rgb(0 0 0 / 0.08); }
+.rv-bar .publish-reason { margin-bottom: 0.5rem; }
+.rv-left { margin-top: 1.5rem; }
+@media (max-width: 760px) {
+  .rv-row { grid-template-columns: minmax(0, 1fr); }
+  .rv-side { grid-column: 1; }
+  .rv-main > .preview { padding: 0.25rem 0; }
+  .rv-bar { margin: 1rem -16px 0; border-radius: 0; border-left: 0; border-right: 0; padding: 0.75rem 16px; }
+  .rv-bar .btn.big { width: 100%; }
+}
 .suggestion-beside { margin: 0.75rem 0; }
+
+/* History: the items a review accepted in its one change, one line each. */
+.accepted-items { list-style: none; margin: 0.25rem 0 0; padding: 0 0 0 1rem; font-size: 0.95rem; }
+.accepted-items li { margin: 0.15rem 0; }
+.review-all .list li { gap: 0.5rem; }
+.review-all select { max-width: 100%; }
