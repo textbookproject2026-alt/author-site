@@ -47,14 +47,60 @@ function answerButton(text, cls, out, working, fn) {
   return b;
 }
 
-/** A proposed edit: View changes, Accept (into the drafts) and Decline (with thanks). `after` runs once answered. */
-export function changeRow(slug, c, titles, after = () => {}) {
-  const out = h("div", { "aria-live": "polite" });
-  const view = h("div", { hidden: true });
-  const answered = (words) => async () => {
+/**
+ * Send one of the choices the function listed for this change (CHOICES in its
+ * lib/author-console.mjs: the action and, for an accept, how), never a name of our own.
+ */
+const choose = (slug, c, choice, extra = {}) =>
+  act(slug, choice.action, { number: c.number, ...(choice.resolve ? { resolve: choice.resolve } : {}), ...extra });
+
+const OUTDATED = "The paragraph has changed since this suggestion was made, so it no longer applies as written.";
+
+/**
+ * The ways to answer a proposed edit, from `choices`. A fresh one: Accept and Decline. One
+ * whose paragraph changed since (`outdated`): Use the suggestion (their change, word by
+ * word, onto the paragraph as it is now), Edit before accepting, Decline as outdated and
+ * Decline with a reason.
+ */
+function answers(slug, c, choices, outdated, out, after) {
+  const answered = (words) => {
     after();
     return words;
   };
+  const decline = choices.decline ? declineButton(out, async (reason) => {
+    await choose(slug, c, choices.decline, { reason });
+    return answered("Declined: your reason is posted, with a note thanking them. It shows as Declined in the book's history.");
+  }) : null;
+  const accept = (choice) => async () => {
+    try {
+      await choose(slug, c, choice, { title: c.title });
+    } catch (err) {
+      // The same words changed on both sides: nothing written; the author chooses.
+      if (err?.status === 409 && err.body?.overlap) return overlapChoice(slug, c, err.body, out, after);
+      throw err;
+    }
+    return answered(outdated
+      ? "Accepted: the reader's change is in the drafts, put into the paragraph as it is now."
+      : "Accepted: it is in the drafts.");
+  };
+  if (!outdated) {
+    return [choices.accept ? answerButton("Accept", "primary", out, "Folding it into the drafts…", accept(choices.accept)) : null, decline];
+  }
+  return [
+    choices.use ? answerButton("Use the suggestion", "primary", out, "Putting their change into the paragraph as it is now…", accept(choices.use)) : null,
+    choices.edit ? answerButton("Edit before accepting", "", out, "Putting in what fits and opening the editor…", () => editBefore(slug, c, choices.edit, after)) : null,
+    choices.decline ? answerButton("Decline as outdated", "", out, "Declining it…", async () => {
+      await choose(slug, c, choices.decline, { reason: OUTDATED });
+      return answered("Declined as outdated: the reader is thanked. It shows as Declined in the book's history.");
+    }) : null,
+    decline,
+  ];
+}
+
+/** A proposed edit: View changes and its answers. `after` runs once answered. */
+export function changeRow(slug, c, titles, after = () => {}) {
+  const out = h("div", { "aria-live": "polite" });
+  const view = h("div", { hidden: true });
   const buttons = h("div", { class: "row" },
     h("button", { type: "button", class: "btn link", text: "View changes", onclick: async () => {
       view.hidden = !view.hidden;
@@ -69,20 +115,7 @@ export function changeRow(slug, c, titles, after = () => {}) {
         clear(view, errorNote(err));
       }
     } }),
-    answerButton("Accept", "primary", out, "Folding it into the drafts…", async () => {
-      try {
-        await act(slug, "change-accept", { number: c.number, title: c.title });
-      } catch (err) {
-        // The paragraph changed under the same words: the author chooses, nothing is an error.
-        if (err?.status === 409 && err.body?.overlap) return overlapChoice(slug, c, err.body, out, after);
-        throw err;
-      }
-      return answered("Accepted: it is in the drafts.")();
-    }),
-    declineButton(out, async (reason) => {
-      await act(slug, "change-decline", { number: c.number, reason });
-      return answered("Declined: your reason is posted, with a note thanking them. It shows as Declined in the book's history.")();
-    }));
+    answers(slug, c, c.choices ?? {}, c.needsLook, out, after));
   return h("li", {},
     h("div", { class: "row" }, h("div", { class: "grow" },
       h("strong", { text: c.title }), h("span", { class: "muted", text: ` — ${c.who}, ${when(c.when)}` }),
@@ -122,30 +155,42 @@ export function threeWay(p) {
 export const openedKey = (slug, path) => `tb-suggestion:${slug}:${path}`;
 
 /**
- * Accept found the paragraph changed since the suggestion was made: refused, nothing
- * written. Taking the suggestion as it is would put back the old wording of whatever
- * changed there since, so the ways on are the editor (current text, the suggestion
- * beside it) and Decline with a comment.
+ * Edit before accepting: their change goes into the drafts where it fits (credited to
+ * them), the drafts' words kept where both changed the same ones, then the editor opens
+ * on that paragraph with what was kept beside it.
+ */
+async function editBefore(slug, c, choice, after) {
+  const r = await choose(slug, c, choice, { title: c.title });
+  after();
+  const at = r.edit;
+  if (!at?.path) return "Accepted: it is in the drafts.";
+  try {
+    sessionStorage.setItem(openedKey(slug, at.path), JSON.stringify({ number: c.number, title: c.title, who: c.who, paragraphs: at.paragraphs ?? [] }));
+  } catch {
+    /* storage blocked: the editor opens without the suggestion beside it */
+  }
+  location.hash = `#/${slug}/edit/${encodeURIComponent(at.path)}${at.line == null ? "" : `/line/${at.line + 1}`}`;
+  return "Opening the editor…";
+}
+
+/**
+ * "Use the suggestion" (or Accept) found the reader and the drafts changed the same words:
+ * refused, nothing written. Old, suggested and now side by side, what Edit before
+ * accepting would start from, and the other ways on (`body.choices`, from the function).
  */
 function overlapChoice(slug, c, body, out, after) {
   const paragraphs = body.overlap.paragraphs ?? [];
-  const first = paragraphs[0];
+  const choices = body.choices ?? {};
+  const merged = paragraphs.filter((p) => p.merged && p.merged !== p.current);
   return note([
     h("p", {}, h("strong", { text: body.userMessage || "This suggestion was made on an older version of this paragraph." })),
+    h("p", { text: "Their change couldn't be put in by itself: you and the reader changed the same words. Nothing was changed." }),
     paragraphs.map(threeWay),
-    h("div", { class: "row" },
-      first?.path ? h("a", { class: "btn primary", href: `#/${slug}/edit/${encodeURIComponent(first.path)}/line/${(first.line ?? 0) + 1}`, text: "Open in editor", onclick: () => {
-        try {
-          sessionStorage.setItem(openedKey(slug, first.path), JSON.stringify({ number: c.number, title: c.title, who: c.who, paragraphs: paragraphs.filter((p) => p.path === first.path) }));
-        } catch {
-          /* storage blocked: the editor opens without the suggestion beside it */
-        }
-      } }) : null,
-      declineButton(out, async (reason) => {
-        await act(slug, "change-decline", { number: c.number, reason });
-        after();
-        return "Declined: your comment is posted, with a note thanking them. It shows as Declined in the book's history.";
-      }, "Decline with comment…")),
+    merged.length ? [
+      h("p", { class: "muted small", text: "Edit before accepting puts in the rest of their change, keeps your words where you both changed them, and opens the paragraph for you to finish:" }),
+      merged.map((p) => h("blockquote", { class: "said" }, words(p.current, p.merged))),
+    ] : null,
+    h("div", { class: "row" }, answers(slug, c, { edit: choices.edit, decline: choices.decline }, true, out, after)),
   ]);
 }
 
