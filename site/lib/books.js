@@ -30,7 +30,7 @@ export async function bookBySlug(slug) {
   return book;
 }
 
-/** "Your books › Title", the book's name, and its tabs: Chapters, Drafts (N), People, Credits, History. */
+/** "Your books › Title", the book's name, and its tabs: Chapters, Drafts (N), People, Credits, History, Settings. */
 export function bookHeader(book, current, title = book.title) {
   const tab = (key, href, text) => h("a", { href, text, "aria-current": key === current ? "page" : null });
   const drafts = tab("drafts", `#/${book.slug}/drafts`, "Drafts");
@@ -49,7 +49,8 @@ export function bookHeader(book, current, title = book.title) {
       drafts,
       tab("people", `#/${book.slug}/people`, "People"),
       tab("credits", `#/${book.slug}/credits`, "Credits"),
-      tab("history", `#/${book.slug}/history`, "History"))),
+      tab("history", `#/${book.slug}/history`, "History"),
+      tab("settings", `#/${book.slug}/settings`, "Settings"))),
   ];
 }
 
