@@ -43,6 +43,8 @@ test("the sign-in limit triggers, stores no IP, and resets the next day", async 
   assert.equal(await signin(env, "203.0.113.7", tomorrow), true);
   // ...and yesterday's salt is deleted, so yesterday's keys can't be linked to the address.
   assert.deepEqual(env.DB.raw.prepare("SELECT day FROM salts").all().map((r) => r.day), [Math.floor(tomorrow / 86_400_000)]);
+  // Yesterday's counts are gone too: only the one just made remains.
+  assert.equal(env.DB.raw.prepare("SELECT count(*) AS n FROM rate").get().n, 1);
   // The salt is shared through D1: another isolate (a reset here) gets the same key.
   testing.resetSalt();
   assert.equal(await ipKey(env, req("203.0.113.7"), tomorrow + HOUR), await ipKey(env, req("203.0.113.7"), tomorrow));
