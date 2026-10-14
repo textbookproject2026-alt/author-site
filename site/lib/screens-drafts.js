@@ -123,7 +123,7 @@ function draftLine(book, it, state) {
       h("div", { class: "grow" },
         it.path && readersPage(it.path) && it.kind !== "removed" && it.kind !== "order" ? h("a", { href: `#/${book.slug}/edit/${encodeURIComponent(it.path)}`, text: itemWords(it) }) : h("span", { text: itemWords(it) }),
         h("div", { class: "muted small", text: [it.who, it.when ? when(it.when) : null].filter(Boolean).join(", ") })),
-      h("button", { type: "button", class: "btn link", text: "View changes", onclick: showChanges }),
+      it.kind === "type" ? null : h("button", { type: "button", class: "btn link", text: "View changes", onclick: showChanges }),
       discard),
     view, out);
 }

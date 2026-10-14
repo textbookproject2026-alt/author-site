@@ -551,6 +551,40 @@ test("drafts: one plain line per chapter, with who and when; View changes; nothi
   await noFileNames();
 });
 
+test("settings: \"This is a…\" shows the book's type (the registry's when index.md has none) and saves a change to the drafts", async () => {
+  await signIn();
+  stub.s.registry = { ...structuredClone(REGISTRY), books: [{ ...REGISTRY.books[0], type: "report" }] };
+  await page.goto(`${origin}/#/a-book/settings`);
+  const pick = page.getByLabel("This is a…");
+  await pick.waitFor();
+  assert.equal(await pick.inputValue(), "report");
+  assert.deepEqual(await pick.locator("option").allInnerTexts(), ["Book", "Paper", "Report", "Article"]);
+  assert.equal(await page.locator("nav.tabs [aria-current=page]").innerText(), "Settings");
+  await Promise.all([page.waitForResponse((r) => r.url().includes("author-send")), pick.selectOption("paper")]);
+  const sent = sends()[0];
+  assert.equal(sent.base, HEAD);
+  assert.equal(sent.message, "Type changed to “Paper”");
+  assert.deepEqual(sent.files.map((f) => f.path), ["index.md"]);
+  assert.equal(sent.files[0].text, "---\nresource_type: paper\n---\n\n" + stub.s.bookFiles.get("index.md").toString("utf8"));
+  await page.getByText("Saved to the drafts. Readers see it when you publish.").waitFor();
+});
+
+test("drafts: a type change is one plain line, apart from the front page; Discard takes it out", async () => {
+  await signIn();
+  const index = stub.s.bookFiles.get("index.md").toString("utf8");
+  stub.s.bookFiles.set("index.md", Buffer.from("---\nresource_type: paper\n---\n\n" + index));
+  await page.goto(`${origin}/#/a-book/drafts`);
+  await page.getByRole("heading", { name: "What's in the drafts (6)" }).waitFor();
+  const line = page.locator("ul.drafts > li").filter({ hasText: "Type changed to “Paper”" });
+  assert.equal(await line.count(), 1);
+  assert.equal(await page.getByText("Edited the front page").count(), 0, "the type alone isn't a front page edit");
+  assert.equal(await line.getByRole("button", { name: "View changes" }).count(), 0);
+  await line.getByRole("button", { name: "Discard" }).click();
+  await Promise.all([page.waitForResponse((r) => r.url().includes("author-send")), page.getByRole("button", { name: "Discard it" }).click()]);
+  assert.equal(sends()[0].message, "Discard: Type changed to “Paper”");
+  assert.equal(sends()[0].files[0].text, index);
+});
+
 test("drafts: Discard puts one line back as readers have it, on the drafts: a removed chapter returns to its place", async () => {
   await signIn();
   await page.goto(`${origin}/#/a-book/drafts`);

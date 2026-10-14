@@ -22,6 +22,7 @@ const SCREENS = [
   ["people", "#/a-book/people"],
   ["credits", "#/a-book/credits"],
   ["history", "#/a-book/history"],
+  ["book settings", "#/a-book/settings"],
   ["history, a declined change open", "#/a-book/history", { setup: async (page) => {
     const d = page.locator("li.declined").first();
     await d.getByRole("button", { name: "Show changes" }).click();

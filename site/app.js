@@ -18,6 +18,7 @@
 //   #/claim/<token>             confirm the email address you'll sign in with
 //   #/<book>/history[/<path>]   the drafts' history, of the book or one page
 //   #/<book>/credits[/<path>]   the book's (or a chapter's) authors and editors
+//   #/<book>/settings           the book's type ("This is a…"), saved to the drafts
 //   #/<book>/revision/<sha>[/<path>]  one change; one page at it, Restore, Bring it back
 //   #/settings                  the author's own DeepSeek key, in this browser
 //   #/signed-in                 where the account is signed in, each with Sign out (batch 2c)
@@ -30,7 +31,7 @@ import { booksScreen, chaptersScreen, chapterScreen } from "./lib/screens-books.
 import { importScreen } from "./lib/screens-import.js";
 import { tidyScreen, tidyAllScreen } from "./lib/screens-tidy.js";
 import { editScreen } from "./lib/screens-edit.js";
-import { settingsScreen } from "./lib/screens-settings.js";
+import { bookSettingsScreen, settingsScreen } from "./lib/screens-settings.js";
 import { peopleScreen } from "./lib/screens-people.js";
 import { historyScreen, revisionScreen } from "./lib/screens-history.js";
 import { creditsScreen } from "./lib/screens-credits.js";
@@ -283,6 +284,7 @@ const ROUTES = [
   [/^([a-z0-9-]+)\/(?:drafts|waiting|publish|change\/\d+)$/, (book) => draftsScreen(book)],
   [/^([a-z0-9-]+)\/suggestion\/(\d+)$/, (book, n) => suggestionScreen(book, Number(n))],
   [/^([a-z0-9-]+)\/people$/, (book) => peopleScreen(book)],
+  [/^([a-z0-9-]+)\/settings$/, (book) => bookSettingsScreen(book)],
   [/^([a-z0-9-]+)\/credits(?:\/(.+))?$/, (book, path) => creditsScreen(book, path ? decodeURIComponent(path) : "")],
   [/^([a-z0-9-]+)\/history(?:\/(.+))?$/, (book, path) => historyScreen(book, path ? decodeURIComponent(path) : "")],
   [/^([a-z0-9-]+)\/revision\/([0-9a-f]{40})(?:\/(.+))?$/, (book, sha, path) => revisionScreen(book, sha, path ? decodeURIComponent(path) : "")],

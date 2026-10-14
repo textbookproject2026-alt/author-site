@@ -11,6 +11,8 @@ import { read } from "./api.js";
 import { rawUrl } from "./books.js";
 import { itemLine, orderLike, outsideContents, parseContents, titleOf, withContentsOf, withItem, withLabel, withoutPath } from "./contents.js";
 import { plural } from "./dom.js";
+import { BOOK_TYPES, ownType, typeOf, withType, withoutType } from "./booktype.js";
+import { registryBook } from "./public.js";
 
 const INDEX = "index.md";
 
@@ -65,6 +67,7 @@ export function itemWords(it) {
   if (it.kind === "removed") return `Removed “${it.title}”`;
   if (it.kind === "order") return "Chapter order changed";
   if (it.kind === "front") return "Edited the front page";
+  if (it.kind === "type") return `Type changed to “${BOOK_TYPES[it.type]}”`;
   if (it.kind === "pictures") return `${plural(it.files.length, "picture")} added or changed`;
   return `Edited “${it.title}”${it.paragraphs ? ` (${plural(it.paragraphs, "paragraph")})` : ""}`;
 }
@@ -77,7 +80,7 @@ export function itemWords(it) {
  */
 export async function draftItems(book, { texts = true } = {}) {
   const d = await read("drafts", { book: book.slug });
-  const [liveIndex, draftsIndex] = await Promise.all([rawText(book.repo, d.live, INDEX), rawText(book.repo, d.drafts, INDEX)]);
+  const [liveIndex, draftsIndex, reg] = await Promise.all([rawText(book.repo, d.live, INDEX), rawText(book.repo, d.drafts, INDEX), registryBook(book.slug)]);
   const titles = titlesFrom(liveIndex, draftsIndex);
   const pages = d.files.filter((f) => f.path !== INDEX && !f.path.startsWith("assets/"));
   const pictures = d.files.filter((f) => f.path.startsWith("assets/"));
@@ -108,7 +111,10 @@ export async function draftItems(book, { texts = true } = {}) {
       const inBoth = (a, b) => a.items.map((i) => i.path).filter((p) => p && b.items.some((j) => j.path === p));
       if (inBoth(lc, dc).join("\n") !== inBoth(dc, lc).join("\n")) items.push({ kind: "order", path: INDEX, title: "Chapter order", who: index.who, when: index.when });
     }
-    if (outsideContents(liveIndex ?? "") !== outsideContents(draftsIndex ?? "")) items.push({ kind: "front", path: INDEX, title: "Front page", who: index.who, when: index.when });
+    // The type (Settings) is its own line; the rest of the front page is "Edited the front page".
+    const [was, now] = [typeOf(liveIndex, reg?.type), typeOf(draftsIndex, reg?.type)];
+    if (was !== now) items.push({ kind: "type", type: now, title: "Type", who: index.who, when: index.when });
+    if (outsideContents(withoutType(liveIndex ?? "")) !== outsideContents(withoutType(draftsIndex ?? ""))) items.push({ kind: "front", path: INDEX, title: "Front page", who: index.who, when: index.when });
   }
   if (pictures.length) {
     const newest = [...pictures].sort((a, b) => String(b.when).localeCompare(String(a.when)))[0];
@@ -163,7 +169,15 @@ export function discardOf(it, state) {
     index = orderLike(dc, lc.items.map((i) => i.path));
   } else if (it.kind === "front") {
     if (state.liveIndex === null) deletes.push(INDEX);
-    else index = withContentsOf(state.liveIndex, state.draftsIndex ?? state.liveIndex);
+    else {
+      // The type is its own line: discarding the front page keeps the drafts' type.
+      const front = withContentsOf(state.liveIndex, state.draftsIndex ?? state.liveIndex);
+      const type = ownType(state.draftsIndex);
+      index = type ? withType(front, type) : withoutType(front);
+    }
+  } else if (it.kind === "type") {
+    const was = ownType(state.liveIndex);
+    index = was ? withType(state.draftsIndex, was) : withoutType(state.draftsIndex);
   } else if (it.kind === "pictures") {
     if (it.files.some((f) => f.status !== "added")) return null;
     deletes.push(...it.files.map((f) => f.path));
