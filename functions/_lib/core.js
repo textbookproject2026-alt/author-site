@@ -151,8 +151,8 @@ export async function allow(env, key, limit, seconds, t = now()) {
 // Rate-limit keys never hold an IP address: HMAC-SHA256(IP, a random salt per UTC day),
 // as the suggest-edit Worker does (its lib/common.mjs hashKey). The salt lives in this
 // site's own D1 (`salts`, migration 0003), so every isolate agrees; the first request
-// of a new day makes the next salt and deletes the days before, so once a day is over
-// its keys can't be tied to an address.
+// of a new day makes the next salt and deletes the days before (and every count whose
+// window is over), so once a day is over its keys can't be tied to an address.
 const hexOf = (bytes) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
 let salted = { day: -1, key: null };
 
@@ -160,8 +160,9 @@ let salted = { day: -1, key: null };
 export async function ipKey(env, request, t = now()) {
   const day = Math.floor(t / DAY);
   if (salted.day !== day) {
-    const [, row] = await env.DB.batch([
+    const [, , row] = await env.DB.batch([
       env.DB.prepare("DELETE FROM salts WHERE day < ?").bind(day),
+      env.DB.prepare("DELETE FROM rate WHERE expires_at < ?").bind(t),
       env.DB.prepare("INSERT INTO salts (day, salt) VALUES (?, ?) ON CONFLICT (day) DO UPDATE SET day = day RETURNING salt")
         .bind(day, hexOf(crypto.getRandomValues(new Uint8Array(32)))),
     ]);
