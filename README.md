@@ -125,6 +125,12 @@ this repository: production branch `main`, build command
 `<branch>.c4n-author-site.pages.dev`, where sign-in works too (the function accepts the
 project's previews). Custom domain: `author.confused4now.org`.
 
+The build applies D1 migrations before anything deploys (`scripts/fetch-converter.mjs`):
+`main` to `c4n-author-members`, every other branch to `c4n-author-members-preview`. A
+failed migration fails the build, so Pages deploys nothing. It needs the Pages secret
+**`CLOUDFLARE_API_TOKEN`** (Account → D1 → Edit), in both Production and Preview;
+without it every build fails.
+
 The modules must reach browsers with `_headers`' `Cache-Control: no-cache`, because the
 site has no build step to put versions in their names. The confused4now.org zone's
 **Browser Cache TTL** (4 hours) overrides that for `.js` and `.css` on the custom
