@@ -90,8 +90,12 @@ export function changeRow(slug, c, titles, after = () => {}) {
     view, out);
 }
 
+/** A reader's suggestion: word by word against the text it started from, when the issue has it. */
+export const suggested = (s) => h("blockquote", { class: "said" },
+  s.original && s.suggestion ? words(s.original, s.suggestion) : s.suggestion || "(nothing written)");
+
 /** Old words struck, new ones underlined: `from` → `to`, word by word. */
-function words(from, to) {
+export function words(from, to) {
   // Runs of one kind together, so "a Word file." is one insertion, not five.
   const runs = [];
   for (const o of diff(tokens(from), tokens(to))) {
@@ -165,7 +169,7 @@ export function writtenRow(slug, s, after = () => {}) {
   return h("li", {},
     h("div", { class: "row" },
       h("div", { class: "grow" },
-        h("blockquote", { class: "said", text: s.suggestion || "(nothing written)" }),
+        suggested(s),
         h("span", { class: "muted small", text: `${s.who}, ${when(s.when)}` })),
       buttons),
     out);
