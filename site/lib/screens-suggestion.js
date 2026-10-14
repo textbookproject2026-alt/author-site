@@ -9,6 +9,7 @@ import { bookBySlug, bookHeader, pageSlug } from "./books.js";
 import { sentView } from "./screens-shared.js";
 import { declineButton } from "./decline.js";
 import { renderOps } from "./diff.js";
+import { suggested } from "./suggestions.js";
 
 /** A button that runs `fn`, showing progress and then what happened in `out`. */
 function doButton(text, cls, out, fn) {
@@ -90,7 +91,7 @@ export async function suggestionScreen(slug, number) {
       onSite ? h("a", { href: onSite, target: "_blank", rel: "noopener", text: "this page" }) : "a page", ".",
       s.accepted ? [" ", h("span", { class: "badge accepted", text: "Accepted" })] : null),
     h("h2", { text: "What they suggest" }),
-    h("blockquote", { class: "said", text: s.suggestion || "(nothing written)" }),
+    suggested(s),
     s.reasoning ? [h("h3", { text: "Why" }), h("blockquote", { class: "said", text: s.reasoning })] : null,
     s.accepted
       ? note([h("p", { text: "You've taken this on, and the reader has been thanked. Once the change is in the drafts area (made with Edit on the page, say), press “I've made the change”." })])

@@ -1172,3 +1172,13 @@ test("a new-browser alert's link: opening it changes nothing; its button signs o
   await page.reload();
   await page.getByRole("heading", { name: "This link has expired" }).waitFor();
 });
+
+test("suggestion: a rewritten paragraph shows word by word against the text it started from", async () => {
+  await signIn();
+  stub.s.suggestions[1] = { ...stub.s.suggestions[1], original: "The domains are three.", suggestion: "The domains are four." };
+  await page.goto(`${origin}/#/a-book/suggestion/8`);
+  const said = page.locator("blockquote.said").first();
+  await said.locator("del", { hasText: "three." }).waitFor();
+  assert.match(await said.locator("ins").textContent(), /four\./);
+  assert.match(await said.textContent(), /^The domains are /);
+});
