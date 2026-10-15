@@ -1333,6 +1333,8 @@ test("review: the popover's title opens the proposal's own page; Back returns to
 });
 
 test("review typography is the book site's (remark-smartypants): curly quotes, -- as an em dash, ... as an ellipsis; code left alone", async () => {
+  const cdn = [];
+  page.on("request", (r) => /cdn\.jsdelivr\.net/.test(r.url()) && cdn.push(r.url()));
   await signIn();
   const out = await page.evaluate(async () => {
     const { smarten } = await import("/lib/screens-review.js");
@@ -1341,7 +1343,13 @@ test("review typography is the book site's (remark-smartypants): curly quotes, -
     await smarten([div]);
     return [div.querySelector("p").textContent, div.querySelector("h2").textContent];
   });
-  assert.deepEqual(out, ["“Quoted” words, the Human—Environment link… it’s the ’80s; “emphasis” a--b \"c\"", "“Heading”"]);
+  // A heading doesn't start the text afresh in remark-smartypants 3.0.2 (the book site's), so
+  // its opening quote follows the paragraph's last character, as the book shows it.
+  assert.deepEqual(out, ["“Quoted” words, the Human—Environment link… it’s the ’80s; “emphasis” a--b \"c\"", out[1]]);
+  assert.match(out[1], /^[“”]Heading”$/);
+  // From this site: nothing from jsDelivr for it.
+  assert.deepEqual(cdn, []);
+  assert.ok(await page.evaluate(() => performance.getEntriesByType("resource").some((e) => e.name.endsWith("/vendor/smartypants.js"))));
 });
 
 test("review: a chapter with nothing to tick — one plain line, no bar, no red warning", async () => {

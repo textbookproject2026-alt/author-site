@@ -328,26 +328,32 @@ const marked = (tag, label, text) => {
 
 // --- typography, as the book site's -----------------------------------------------------------
 
-// The book site (quartz-book's GitHub-flavoured-markdown plugin) runs remark-smartypants
-// 3 with its defaults: curly quotes and apostrophes, "--" as an em dash, "..." as an
-// ellipsis, ``these'' as quotes. The same libraries, pinned, from jsDelivr (the site's CSP
-// allows it); if they can't be had, the text stays as typed.
-const SMARTY = ["https://cdn.jsdelivr.net/npm/retext@9.0.0/+esm", "https://cdn.jsdelivr.net/npm/retext-smartypants@6.2.0/+esm"];
+// The book site (quartz-book's GitHub-flavoured-markdown plugin, quartz-community
+// github-flavored-markdown 3eabbaa) runs remark-smartypants 3.0.2 with its defaults:
+// curly quotes and apostrophes, "--" as an em dash, "..." as an ellipsis, ``these'' as
+// quotes. Its libraries, at the same versions, are bundled into this site
+// (site/vendor/smartypants.js, scripts/vendor-smartypants.mjs); if the module can't be
+// had, the text stays as typed.
 let smarty = null;
-const smartypants = () => (smarty ??= Promise.all(SMARTY.map((u) => import(u)))
-  .then(([{ retext }, { default: sp }]) => ({
+const smartypants = () => (smarty ??= import("../vendor/smartypants.js")
+  .then(({ retext, smartypants: sp }) => ({
     // As remark-smartypants: quotes first over all the text (lengths kept), the rest per text node.
     quotes: retext().use(sp, { ellipses: false, dashes: false, backticks: false }),
     rest: retext().use(sp, { quotes: false }),
   }))
   .catch(() => null));
-const SMART_BLOCKS = new Set(["P", "H1", "H2", "H3", "H4", "H5", "H6", "TD", "TH"]);
+/**
+ * Where remark-smartypants 3.0.2 starts the text afresh (a space before it): a paragraph,
+ * which a list item written without blank lines also is in its Markdown. Not headings or
+ * table cells (3.0.3 added those; the book site has 3.0.2).
+ */
+const freshStart = (el) => el.nodeName === "P" || (el.nodeName === "LI" && !Array.from(el.children).some((c) => c.nodeName === "P"));
 
 /**
  * remark-smartypants on rendered HTML: every text node under `roots`, in order, joined
- * into one string (a space at the start of each paragraph, heading and table cell, inline
- * code as "A"s), its quotes made curly; then each node's own dashes, ellipses and
- * backticks. Code, and this page's own labels and buttons, are left alone.
+ * into one string (a space at the start of each paragraph, inline code as "A"s), its
+ * quotes made curly; then each node's own dashes, ellipses and backticks. Code, and this
+ * page's own labels and buttons, are left alone.
  */
 export async function smarten(roots) {
   const p = await smartypants();
@@ -365,7 +371,7 @@ export async function smarten(roots) {
           all += "A".repeat(c.textContent.length);
           continue;
         }
-        if (SMART_BLOCKS.has(c.nodeName)) all += " ";
+        if (freshStart(c)) all += " ";
         walk(c);
       }
     }

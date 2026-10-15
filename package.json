@@ -7,9 +7,34 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test --test-concurrency=1 test/*.test.mjs"
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
+    "vendor": "node scripts/vendor-smartypants.mjs"
   },
   "devDependencies": {
-    "playwright-core": "1.63.0"
+    "playwright-core": "1.63.0",
+    "esbuild": "0.25.10",
+    "retext": "9.0.0",
+    "retext-smartypants": "6.2.0"
+  },
+  "overrides": {
+    "array-iterate": "2.0.1",
+    "bail": "2.0.2",
+    "devlop": "1.1.0",
+    "extend": "3.0.2",
+    "is-plain-obj": "4.1.0",
+    "nlcst-to-string": "4.0.0",
+    "parse-latin": "7.0.0",
+    "retext-latin": "4.0.0",
+    "retext-stringify": "4.0.0",
+    "trough": "2.2.0",
+    "unified": "11.0.5",
+    "unist-util-is": "6.0.1",
+    "unist-util-modify-children": "4.0.0",
+    "unist-util-stringify-position": "4.0.0",
+    "unist-util-visit": "5.1.0",
+    "unist-util-visit-children": "3.0.0",
+    "unist-util-visit-parents": "6.0.2",
+    "vfile": "6.0.3",
+    "vfile-message": "4.0.3"
   }
 }
