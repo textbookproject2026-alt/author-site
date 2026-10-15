@@ -22,3 +22,12 @@ test("removed and added lines paired, only the changed words marked, neighbours 
   assert.deepEqual(add.words, [{ v: "a ", changed: false }, { v: "x y", changed: true }, { v: " c", changed: false }]);
   assert.deepEqual(extra, { t: "+", words: [{ v: "New.", changed: true }] });
 });
+
+test("review edits read as track changes: changes one word apart are one struck run and one inserted run", async () => {
+  globalThis.document ??= { createTextNode: () => null }; // screens-review imports the DOM helpers; editRuns needs none
+  const { editRuns } = await import("../site/lib/screens-review.js");
+  assert.deepEqual(editRuns("Roots open channels in the ground, and worms", "Roots open channels that let air and water in, and worms"), [
+    { eq: "Roots open channels " }, { del: "in the ground,", ins: "that let air and water in," }, { eq: " and worms" },
+  ]);
+  assert.deepEqual(editRuns("a b c d e", "a x c d y"), [{ eq: "a " }, { del: "b", ins: "x" }, { eq: " c d " }, { del: "e", ins: "y" }]);
+});
