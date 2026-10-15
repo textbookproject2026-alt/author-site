@@ -151,7 +151,11 @@ export async function historyScreen(slug, path = "") {
       h("div", { class: "row" },
         h("a", { class: "grow", href: `#/${slug}/revision/${c.sha}${path ? `/${enc(path)}` : ""}` },
           h("strong", { text: said(c.message, titles) }), ` — ${c.who}, ${when(c.when)}`),
-        marker(c)))));
+        marker(c)),
+      // A review's one change: each item it accepted, on its own line.
+      c.accepted?.length ? h("ul", { class: "accepted-items" }, c.accepted.map((a) => h("li", {},
+        h("span", { class: "badge accepted", text: "Accepted" }), " ",
+        `#${a.number} ${a.kind === "edit" ? `proposed edit${a.title ? ` “${a.title}”` : ""}` : "suggestion"} — ${a.who}${a.part ? ` (${a.part} changes)` : ""}`))) : null)));
     if (!next) return void clear(more);
     const older = h("button", { type: "button", class: "btn", text: "Show older changes" });
     older.addEventListener("click", async () => {

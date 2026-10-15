@@ -64,6 +64,7 @@ function readerSuggestions(book, changes, suggestions, titles) {
     h("h2", { text: "Reader suggestions" }),
     changes.error ? errorNote(changes.error) : null,
     suggestions.error ? couldntLoad() : null,
+    reviewAll(slug, [...(list ?? []), ...written], titles),
     list?.length ? [h("p", { class: "muted small", text: "Edits readers proposed on the book's site. Accept puts one into the drafts; Decline closes it with a note thanking them." }), h("ul", { class: "list" }, list.map((c) => changeRow(slug, c, titles, () => setTimeout(reload, 1200))))] : null,
     written.length ? [
       h("h3", { text: "Written suggestions" }),
@@ -73,6 +74,26 @@ function readerSuggestions(book, changes, suggestions, titles) {
         s.accepted ? h("span", { class: "badge accepted", text: "Accepted" }) : null))),
     ] : null,
   ];
+}
+
+/**
+ * "Review all in chapter" for each chapter with something waiting on it (proposed edits,
+ * suggestions and notes), and a picker for the same: #/<book>/review/<path>.
+ */
+function reviewAll(slug, items, titles) {
+  const counts = new Map();
+  for (const it of items) if (it.path && readersPage(it.path)) counts.set(it.path, (counts.get(it.path) ?? 0) + 1);
+  if (!counts.size) return null;
+  const paths = [...counts.keys()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const href = (p) => `#/${slug}/review/${encodeURIComponent(p)}`;
+  const pick = h("select", { id: "review-pick", "aria-label": "Chapter to review" }, paths.map((p) => h("option", { value: p, text: `${titles.get(p)} (${counts.get(p)})` })));
+  return h("section", { class: "review-all", "aria-label": "Review all in a chapter" },
+    h("p", { class: "muted small", text: "See a chapter with every suggestion waiting on it put in place, tick the ones you want, and accept them together." }),
+    h("ul", { class: "list" }, paths.map((p) => h("li", { class: "row" },
+      h("span", { class: "grow" }, h("strong", { text: titles.get(p) }), h("span", { class: "muted small", text: ` — ${plural(counts.get(p), "suggestion")} waiting` })),
+      h("a", { class: "btn", href: href(p), text: "Review all in chapter" })))),
+    paths.length > 1 ? h("div", { class: "row" }, h("label", { for: "review-pick", text: "Or pick a chapter:" }), pick,
+      h("button", { type: "button", class: "btn", text: "Review", onclick: () => { location.hash = href(pick.value); } })) : null);
 }
 
 /** In place of a list that couldn't be had: say so, with Try again. */

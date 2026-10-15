@@ -19,6 +19,9 @@ export const CHOICES = {
 };
 
 export const API = "https://api.confused4now.org/api/";
+// Review all in chapter: views built by suggest-edit-function's lib/review.mjs (buildReview) on a
+// sample chapter; `moved` is the same after a second tab saved (author-act review-accept's 409).
+export const REVIEW = JSON.parse(readFileSync(new URL("./fixtures/review.json", import.meta.url), "utf8"));
 export const REPO = "someone/a-book";
 export const HEAD = "a".repeat(40);
 export const MOVED = "b".repeat(40);
@@ -106,6 +109,8 @@ export function createStub({ siteOrigin }) {
     own: [], // calls to the site's own endpoints: { path, method, body, header }
     peopleAnswers: [], // successive answers for author-people-change: [status, body]
     acceptAnswers: [], // successive answers for author-act change-accept: [status, body]
+    review: REVIEW.view, // what=review, read in parts as on the Worker: the page, then each proposal
+    reviewAnswers: [], // successive answers for author-act review-accept: [status, body]
     // author-history: 31 commits on drafts, the newest 2 still waiting; page 2 is the oldest.
     history: Array.from({ length: 31 }, (_, i) => ({
       sha: (i + 1).toString(16).padStart(40, "e"), who: i === 0 ? "author-one" : "co-author",
@@ -253,6 +258,16 @@ export function createStub({ siteOrigin }) {
         return json(route, 200, { suggestions: s.suggestions });
       }
       if (what === "suggestion-changes") return json(route, 200, { page: "chapter-01", changes: [{ sha: SENT, url: `https://github.com/${REPO}/commit/${SENT}`, who: "author-one", when: new Date().toISOString(), message: "Reword" }] });
+      if (what === "review") {
+        const v = s.review;
+        const n = url.searchParams.get("number");
+        const edit = (i) => i.kind === "edit";
+        if (n) {
+          const it = v.items.find((i) => edit(i) && i.number === Number(n));
+          return json(route, 200, { path: v.path, drafts: v.drafts, paragraphs: v.paragraphs, items: [it], hunks: v.hunks.filter((x) => x.item === it.key), notes: [] });
+        }
+        return json(route, 200, { ...v, items: v.items.map((i) => (edit(i) ? { ...i, hunks: [], deferred: true } : i)), hunks: v.hunks.filter((x) => !x.item.startsWith("p")) });
+      }
       if (what === "changes") return json(route, 200, { changes: s.changes });
       if (what === "change") return json(route, 200, s.change);
       if (what === "lint") {
@@ -317,6 +332,19 @@ export function createStub({ siteOrigin }) {
     }
     if (endpoint === "author-act") {
       if (body.action === "change-accept" && s.acceptAnswers.length) return json(route, ...s.acceptAnswers.shift());
+      if (body.action === "review-accept") {
+        if (s.reviewAnswers.length) return json(route, ...s.reviewAnswers.shift());
+        const v = s.review;
+        const byKey = new Map(v.items.map((i) => [i.key, i]));
+        const per = new Map();
+        for (const id of body.hunks) {
+          const x = v.hunks.find((y) => y.id === id);
+          per.set(x.item, [...(per.get(x.item) ?? []), id]);
+        }
+        return json(route, 200, { done: true, sha: SENT, url: `https://github.com/${REPO}/commit/${SENT}`,
+          accepted: [...per].map(([key, hunks]) => ({ key, number: byKey.get(key).number, all: hunks.length === byKey.get(key).hunks.length, hunks })),
+          steps: [`${body.hunks.length} changes from ${per.size} reader items went into the drafts as one change.`] });
+      }
       const item = s.declined.find((d) => d.number === body.number);
       if (body.action === "comment-add") {
         const id = 900 + item.comments.length;

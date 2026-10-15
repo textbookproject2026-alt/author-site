@@ -65,6 +65,14 @@ window.addEventListener("hashchange", () => {
 /** The suggestion this editor was opened for (Edit before accepting): what was kept, beside the text. */
 function suggestionBeside(s) {
   const kept = s.paragraphs ?? [];
+  // From the review's Still to decide: nothing accepted yet.
+  if (s.review) {
+    return h("section", { class: "card suggestion-beside", "aria-label": "The reader's suggestion" },
+      h("h2", { class: "small-heading", text: `${s.title || "A reader's suggestion"} — ${s.who || "a reader"}` }),
+      h("p", { class: "muted small", text: "Not accepted. What they suggested is below: make any of it in the box if you want it (it is saved as you type), then decide on the suggestion under Drafts." }),
+      s.note ? h("blockquote", { class: "said", text: s.note }) : null,
+      kept.map(threeWay));
+  }
   return h("section", { class: "card suggestion-beside", "aria-label": "The reader's suggestion" },
     h("h2", { class: "small-heading", text: `${s.title || "A reader's suggestion"} — ${s.who || "a reader"}` }),
     h("p", { class: "muted small", text: kept.length
