@@ -17,11 +17,12 @@
     "number": 21,
     "who": "Jo Reader",
     "title": "Tighten the soil chapter",
+    "summary": "Small fixes to wording through the chapter.",
     "url": "https://github.com/someone/a-book/pull/21",
     "hunks": [
      "p21-c4sgo1",
      "p21-yyge7x",
-     "p21-wyy2li"
+     "p21-wyy2li-old"
     ]
    },
    {
@@ -30,6 +31,7 @@
     "number": 22,
     "who": "Sam Lee",
     "title": "Clay and sand",
+    "summary": "Clearer contrast between clay and sand.",
     "url": "https://github.com/someone/a-book/pull/22",
     "hunks": [
      "p22-vffdtv"
@@ -41,6 +43,7 @@
     "number": 23,
     "who": "Ann Smith",
     "title": "Testing",
+    "summary": "",
     "url": "https://github.com/someone/a-book/pull/23",
     "hunks": [
      "p23-20vndj"
@@ -52,6 +55,7 @@
     "number": 31,
     "who": "Ada",
     "title": "layers known as horizons",
+    "summary": "The usual term.",
     "url": "https://github.com/someone/a-book/issues/31",
     "hunks": [
      "i31"
@@ -63,7 +67,19 @@
     "number": 32,
     "who": "Grace",
     "title": "Which farmers? A source would help here.",
+    "summary": "",
     "url": "https://github.com/someone/a-book/issues/32",
+    "hunks": [],
+    "why": "a note to the authors"
+   },
+   {
+    "key": "i33",
+    "kind": "note",
+    "number": 33,
+    "who": "Lin",
+    "title": "A diagram of a soil profile would help the whole chapter.",
+    "summary": "",
+    "url": "https://github.com/someone/a-book/issues/33",
     "hunks": [],
     "why": "a note to the authors"
    }
@@ -90,10 +106,12 @@
     ]
    },
    {
-    "id": "p21-wyy2li",
+    "id": "p21-wyy2li-old",
     "item": "p21",
     "at": 5,
-    "end": 5,
+    "end": 6,
+    "from": "Erosion can carry off topsoil in a single storm.\n",
+    "to": "Erosion can strip topsoil in one storm.\n",
     "stale": [
      {
       "line": 10,
@@ -102,7 +120,8 @@
       "suggested": "Erosion can strip topsoil in one storm.",
       "merged": "Erosion can carry off topsoil in one storm."
      }
-    ]
+    ],
+    "overlaps": []
    },
    {
     "id": "p22-vffdtv",
@@ -139,6 +158,11 @@
     "item": "i32",
     "at": 4,
     "text": "Which farmers? A source would help here."
+   },
+   {
+    "item": "i33",
+    "at": -1,
+    "text": "A diagram of a soil profile would help the whole chapter."
    }
   ]
  },
@@ -160,11 +184,12 @@
     "number": 21,
     "who": "Jo Reader",
     "title": "Tighten the soil chapter",
+    "summary": "Small fixes to wording through the chapter.",
     "url": "https://github.com/someone/a-book/pull/21",
     "hunks": [
-     "p21-c4sgo1",
+     "p21-c4sgo1-old",
      "p21-yyge7x",
-     "p21-wyy2li"
+     "p21-wyy2li-old"
     ]
    },
    {
@@ -173,6 +198,7 @@
     "number": 22,
     "who": "Sam Lee",
     "title": "Clay and sand",
+    "summary": "Clearer contrast between clay and sand.",
     "url": "https://github.com/someone/a-book/pull/22",
     "hunks": [
      "p22-vffdtv"
@@ -184,6 +210,7 @@
     "number": 23,
     "who": "Ann Smith",
     "title": "Testing",
+    "summary": "",
     "url": "https://github.com/someone/a-book/pull/23",
     "hunks": [
      "p23-20vndj"
@@ -195,6 +222,7 @@
     "number": 31,
     "who": "Ada",
     "title": "layers known as horizons",
+    "summary": "The usual term.",
     "url": "https://github.com/someone/a-book/issues/31",
     "hunks": [
      "i31"
@@ -206,17 +234,31 @@
     "number": 32,
     "who": "Grace",
     "title": "Which farmers? A source would help here.",
+    "summary": "",
     "url": "https://github.com/someone/a-book/issues/32",
+    "hunks": [],
+    "why": "a note to the authors"
+   },
+   {
+    "key": "i33",
+    "kind": "note",
+    "number": 33,
+    "who": "Lin",
+    "title": "A diagram of a soil profile would help the whole chapter.",
+    "summary": "",
+    "url": "https://github.com/someone/a-book/issues/33",
     "hunks": [],
     "why": "a note to the authors"
    }
   ],
   "hunks": [
    {
-    "id": "p21-c4sgo1",
+    "id": "p21-c4sgo1-old",
     "item": "p21",
     "at": 1,
-    "end": 1,
+    "end": 2,
+    "from": "Soil forms quite slowly from weathered rock and living things.\n\n",
+    "to": "Soil forms very slowly from weathered rock and living things.\n\n",
     "stale": [
      {
       "line": 2,
@@ -225,7 +267,8 @@
       "suggested": "Soil forms very slowly from weathered rock and living things.",
       "merged": "Soil forms quite slowly from weathered rock and living things."
      }
-    ]
+    ],
+    "overlaps": []
    },
    {
     "id": "p21-yyge7x",
@@ -239,10 +282,12 @@
     ]
    },
    {
-    "id": "p21-wyy2li",
+    "id": "p21-wyy2li-old",
     "item": "p21",
     "at": 5,
-    "end": 5,
+    "end": 6,
+    "from": "Erosion can carry off topsoil in a single storm.\n",
+    "to": "Erosion can strip topsoil in one storm.\n",
     "stale": [
      {
       "line": 10,
@@ -251,7 +296,8 @@
       "suggested": "Erosion can strip topsoil in one storm.",
       "merged": "Erosion can carry off topsoil in one storm."
      }
-    ]
+    ],
+    "overlaps": []
    },
    {
     "id": "p22-vffdtv",
@@ -288,6 +334,11 @@
     "item": "i32",
     "at": 4,
     "text": "Which farmers? A source would help here."
+   },
+   {
+    "item": "i33",
+    "at": -1,
+    "text": "A diagram of a soil profile would help the whole chapter."
    }
   ]
  }
