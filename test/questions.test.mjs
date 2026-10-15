@@ -1,6 +1,6 @@
 // The link and glossary questions, and a suggestion's exact replacement: the
 // converter's own Python (site/py/, from scripts/fetch-converter.mjs) run in headless
-// Chromium by the real Pyodide from jsDelivr, on a real little book
+// Chromium by the real Pyodide (site/vendor/pyodide/), on a real little book
 // (test/fixtures/book), under the site's CSP.
 //
 // The same answers are then given to the same Python on this machine

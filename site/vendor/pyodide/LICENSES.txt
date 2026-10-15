@@ -1,0 +1,2 @@
+pyodide@314.0.7 (MPL-2.0): pyodide.mjs, pyodide.asm.mjs, pyodide.asm.wasm, python_stdlib.zip, pyodide-lock.json, as npm ships them.
+Mozilla Public License 2.0, https://mozilla.org/MPL/2.0/ (the package has no licence file of its own; source: git+https://github.com/pyodide/pyodide.git). Python's standard library (python_stdlib.zip) is under the PSF License, https://docs.python.org/3/license.html.

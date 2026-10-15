@@ -15,7 +15,8 @@ import { forgetCount, titlesFrom } from "./drafts.js";
 import { peopleOf, problemsOf, withPeople } from "./credits.js";
 import { platformFeatures } from "./public.js";
 
-const JS_YAML = "https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/+esm";
+// js-yaml 4.1.0, kept in this site (site/vendor/, scripts/vendor.mjs).
+const JS_YAML = "../vendor/js-yaml.js";
 let yamlLib = null;
 const yaml = () => (yamlLib ??= import(JS_YAML));
 
