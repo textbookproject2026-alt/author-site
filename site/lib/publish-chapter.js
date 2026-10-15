@@ -20,16 +20,20 @@ export const timing = { pollMs: 4000, deadlineMs: 6 * 60_000 };
 const fixList = (book, path, problems) => h("ul", {}, problems.map((x) => h("li", {},
   `Line ${x.line}: ${x.words} `, h("a", { href: `#/${book.slug}/edit/${encodeURIComponent(path)}/line/${x.line}`, text: "Fix" }))));
 
-/** The button, and where it says what happened. */
-export function publishChapterButton(book, path, title) {
-  const out = h("div", { "aria-live": "polite" });
-  const b = h("button", { type: "button", class: "btn", text: "Publish this chapter" });
+/**
+ * The button, and where it says what happened. `path` null: the rest of the book (the
+ * function's publish-rest). -> { button, out }, or with `wrap`, both in one element.
+ */
+export function publishChapterButton(book, path, title, { label = "Publish this chapter", primary = false, wrap = true } = {}) {
+  const out = h("div", { class: "publish-out", "aria-live": "polite" });
+  const b = h("button", { type: "button", class: primary ? "btn primary" : "btn", text: label });
   b.addEventListener("click", () => publish(book, path, title, b, out));
-  return h("div", { class: "publish-chapter" }, b, out);
+  return wrap ? h("div", { class: "publish-chapter" }, b, out) : { button: b, out };
 }
 
 async function publish(book, path, title, b, out) {
   b.disabled = true;
+  if (!path) return send();
   clear(out, busy("Checking the chapter's formatting…"));
   try {
     const problems = await lintText(book, book.drafts_branch, path, await rawText(book.repo, book.drafts_branch, path));
@@ -49,13 +53,13 @@ async function publish(book, path, title, b, out) {
   async function send(linked) {
     clear(out, busy("Publishing… this can take up to a minute."));
     try {
-      const r = await act(book.slug, "publish-chapter", { path, ...(linked ? { linked } : {}) });
+      const r = await act(book.slug, path ? "publish-chapter" : "publish-rest", { ...(path ? { path } : {}), ...(linked ? { linked } : {}) });
       watch(r, linked === "without" ? r.linkedLeft ?? [] : []);
     } catch (err) {
       if (err?.status === 409 && err.body?.linked) {
         const list = err.body.linked;
         clear(out, note([
-          h("p", { text: `“${title}” links to ${list.length === 1 ? "a page" : `${list.length} pages`} the live book hasn't got yet:` }),
+          h("p", { text: `${path ? `“${title}”` : "The rest of the book"} links to ${list.length === 1 ? "a page" : `${list.length} pages`} the live book hasn't got yet:` }),
           h("ul", {}, list.map((l) => h("li", { text: `${l.title} (${l.why})` }))),
           h("div", { class: "row" },
             h("button", { type: "button", class: "btn primary", text: "Publish these too", onclick: () => send("with") }),
@@ -85,7 +89,7 @@ async function publish(book, path, title, b, out) {
         forgetCount(book.slug);
         clear(out, note([
           h("p", { text: `Published “${r.title}”. The site rebuilds: readers see it in about 3 minutes.` }),
-          book.domain ? h("p", {}, h("a", { href: `https://${book.domain}/${pageSlug(path)}`, target: "_blank", rel: "noopener", text: "Open it on the book's site" })) : null,
+          book.domain ? h("p", {}, h("a", { href: `https://${book.domain}/${path ? pageSlug(path) : ""}`, target: "_blank", rel: "noopener", text: "Open it on the book's site" })) : null,
         ]), broken);
         return;
       }

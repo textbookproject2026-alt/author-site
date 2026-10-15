@@ -2,7 +2,7 @@
 // invite and remove, as before. Changes take effect at once; the registry, the
 // public record, follows in the background (_lib/sync.js).
 //
-// GET  /api/members?book=<slug> -> { members: [{ id, name, hasEmail, you }],
+// GET  /api/members?book=<slug> -> { members: [{ id, name, hasEmail, you, github }],
 //        invitations: [{ name, email, expires }], log: [{ at, text }], sync? }
 // POST /api/members { book, action: "invite", name, email, send }  -> { mailed, link? }
 // POST /api/members { book, action: "remove", member }
@@ -35,13 +35,14 @@ export async function onRequestGet({ request, env }) {
   if (error) return error;
   const [{ results: members }, { results: invites }, { results: log }] = await Promise.all([
     env.DB.prepare(
-      "SELECT m.id, m.display_name, m.email IS NOT NULL AS has_email FROM book_members b JOIN members m ON m.id = b.member_id WHERE b.book = ? ORDER BY m.display_name COLLATE NOCASE",
+      "SELECT m.id, m.display_name, m.github, m.email IS NOT NULL AS has_email FROM book_members b JOIN members m ON m.id = b.member_id WHERE b.book = ? ORDER BY m.display_name COLLATE NOCASE",
     ).bind(book).all(),
     env.DB.prepare("SELECT name, email, expires_at FROM links WHERE kind = 'invite' AND book = ? AND used_at IS NULL AND expires_at > ? ORDER BY created_at DESC").bind(book, now()).all(),
     env.DB.prepare("SELECT at, actor_name, action, subject_name FROM audit WHERE book = ? ORDER BY at DESC, id DESC LIMIT 30").bind(book).all(),
   ]);
   return json({
-    members: members.map((m) => ({ id: m.id, name: m.display_name, hasEmail: !!m.has_email, you: m.id === s.member.id })),
+    // github: so Drafts can say who made a change GitHub knows only by login (never shown).
+    members: members.map((m) => ({ id: m.id, name: m.display_name, hasEmail: !!m.has_email, you: m.id === s.member.id, github: m.github ?? null })),
     invitations: invites.map((i) => ({ name: i.name, email: i.email, expires: i.expires_at })),
     log: log.map((r) => ({ at: r.at, text: logLine(r) })),
     ...(isMaintainer(env, s.member) ? { sync: await syncStatus(env, book) } : {}),

@@ -89,7 +89,7 @@ export function createStub({ siteOrigin }) {
     session: false,
     me: { id: "a1a1a1a1a1", name: "Author One", email: "author-one@example.org", github: null, notify: true, maintainer: false },
     members: [
-      { id: "a1a1a1a1a1", name: "Author One", hasEmail: true, you: true },
+      { id: "a1a1a1a1a1", name: "Author One", hasEmail: true, you: true, github: "author-one" },
       { id: "c2c2c2c2c2", name: "Co Author", hasEmail: true, you: false },
       { id: "b3b3b3b3b3", name: "Brandon", hasEmail: false, you: false },
     ],
@@ -289,9 +289,10 @@ export function createStub({ siteOrigin }) {
           const a = s.liveFiles.get(path);
           const b = s.bookFiles.get(path);
           if (a && b && a.equals(b)) return [];
-          return [{ path, status: !a ? "added" : !b ? "removed" : "modified", who: "author-one", when: new Date(Date.now() - 600e3).toISOString() }];
+          // As the function says who: a login, for this site to name (members' github).
+          return [{ path, status: !a ? "added" : !b ? "removed" : "modified", who: null, login: "author-one", when: new Date(Date.now() - 600e3).toISOString() }];
         });
-        if (s.tree.files.some((f) => f.path === "assets/chapter-04/image1.png")) files.push({ path: "assets/chapter-04/image1.png", status: "added", who: "author-one", when: new Date().toISOString() });
+        if (s.tree.files.some((f) => f.path === "assets/chapter-04/image1.png")) files.push({ path: "assets/chapter-04/image1.png", status: "added", who: "Author One", when: new Date().toISOString() });
         return json(route, 200, { live: LIVE, drafts: s.tree.head, files, more: 0 });
       }
     }
@@ -350,6 +351,10 @@ export function createStub({ siteOrigin }) {
       }
       // One chapter to the live book (suggest-edit-function lib/publish-chapter.mjs): answers
       // queued in publishChapterAnswers ([status, body]), else a pull request that merges itself.
+      if (body.action === "publish-rest") {
+        if (s.publishChapterAnswers.length) return json(route, ...s.publishChapterAnswers.shift());
+        return json(route, 200, { done: true, number: 171, url: `https://github.com/${REPO}/pull/171`, title: "The rest of the book", autoMerge: true, linkedLeft: [], steps: [] });
+      }
       if (body.action === "publish-chapter") {
         if (s.publishChapterAnswers.length) return json(route, ...s.publishChapterAnswers.shift());
         return json(route, 200, { done: true, number: 170, url: `https://github.com/${REPO}/pull/170`, title: "Chapter 1", autoMerge: true, linkedLeft: [], steps: ["Chapter 1 goes live once the book's checks pass."] });

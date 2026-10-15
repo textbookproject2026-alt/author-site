@@ -29,10 +29,17 @@ const SCREENS = [
     await d.getByRole("button", { name: "Add a comment" }).click();
     await page.getByText("The proposed opening.").waitFor();
   } }],
-  ["drafts, declining", "#/a-book/drafts", { setup: async (page) => {
+  ["drafts, a row's ⋯ and its changes open", "#/a-book/drafts", { setup: async (page) => {
+    const row = page.locator('.drafts-row[data-row="chapters/chapter-01.md"]');
+    await row.locator(".more-menu > summary").click();
+    await row.getByRole("menuitem", { name: "View changes" }).click();
+    await row.locator(".diff").first().waitFor();
+  } }],
+  ["editor, declining a reader's proposal", `#/a-book/edit/${encodeURIComponent("chapters/chapter-02.md")}`, { setup: async (page) => {
     await page.locator("li", { hasText: "Fix a typo" }).getByRole("button", { name: "Decline…" }).click();
     await page.getByLabel("Why is this being declined?").fill("x");
   } }],
+  ["review: rest of the book", "#/a-book/review-rest"],
   ["where you're signed in", "#/signed-in"],
   ["this wasn't me", `#/revoke/${"R".repeat(43)}`, { signedOut: true }],
   ["settings", "#/settings"],
