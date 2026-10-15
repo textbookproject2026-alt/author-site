@@ -5,7 +5,7 @@ import { readFileSync, existsSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 
 export const SITE = new URL("../site/", import.meta.url).pathname;
-const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".json": "application/json", ".py": "text/plain; charset=utf-8" };
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".json": "application/json", ".py": "text/plain; charset=utf-8", ".mjs": "text/javascript", ".wasm": "application/wasm", ".zip": "application/zip", ".txt": "text/plain; charset=utf-8" };
 
 export function pagesHeaders() {
   const text = readFileSync(join(SITE, "_headers"), "utf8");

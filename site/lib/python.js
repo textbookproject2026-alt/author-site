@@ -22,8 +22,9 @@
 
 import { deepseekKey, askDeepseek } from "./deepseek.js";
 
-const PYODIDE = "314.0.7";
-const INDEX = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE}/full/`;
+// Pyodide 314.0.7's core files, kept in this site (site/vendor/pyodide/, scripts/vendor.mjs):
+// the converter needs only Python's standard library, so no package is fetched.
+const INDEX = new URL("../vendor/pyodide/", import.meta.url).href;
 
 const STANDINS = {
   "app/keychain.py": `"""Stand-in on the author site: nothing is kept in a keychain."""

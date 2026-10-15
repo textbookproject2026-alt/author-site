@@ -7,8 +7,9 @@
 
 import { rawUrl } from "./books.js";
 
-const MARKDOWNLINT = "https://cdn.jsdelivr.net/npm/markdownlint@0.38.0/lib/markdownlint.mjs/+esm";
-const JS_YAML = "https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/+esm";
+// markdownlint 0.38.0 and js-yaml 4.1.0, kept in this site (site/vendor/, scripts/vendor.mjs).
+const MARKDOWNLINT = "../vendor/markdownlint.js";
+const JS_YAML = "../vendor/js-yaml.js";
 export const CONFIG_FILE = ".markdownlint-cli2.yaml";
 
 let libs;

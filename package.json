@@ -8,13 +8,16 @@
   },
   "scripts": {
     "test": "node --test --test-concurrency=1 test/*.test.mjs",
-    "vendor": "node scripts/vendor-smartypants.mjs"
+    "vendor": "node scripts/vendor.mjs"
   },
   "devDependencies": {
     "playwright-core": "1.63.0",
     "esbuild": "0.25.10",
     "retext": "9.0.0",
-    "retext-smartypants": "6.2.0"
+    "retext-smartypants": "6.2.0",
+    "markdownlint": "0.38.0",
+    "js-yaml": "4.1.0",
+    "pyodide": "314.0.7"
   },
   "overrides": {
     "array-iterate": "2.0.1",
