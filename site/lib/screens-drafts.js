@@ -106,7 +106,8 @@ function rowLine(book, r, state, names) {
       view.hidden = !view.hidden;
       if (!view.hidden && !view.childElementCount) clear(view, r.drafts.map((it) => changeView(book, it, state, names, r.key === REST)));
     }],
-    r.key === REST ? null : discardOf(r.drafts[0], state) ? ["Discard", () => askDiscard(book, r.drafts[0], state, out)] : null,
+    // One change: Discard here. The Rest of the book's several: each in View changes, with its own.
+    r.drafts.length === 1 && discardOf(r.drafts[0], state) ? ["Discard", () => askDiscard(book, r.drafts[0], state, out)] : null,
   ]) : null;
   return h("li", { class: "drafts-row", "data-row": r.key },
     h("div", { class: "drafts-row-main" },

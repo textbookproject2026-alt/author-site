@@ -641,7 +641,7 @@ test("drafts: ⋯ View changes says who (a person, never an account) and when, w
   assert.match(await ch1.locator(".draft-change").innerText(), /Changed by Author One, 10 minutes ago/);
   const rest = row("rest");
   await rest.locator(".more-menu > summary").click();
-  assert.deepEqual(await rest.getByRole("menuitem").allInnerTexts(), ["View changes"]);
+  assert.deepEqual(await rest.getByRole("menuitem").allInnerTexts(), ["View changes", "Discard"], "one change: Discard here too");
   await rest.getByRole("menuitem", { name: "View changes" }).click();
   await rest.locator(".draft-change").getByText("Chapter order changed").waitFor();
   assert.equal(await rest.locator(".draft-change").getByRole("button", { name: "Discard" }).count(), 1);
