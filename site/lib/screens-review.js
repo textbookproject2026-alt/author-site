@@ -326,6 +326,58 @@ const marked = (tag, label, text) => {
   return h(tag, { class: "rv-ws" }, h("span", { "aria-hidden": "true", text: sign }), h("span", { class: "sr-only", text: `[${label}: ${words}]` }));
 };
 
+// --- typography, as the book site's -----------------------------------------------------------
+
+// The book site (quartz-book's GitHub-flavoured-markdown plugin) runs remark-smartypants
+// 3 with its defaults: curly quotes and apostrophes, "--" as an em dash, "..." as an
+// ellipsis, ``these'' as quotes. The same libraries, pinned, from jsDelivr (the site's CSP
+// allows it); if they can't be had, the text stays as typed.
+const SMARTY = ["https://cdn.jsdelivr.net/npm/retext@9.0.0/+esm", "https://cdn.jsdelivr.net/npm/retext-smartypants@6.2.0/+esm"];
+let smarty = null;
+const smartypants = () => (smarty ??= Promise.all(SMARTY.map((u) => import(u)))
+  .then(([{ retext }, { default: sp }]) => ({
+    // As remark-smartypants: quotes first over all the text (lengths kept), the rest per text node.
+    quotes: retext().use(sp, { ellipses: false, dashes: false, backticks: false }),
+    rest: retext().use(sp, { quotes: false }),
+  }))
+  .catch(() => null));
+const SMART_BLOCKS = new Set(["P", "H1", "H2", "H3", "H4", "H5", "H6", "TD", "TH"]);
+
+/**
+ * remark-smartypants on rendered HTML: every text node under `roots`, in order, joined
+ * into one string (a space at the start of each paragraph, heading and table cell, inline
+ * code as "A"s), its quotes made curly; then each node's own dashes, ellipses and
+ * backticks. Code, and this page's own labels and buttons, are left alone.
+ */
+export async function smarten(roots) {
+  const p = await smartypants();
+  if (!p) return;
+  let all = "";
+  const texts = [];
+  const walk = (n) => {
+    for (const c of Array.from(n.childNodes)) {
+      if (c.nodeType === 3) {
+        texts.push([c, all.length]);
+        all += c.nodeValue;
+      } else if (c.nodeType === 1) {
+        if (c.matches("pre, script, style, .sr-only, button, input, .rv-old-mark")) continue;
+        if (c.matches("code")) {
+          all += "A".repeat(c.textContent.length);
+          continue;
+        }
+        if (SMART_BLOCKS.has(c.nodeName)) all += " ";
+        walk(c);
+      }
+    }
+  };
+  for (const r of roots) walk(r);
+  const quoted = String(p.quotes.processSync(all));
+  for (const [t, at] of texts) {
+    const next = String(p.rest.processSync(quoted.slice(at, at + t.nodeValue.length)));
+    if (next !== t.nodeValue) t.nodeValue = next;
+  }
+}
+
 // --- showing which words a note is about -----------------------------------------------------
 
 const BLOCK = "p, li, h1, h2, h3, h4, h5, h6, blockquote, td, dd";
@@ -496,6 +548,13 @@ async function draw(stage, book, v, ticked, said, restore = null) {
   const noteNode = (k) => h("button", { type: "button", class: "rv-note-mark", "data-note": String(k), "aria-label": `Note from ${byKey.get(v.notes[k].item).who}`, text: "note" });
   swapTokens(body, (kind, k) => (kind === "E" ? editNode(k) : noteNode(k)));
   for (const nodes of kept.values()) for (const n of nodes) swapTokens(n, (kind, k) => (kind === "E" ? editNode(k) : noteNode(k)));
+  // The book site's typography: the text, then each alternative kept aside on its own.
+  await smarten([body]);
+  for (const nodes of kept.values()) {
+    const box = h("div", {}, nodes);
+    await smarten([box]);
+    box.replaceChildren();
+  }
   const visibleBox = (id) => (checks.get(id) ?? []).find((b) => b.isConnected) ?? null;
 
   // Leaving for an item's page: where to come back to.

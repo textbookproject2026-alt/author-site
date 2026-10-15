@@ -1332,6 +1332,18 @@ test("review: the popover's title opens the proposal's own page; Back returns to
   await page.waitForFunction((y0) => Math.abs(window.scrollY - y0) < 40, y);
 });
 
+test("review typography is the book site's (remark-smartypants): curly quotes, -- as an em dash, ... as an ellipsis; code left alone", async () => {
+  await signIn();
+  const out = await page.evaluate(async () => {
+    const { smarten } = await import("/lib/screens-review.js");
+    const div = document.createElement("div");
+    div.innerHTML = '<p>"Quoted" words, the Human--Environment link... it\'s the \'80s; <em>"emphasis"</em> <code>a--b "c"</code></p><h2>"Heading"</h2>';
+    await smarten([div]);
+    return [div.querySelector("p").textContent, div.querySelector("h2").textContent];
+  });
+  assert.deepEqual(out, ["“Quoted” words, the Human—Environment link… it’s the ’80s; “emphasis” a--b \"c\"", "“Heading”"]);
+});
+
 test("review: a chapter with nothing to tick — one plain line, no bar, no red warning", async () => {
   stub.s.review = REVIEW.quiet;
   await signIn();
