@@ -10,6 +10,7 @@
 //   #/<book>/new/<chapter|concept>  a new chapter or concept page, written here
 //   #/<book>/drafts             Drafts: reader suggestions, what's changed, Publish
 //   #/<book>/review/<path>      Review all in chapter: every pending suggestion in place, ticked and accepted at once
+//   #/<book>/proposal/<n>       one reader's proposed edit: its changes, Accept and Decline
 //   #/<book>/suggestion/<n>     one written reader suggestion
 //   #/<book>/tidy/<path>        Links & glossary: a chapter's citations, concept links, glossary, AI formatting
 //   #/<book>/tidy-all/<glossary|concepts>[/<n>]  the same, book-wide, chapter by chapter
@@ -41,6 +42,7 @@ import { privacyNote } from "./lib/privacy.js";
 import { newChapterScreen, newConceptScreen } from "./lib/screens-new.js";
 import { draftsScreen } from "./lib/screens-drafts.js";
 import { reviewScreen } from "./lib/screens-review.js";
+import { proposalScreen } from "./lib/screens-proposal.js";
 import { revokeScreen, signedInScreen } from "./lib/screens-sessions.js";
 
 const main = document.getElementById("main");
@@ -285,6 +287,7 @@ const ROUTES = [
   [/^([a-z0-9-]+)\/new\/concept$/, (book) => newConceptScreen(book)],
   [/^([a-z0-9-]+)\/(?:drafts|waiting|publish|change\/\d+)$/, (book) => draftsScreen(book)],
   [/^([a-z0-9-]+)\/review\/(.+)$/, (book, path) => reviewScreen(book, decodeURIComponent(path))],
+  [/^([a-z0-9-]+)\/proposal\/(\d+)$/, (book, n) => proposalScreen(book, Number(n))],
   [/^([a-z0-9-]+)\/suggestion\/(\d+)$/, (book, n) => suggestionScreen(book, Number(n))],
   [/^([a-z0-9-]+)\/people$/, (book) => peopleScreen(book)],
   [/^([a-z0-9-]+)\/settings$/, (book) => bookSettingsScreen(book)],

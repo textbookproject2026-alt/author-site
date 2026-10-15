@@ -13,7 +13,9 @@ export const forPreview = (md) =>
     .replace(/!\[\[[^\]]*\]\]/g, "")
     .replace(/\[\[([^\]|]*)\|([^\]]*)\]\]/g, "$2")
     .replace(/\[\[([^\]]*)\]\]/g, (_m, t) => t.split("/").pop())
-    .replace(/\s\^[A-Za-z0-9-]+\s*$/gm, "")
+    // A block id ("text ^ref-x") at a line's end; never the line break or blank line after
+    // it, which would join two paragraphs (or two lines without a space).
+    .replace(/[ \t]\^[A-Za-z0-9-]+[ \t]*$/gm, "")
     .replace(/%%[\s\S]*?%%/g, "");
 
 const DROP = "script, style, iframe, object, embed, form, input, button, link, meta, base, frame, frameset";

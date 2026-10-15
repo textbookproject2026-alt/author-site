@@ -10,6 +10,7 @@ import { sentView } from "./screens-shared.js";
 import { declineButton } from "./decline.js";
 import { renderOps } from "./diff.js";
 import { suggested } from "./suggestions.js";
+import { reviewBackLink } from "./screens-review.js";
 
 /** A button that runs `fn`, showing progress and then what happened in `out`. */
 function doButton(text, cls, out, fn) {
@@ -38,7 +39,7 @@ export async function suggestionScreen(slug, number) {
   const { suggestions } = await read("suggestions", { book: slug });
   const s = suggestions.find((x) => x.number === number);
   const back = `#/${slug}/drafts`;
-  if (!s) return [...bookHeader(book, "drafts", "A suggestion from a reader"), note([h("p", { text: "This suggestion has already been dealt with." })]), h("p", {}, h("a", { href: back, text: "Back to Drafts" }))];
+  if (!s) return [...bookHeader(book, "drafts", "A suggestion from a reader"), reviewBackLink(slug), note([h("p", { text: "This suggestion has already been dealt with." })]), h("p", {}, h("a", { href: back, text: "Back to Drafts" }))];
   const out = h("div", { "aria-live": "polite" });
   const onSite = book.domain && s.path ? `https://${book.domain}/${pageSlug(s.path)}` : null;
 
@@ -87,6 +88,7 @@ export async function suggestionScreen(slug, number) {
 
   return [
     ...bookHeader(book, "drafts", "A suggestion from a reader"),
+    reviewBackLink(slug),
     h("p", { class: "muted" }, "From ", h("strong", { text: s.who }), `, ${when(s.when)}, about `,
       onSite ? h("a", { href: onSite, target: "_blank", rel: "noopener", text: "this page" }) : "a page", ".",
       s.accepted ? [" ", h("span", { class: "badge accepted", text: "Accepted" })] : null),

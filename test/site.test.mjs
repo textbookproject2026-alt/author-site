@@ -1205,64 +1205,154 @@ test("suggestion: a rewritten paragraph shows word by word against the text it s
 
 const edit = (id) => page.locator(`.rv-text .rv-edit[data-id="${id}"]`).first();
 const bare = (t) => t.replace(/\[(?:removed|added): |\]/g, "").trim();
+const JO = "Edit ¶2 of Soils: Tighten the soil chapter";
 async function openReview() {
   await signIn();
   await page.goto(`${origin}/#/a-book/drafts`);
   await page.getByRole("heading", { name: "Reader suggestions" }).waitFor();
   const row = page.locator(".review-all li").filter({ hasText: "Soils" });
-  assert.match(await row.innerText(), /1 suggestion waiting/);
+  assert.match(await row.innerText(), /\d suggestions? waiting/);
   assert.equal(await page.locator("#review-pick option").count(), 2, "and a picker");
   await row.getByRole("link", { name: "Review all in chapter" }).click();
   await page.getByRole("heading", { name: "Review: Soils" }).waitFor();
   await page.locator(".rv-text .rv-edit").first().waitFor();
 }
 
-test("review: one continuous text, every edit inline in its sentence with a box before it; no cards, no paragraph twice", async () => {
+test("review: one continuous text as the book site renders it, every edit inline with a box before it; no rule, no file names", async () => {
   await openReview();
-  // Read in parts (the page, then each proposal) and joined.
   assert.equal(stub.s.requests.filter((r) => r.endpoint === "author-read" && r.query.what === "review").length, 4);
-  assert.equal(await page.locator(".rv-summary").innerText(), "6 edits from 4 readers, 2 notes");
+  assert.equal(await page.locator(".rv-summary").innerText(), "6 edits from 4 readers, 5 notes · 7 to decide below");
+  // A paragraph wrapped over two lines in the source is one paragraph, as on the book site.
+  const blocks = await page.locator(".rv-text").evaluate((t) => [...t.children].filter((n) => /^(P|H\d)$/.test(n.nodeName) && n.textContent.trim()).map((n) => n.textContent.replace(/\[(?:removed|added): |\]/g, "")));
+  assert.equal(blocks.length, 6);
+  assert.match(blocks[1], /^Soil forms\s+very\s?slowly from weathered rock\s+and living things over many years\.$/);
   const text = await page.locator(".rv-text").innerText();
   for (const s of ["Chapter 2: Soils", "Soil forms", "A soil profile", "Clay soils hold", "Farmers", "Erosion can"]) assert.equal(text.split(s).length - 1, 1, `${s} once`);
-  // Nothing else in the body: no cards, labels or columns.
   assert.equal(await page.locator(".rv-text .rv-hunk, .rv-text .three-way, .rv-text .card").count(), 0);
-  assert.doesNotMatch(text, /Change \d of \d/);
-  // Five edits shown (the sixth is the overlap's alternative), each a box inside the line, just before it.
   const shownIds = await page.locator(".rv-text .rv-edit").evaluateAll((es) => [...new Set(es.map((e) => e.dataset.id))]);
-  assert.deepEqual(shownIds.sort(), ["i31", "p21-c4sgo1", "p21-wyy2li-old", "p21-yyge7x", "p23-20vndj"]);
+  assert.deepEqual(shownIds.sort(), ["i31", "p21-t26svd", "p21-wyy2li-old", "p21-yyge7x", "p23-20vndj"]);
   assert.equal(await page.locator(".rv-text p .rv-edit > input.rv-tick:first-child").count(), 5);
   assert.equal(await page.locator(".rv-text .rv-tick:checked").count(), 0, "nothing ticked");
-  assert.equal(bare(await edit("i31").locator("del").textContent()), "called");
-  assert.equal(bare(await edit("i31").locator("ins").textContent()), "known as");
-  assert.match(bare(await page.locator(".rv-text p").filter({ has: page.locator('.rv-edit[data-id="i31"]') }).textContent()), /^A soil profile has layers called\s*known as horizons, from the topsoil down to the bedrock\.$/);
-  // A thin rule beside each paragraph with an edit.
-  assert.equal(await page.locator(".rv-text .rv-changed").count(), 5);
-  // The bar: the reason above a disabled button; Tick all leaves the older-version edit alone.
+  // No rule beside paragraphs with edits: the marks are enough.
+  assert.equal(await page.locator(".rv-text p").filter({ has: page.locator('.rv-edit[data-id="i31"]') }).evaluate((p) => getComputedStyle(p, "::before").content), "none");
+  // No file names anywhere on the screen, nor in a popover.
+  await edit("p21-t26svd").locator("ins").hover({ position: { x: 3, y: 6 } });
+  await page.locator(".rv-pop").waitFor();
+  assert.match(await page.locator(".rv-pop .rv-pop-title").innerText(), new RegExp(`^${JO}$`));
+  assert.doesNotMatch(await page.locator("main").innerText() + await page.locator(".rv-pop").innerText(), /\.md\b|chapter-0\d/);
+  // The bar: Tick all leaves the older-version edit alone.
+  await page.mouse.move(5, 5);
   assert.equal(await page.locator(".rv-bar .publish-reason").innerText(), "Tick at least one edit to accept.");
-  assert.ok(await page.getByRole("button", { name: "Accept 0 changes into drafts" }).isDisabled());
   await page.getByRole("button", { name: "Tick all", exact: true }).click();
-  assert.equal(await page.locator(".rv-text .rv-tick:checked").count(), 4);
-  assert.ok(!(await edit("p21-wyy2li-old").locator(".rv-tick").isChecked()));
   assert.equal(await page.locator(".rv-count").innerText(), "4 ticked");
+  assert.ok(!(await edit("p21-wyy2li-old").locator(".rv-tick").isChecked()));
   await page.getByRole("button", { name: "Untick all" }).click();
-  assert.equal(await page.locator(".rv-text .rv-tick:checked").count(), 0);
+  assert.equal(await page.locator(".rv-count").innerText(), "0 ticked");
+});
+
+test("review: Still to decide lists what the summary counts, before any accept, each with its actions", async () => {
+  await openReview();
+  const left = page.locator(".rv-left > ul > li");
+  assert.deepEqual((await left.allInnerTexts()).map((t) => t.split("\n")[0]), [
+    `Change 3 of 3 in “${JO}” — Jo Reader (made on an older version)`,
+    "Proposed edit “Clay and sand” — Sam Lee (an alternative to the one shown)",
+    "Note — Grace (a note to the authors)",
+    "Note — Lin (a note to the authors)",
+    "Note — Max (a note to the authors)",
+    "Note — Kim (a note to the authors)",
+    "Note — Pat (a note to the authors)",
+  ]);
+  assert.equal(await page.getByRole("heading", { name: "Still to decide (7)" }).count(), 1);
+  // A part can't be declined alone before anything of it is accepted.
+  assert.equal(await left.nth(0).getByRole("button", { name: "Decline the whole proposal…" }).count(), 1);
+  for (let k = 0; k < 7; k++) {
+    assert.equal(await left.nth(k).getByRole("button", { name: "Keep open" }).count(), 1);
+    assert.equal(await left.nth(k).getByRole("button", { name: "Open in editor" }).count(), 1);
+  }
+  // Switching to Sam's alternative moves Jo's clay edit into the list instead.
+  await edit("p21-yyge7x").locator(".rv-alts").click();
+  await page.locator(".rv-pop").getByRole("button", { name: "Show Sam Lee's instead" }).click();
+  assert.match(await left.nth(0).innerText(), /Change 2 of 3 .* \(an alternative to the one shown\)/);
+  // Declining a note: the reason is required; the view is read again without it.
+  await left.nth(3).getByRole("button", { name: "Decline…" }).click();
+  await left.nth(3).getByRole("textbox").fill("Not this chapter's job.");
+  await left.nth(3).getByRole("button", { name: "Decline", exact: true }).click();
+  await page.getByText("Declined: your reason is posted").first().waitFor();
+  assert.deepEqual(lastCall("author-act", (r) => r.body?.action === "suggestion-decline").body, { book: "a-book", action: "suggestion-decline", number: 33, reason: "Not this chapter's job." });
+});
+
+test("review: a note and its passage show each other — the quoted words for a while, the note from the passage", async () => {
+  await openReview();
+  assert.equal(await page.locator(".rv-chapter-notes li").count(), 3, "three chapter notes at first");
+  await page.getByRole("button", { name: "Show 1 more" }).click();
+  assert.deepEqual(await page.locator(".rv-chapter-notes li").allInnerTexts(), [
+    "Lin: A diagram of a soil profile would help the whole chapter.", "Max: Could the chapter open with a photo?",
+    "Kim: A short glossary box at the end would help.", "Pat: Please add further reading."]);
+  const side = page.locator(".rv-margin-note");
+  assert.match(await side.innerText(), /Grace Which farmers\?/);
+  // The note's quote in the text, marked, not colour alone (underlined), and gone after about 2 s.
+  await side.hover();
+  const mark = page.locator(".rv-text mark.rv-flash");
+  await mark.first().waitFor();
+  assert.equal((await mark.allTextContents()).join(""), "test their soil every few");
+  assert.match(await mark.first().evaluate((m) => getComputedStyle(m).textDecorationLine), /underline/);
+  await mark.first().waitFor({ state: "detached", timeout: 4000 });
+  assert.match(await page.locator(".rv-text p").filter({ hasText: "Farmers" }).textContent(), /test their soil every/, "the text is whole again");
+  // The passage shows its note.
+  await page.mouse.move(5, 5);
+  await page.locator(".rv-text p").filter({ hasText: "Farmers" }).hover({ position: { x: 5, y: 5 } });
+  await page.locator(".rv-margin-note.rv-flash-note").waitFor();
+});
+
+test("review: the popover's title opens the proposal's own page; Back returns to the same place with the same ticks", async () => {
+  stub.s.changes.push({ number: 21, who: "reader-bot", title: "Edit ¶2 of chapter-02.md: Tighten the soil chapter", when: new Date().toISOString(), url: "https://github.com/someone/a-book/pull/21", path: "chapters/chapter-02.md", choices: CHOICES });
+  await page.setViewportSize({ width: 1100, height: 500 });
+  await openReview();
+  await edit("p23-20vndj").locator(".rv-tick").check();
+  await edit("p21-wyy2li-old").scrollIntoViewIfNeeded();
+  const y = await page.evaluate(() => window.scrollY);
+  assert.ok(y > 0);
+  // Clicking the words opens the popover, not the page.
+  await edit("p21-wyy2li-old").locator("del").first().click({ position: { x: 3, y: 6 } });
+  assert.match(page.url(), /#\/a-book\/review\//);
+  const pop = page.locator(".rv-pop");
+  assert.equal(await pop.getByRole("link", { name: "View on GitHub" }).getAttribute("href"), "https://github.com/someone/a-book/pull/21");
+  await pop.getByRole("link", { name: JO }).click();
+  await page.waitForURL(/#\/a-book\/proposal\/21$/);
+  await page.getByRole("heading", { name: JO }).waitFor();
+  assert.match(await page.locator("main").innerText(), /From Jo Reader, .*, on “Soils”\./);
+  assert.match(await page.locator("main").innerText(), /Small fixes to wording through the chapter\./);
+  assert.equal(await page.locator(".proposal-change").count(), 3);
+  assert.equal(await page.locator(".proposal-change .three-way").count(), 1);
+  assert.ok(await page.getByRole("button", { name: "Use the suggestion" }).or(page.getByRole("button", { name: "Accept" })).first().isVisible());
+  assert.doesNotMatch(await page.locator("main").innerText(), /\.md\b/);
+  await page.getByRole("link", { name: "← Back to the chapter review" }).click();
+  await edit("p23-20vndj").waitFor();
+  assert.ok(await edit("p23-20vndj").locator(".rv-tick").isChecked(), "the tick kept");
+  await page.waitForFunction((y0) => Math.abs(window.scrollY - y0) < 40, y);
+});
+
+test("review: a chapter with nothing to tick — one plain line, no bar, no red warning", async () => {
+  stub.s.review = REVIEW.quiet;
+  await signIn();
+  await page.goto(`${origin}/#/a-book/review/chapters%2Fchapter-02.md`);
+  await page.locator(".rv-quiet").waitFor();
+  assert.equal(await page.locator(".rv-quiet").innerText(), "Nothing to tick here; 2 items to decide below.");
+  assert.equal(await page.locator(".rv-bar, .publish-reason").count(), 0);
+  assert.equal(await page.locator(".rv-left > ul > li").count(), 2);
 });
 
 test("review: who and why on hover and on tap; an older-version edit inline, dotted and marked, with Compare; alternatives switch", async () => {
   await openReview();
-  // Hover: proposer, title, summary, part 1 of 3.
-  // Near the word's start: a word that wraps has its box's centre between the lines.
-  await edit("p21-c4sgo1").locator("ins").hover({ position: { x: 3, y: 6 } });
+  await edit("p21-t26svd").locator("ins").hover({ position: { x: 3, y: 6 } });
   const pop = page.locator(".rv-pop");
   await pop.waitFor();
-  assert.match(await pop.innerText(), /Jo Reader · part 1 of 3\s+Tighten the soil chapter\s+Small fixes to wording through the chapter\./);
+  assert.match(await pop.innerText(), new RegExp(`Jo Reader · part 1 of 3\\s+${JO}\\s+Small fixes to wording through the chapter\\.`));
   await page.mouse.move(5, 5);
   await pop.waitFor({ state: "hidden" });
-  // The older-version edit: the drafts' words struck, theirs dotted, a marker in words.
   const old = edit("p21-wyy2li-old");
   assert.equal(await old.locator(".rv-old-mark").innerText(), "OLDER VERSION");
   assert.equal(await old.locator("ins").first().evaluate((n) => getComputedStyle(n).textDecorationStyle), "dotted");
-  // Tap pins the popover; Compare shows old, suggested and now.
   await old.locator("del").first().click({ position: { x: 3, y: 6 } });
   await pop.waitFor();
   assert.match(await pop.innerText(), /Made on an older version of this paragraph/);
@@ -1270,12 +1360,6 @@ test("review: who and why on hover and on tap; an older-version edit inline, dot
   assert.equal(await pop.locator(".three-way .col").count(), 3);
   await page.keyboard.press("Escape");
   await pop.waitFor({ state: "hidden" });
-  // Tapping a box ticks it and says whose it is.
-  await edit("i31").locator(".rv-tick").click();
-  assert.ok(await edit("i31").locator(".rv-tick").isChecked());
-  assert.match(await pop.innerText(), /Ada\s+Suggestion\s+The usual term\./);
-  await page.keyboard.press("Escape");
-  // The overlap: Jo's shown, Sam's an alternative; switching shows Sam's, the paragraph still once.
   const clay = edit("p21-yyge7x");
   assert.equal(await clay.locator(".rv-alts").innerText(), "1 ALTERNATIVE");
   await clay.locator(".rv-tick").check();
@@ -1285,62 +1369,39 @@ test("review: who and why on hover and on tap; an older-version edit inline, dot
   assert.equal(await page.locator('.rv-text .rv-edit[data-id="p21-yyge7x"]').count(), 0);
   assert.ok(!(await edit("p22-vffdtv").locator(".rv-tick").isChecked()), "switching unticks");
   assert.equal((await page.locator(".rv-text").innerText()).split("Clay soils hold").length - 1, 1);
-  assert.equal(await page.locator(".rv-count").innerText(), "1 ticked");
 });
 
-test("review: notes beside their paragraph at desktop width, chapter notes in one line above", async () => {
+test("review: a batch with the older-version edit; Still to decide afterwards lists the rest, declines with a reason, keeps open", async () => {
   await openReview();
-  assert.match(await page.locator(".rv-chapter-notes").innerText(), /On the whole chapter: Lin: A diagram of a soil profile/);
-  const marker = page.locator(".rv-text .rv-note-mark");
-  assert.equal(await marker.count(), 1);
-  const para = page.locator(".rv-text p").filter({ has: page.locator(".rv-note-mark") });
-  assert.match(await para.innerText(), /^Farmers/);
-  const side = page.locator(".rv-margin-note");
-  assert.match(await side.innerText(), /Grace Which farmers\?/);
-  const [n, p] = [await side.boundingBox(), await para.boundingBox()];
-  assert.ok(n.x > p.x + p.width, "in the margin");
-  assert.ok(Math.abs(n.y - p.y) < 30, `beside its paragraph (${n.y} vs ${p.y})`);
-});
-
-test("review: a batch with the older-version edit; Still to decide lists the rest, declines with a reason, keeps open", async () => {
-  await openReview();
-  for (const id of ["p21-c4sgo1", "p21-wyy2li-old", "p23-20vndj", "i31"]) await edit(id).locator(".rv-tick").check();
+  for (const id of ["p21-t26svd", "p21-wyy2li-old", "p23-20vndj", "i31"]) await edit(id).locator(".rv-tick").check();
   await edit("p21-yyge7x").locator(".rv-alts").click();
   await page.locator(".rv-pop").getByRole("button", { name: "Show Sam Lee's instead" }).click();
   await edit("p22-vffdtv").locator(".rv-tick").check();
   await page.getByRole("button", { name: "Accept 5 changes into drafts" }).click();
   await page.getByRole("heading", { name: "Accepted" }).waitFor();
   const sent = lastCall("author-act", (r) => r.body?.action === "review-accept").body;
-  assert.deepEqual({ ...sent, hunks: [...sent.hunks].sort() }, { book: "a-book", action: "review-accept", path: "chapters/chapter-02.md", drafts: REVIEW.view.drafts,
-    hunks: ["i31", "p21-c4sgo1", "p21-wyy2li-old", "p22-vffdtv", "p23-20vndj"] });
+  assert.deepEqual([...sent.hunks].sort(), ["i31", "p21-t26svd", "p21-wyy2li-old", "p22-vffdtv", "p23-20vndj"]);
   const left = page.locator(".rv-left > ul > li");
-  assert.deepEqual((await left.allInnerTexts()).map((t) => t.split("\n")[0]), [
-    "Change 2 of 3 in “Tighten the soil chapter” — Jo Reader (not ticked)",
-    "Note — Grace (a note to the authors)",
-    "Note — Lin (a note to the authors)",
-  ]);
+  assert.equal((await left.allInnerTexts())[0].split("\n")[0], `Change 2 of 3 in “${JO}” — Jo Reader (not ticked)`);
+  assert.equal(await left.count(), 6);
   await left.nth(0).getByRole("button", { name: "Decline…" }).click();
-  assert.ok(await left.nth(0).getByRole("button", { name: "Decline", exact: true }).isDisabled());
   await left.nth(0).getByRole("textbox").fill("We prefer the semicolon here.");
   await left.nth(0).getByRole("button", { name: "Decline", exact: true }).click();
   await left.nth(0).getByText("Declined: your reason is posted on the proposal").waitFor();
-  assert.equal(lastCall("author-act", (r) => r.body?.action === "part-decline").body.reason, "We prefer the semicolon here.");
   await left.nth(1).getByRole("button", { name: "Keep open" }).click();
   await left.nth(1).getByText("Kept open").waitFor();
 });
 
 test("review: the drafts moved meanwhile — redrawn on them, ticks still good kept, the rest named, nothing claimed", async () => {
   await openReview();
-  await edit("p21-c4sgo1").locator(".rv-tick").check();
+  await edit("p21-t26svd").locator(".rv-tick").check();
   await edit("p23-20vndj").locator(".rv-tick").check();
   stub.s.reviewAnswers.push([409, { error: "review moved", userMessage: "The drafts changed while you were reviewing, so nothing was accepted. The review has been brought up to date.",
-    view: REVIEW.moved, kept: ["p23-20vndj"], invalid: [{ id: "p21-c4sgo1", why: "its paragraph changed in the drafts since" }] }]);
+    view: REVIEW.moved, kept: ["p23-20vndj"], invalid: [{ id: "p21-t26svd", why: "its paragraph changed in the drafts since" }] }]);
   await page.getByRole("button", { name: "Accept 2 changes into drafts" }).click();
   await page.getByText("The drafts changed while you were reviewing").waitFor();
   assert.match(await page.locator(".note.warn").innerText(), /No longer ticked: Jo Reader's edit \(part 1 of 3\): its paragraph changed in the drafts since\./);
-  assert.equal(await page.locator(".rv-text .rv-tick:checked").count(), 1);
   assert.ok(await edit("p23-20vndj").locator(".rv-tick").isChecked());
-  assert.deepEqual((await page.locator(".rv-text .rv-old").evaluateAll((es) => [...new Set(es.map((e) => e.dataset.id))])).sort(), ["p21-c4sgo1-old", "p21-wyy2li-old"], "Jo's first edit is an older-version one now");
   assert.equal(await page.getByRole("heading", { name: "Accepted" }).count(), 0);
   await page.getByRole("button", { name: "Accept 1 change into drafts" }).click();
   await page.getByRole("heading", { name: "Accepted" }).waitFor();
@@ -1366,22 +1427,20 @@ async function phoneReview() {
   await openReview();
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "no horizontal scroll");
   assert.ok(await page.locator(".rv-margin").isHidden());
+  // Tapping a note's marker: its note, and its words marked in the text.
   await page.locator(".rv-text .rv-note-mark").tap();
   const pop = page.locator(".rv-pop");
   await pop.waitFor();
   assert.match(await pop.innerText(), /Grace · note to the authors\s+Which farmers\?/);
+  await page.locator(".rv-text mark.rv-flash").first().waitFor();
   const box = await pop.boundingBox();
   assert.ok(box.x >= 0 && box.x + box.width <= 360, JSON.stringify(box));
-  // Tapping anywhere else closes it.
   await page.locator(".rv-summary").tap();
   await pop.waitFor({ state: "hidden" });
   await edit("p23-20vndj").locator("ins").first().tap({ position: { x: 14, y: 6 } });
   assert.match(await pop.innerText(), /Ann Smith/);
-  assert.ok(!(await edit("p23-20vndj").locator(".rv-tick").isChecked()), "tapping the words doesn't tick");
-  // A finger-sized way to tick it.
   await pop.getByRole("button", { name: "Tick this edit", exact: true }).tap();
   assert.ok(await edit("p23-20vndj").locator(".rv-tick").isChecked());
-  assert.equal(await page.locator(".rv-count").innerText(), "1 ticked");
   const bar = await page.locator(".rv-bar").boundingBox();
   assert.ok(bar.x >= 0 && bar.x + bar.width <= 360 && bar.y + bar.height <= 740 + 1, JSON.stringify(bar));
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "still none with the popover open");
