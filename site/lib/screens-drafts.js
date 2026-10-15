@@ -21,6 +21,7 @@ import { lintView } from "./screens-shared.js";
 import { ruleWords } from "./lint.js";
 import { PREVIEW_WORDS, draftsPreview, jobs, previewState, registryBook } from "./public.js";
 import { changeRow } from "./suggestions.js";
+import { publishChapterButton } from "./publish-chapter.js";
 
 const reload = () => window.dispatchEvent(new HashChangeEvent("hashchange"));
 /** A page readers open, as opposed to the book's machinery. */
@@ -145,6 +146,8 @@ function draftLine(book, it, state) {
         it.path && readersPage(it.path) && it.kind !== "removed" && it.kind !== "order" ? h("a", { href: `#/${book.slug}/edit/${encodeURIComponent(it.path)}`, text: itemWords(it) }) : h("span", { text: itemWords(it) }),
         h("div", { class: "muted small", text: [it.who, it.when ? when(it.when) : null].filter(Boolean).join(", ") })),
       it.kind === "type" ? null : h("button", { type: "button", class: "btn link", text: "View changes", onclick: showChanges }),
+      // A chapter new or edited in the drafts can go to readers on its own, beside Publish all.
+      ["new", "edited"].includes(it.kind) && /^chapters\/[^/]+\.md$/.test(it.path ?? "") ? publishChapterButton(book, it.path, it.title) : null,
       discard),
     view, out);
 }

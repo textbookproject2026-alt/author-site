@@ -132,7 +132,7 @@ export const send = (body) => call("author-send", { method: "POST", body });
 // finish that in time, Actions does it, and the page says so meanwhile.
 export const APPLYING = "Applying… this can take up to a minute.";
 export const act = (book, action, extra = {}) =>
-  call("author-act", { method: "POST", body: { book, action, ...extra }, wait: action === "change-accept" || action === "review-accept" ? APPLYING : undefined });
+  call("author-act", { method: "POST", body: { book, action, ...extra }, wait: action === "change-accept" || action === "review-accept" ? APPLYING : action === "publish-chapter" ? "Publishing… this can take up to a minute." : undefined });
 // The book goes with each part only so this site's server can check you're on it.
 export const importPart = (book, part) => call("author-import", { method: "POST", body: { book, part } });
 export const importStart = (body) => call("author-import", { method: "POST", body: { action: "start", ...body } });

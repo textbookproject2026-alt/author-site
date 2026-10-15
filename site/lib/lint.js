@@ -107,6 +107,17 @@ const describe = (e) => ({
 });
 
 /**
+ * Every problem the book's rules find in `text` as it is, nothing put right: for a page's
+ * text about to be saved (the review) or published (one chapter). -> [{ line, rule, words, context }]
+ */
+export async function lintText(book, commit, path, text) {
+  const options = await bookLintConfig(book, commit);
+  if (!/\.md$/i.test(path) || options.ignores.some((re) => re.test(path))) return [];
+  const [mdl] = await load();
+  return (await mdl.lintPromise({ strings: { [path]: text }, config: options.config, handleRuleFailures: true }))[path].map(describe);
+}
+
+/**
  * Lints one page with the book's rules, putting right what markdownlint can.
  * -> { text, fixed: [rule], problems: [{ line, rule, words, context }], skipped }
  */

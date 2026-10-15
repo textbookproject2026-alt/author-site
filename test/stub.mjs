@@ -111,6 +111,8 @@ export function createStub({ siteOrigin }) {
     acceptAnswers: [], // successive answers for author-act change-accept: [status, body]
     review: REVIEW.view, // what=review, read in parts as on the Worker: the page, then each proposal
     reviewAnswers: [], // successive answers for author-act review-accept: [status, body]
+    publishChapterAnswers: [], // successive answers for author-act publish-chapter: [status, body]
+    publishChapterStates: [], // successive what=publish-chapter answers (the last one repeats)
     // author-history: 31 commits on drafts, the newest 2 still waiting; page 2 is the oldest.
     history: Array.from({ length: 31 }, (_, i) => ({
       sha: (i + 1).toString(16).padStart(40, "e"), who: i === 0 ? "author-one" : "co-author",
@@ -268,6 +270,7 @@ export function createStub({ siteOrigin }) {
         }
         return json(route, 200, { ...v, items: v.items.map((i) => (edit(i) ? { ...i, hunks: [], deferred: true } : i)), hunks: v.hunks.filter((x) => !x.item.startsWith("p")) });
       }
+      if (what === "publish-chapter") return json(route, 200, (s.publishChapterStates.length > 1 ? s.publishChapterStates.shift() : s.publishChapterStates[0]) ?? { state: "merged", checks: [], sha: SENT });
       if (what === "changes") return json(route, 200, { changes: s.changes });
       if (what === "change") return json(route, 200, s.change);
       if (what === "lint") {
@@ -343,7 +346,13 @@ export function createStub({ siteOrigin }) {
         }
         return json(route, 200, { done: true, sha: SENT, url: `https://github.com/${REPO}/commit/${SENT}`,
           accepted: [...per].map(([key, hunks]) => ({ key, number: byKey.get(key).number, all: hunks.length === byKey.get(key).hunks.length, hunks })),
-          steps: [`${body.hunks.length} changes from ${per.size} reader items went into the drafts as one change.`] });
+          steps: [`${body.hunks.length} changes from ${per.size} reader items${body.edits?.length ? ` and ${body.edits.length} paragraphs you edited` : ""} went into the drafts as one change.`] });
+      }
+      // One chapter to the live book (suggest-edit-function lib/publish-chapter.mjs): answers
+      // queued in publishChapterAnswers ([status, body]), else a pull request that merges itself.
+      if (body.action === "publish-chapter") {
+        if (s.publishChapterAnswers.length) return json(route, ...s.publishChapterAnswers.shift());
+        return json(route, 200, { done: true, number: 170, url: `https://github.com/${REPO}/pull/170`, title: "Chapter 1", autoMerge: true, linkedLeft: [], steps: ["Chapter 1 goes live once the book's checks pass."] });
       }
       const item = s.declined.find((d) => d.number === body.number);
       if (body.action === "comment-add") {

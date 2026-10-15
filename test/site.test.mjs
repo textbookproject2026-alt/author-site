@@ -853,6 +853,59 @@ test("drafts: Publish N changes — one press, Publishing… then Published with
     [["Chapter 1", "https://a-book.example.org/chapters/chapter-01"], ["Water", "https://a-book.example.org/chapters/chapter-04"]]);
 });
 
+test("drafts: Publish this chapter beside Publish all — only that chapter is sent, then it says when it's live", async () => {
+  await signIn();
+  stub.s.publishChapterStates = [{ state: "checking", checks: [], sha: SENT }, { state: "merged", checks: [], sha: SENT }];
+  await page.goto(`${origin}/#/a-book/drafts`);
+  const line = page.locator("ul.drafts > li").filter({ hasText: "Edited “Chapter 1”" });
+  await line.getByRole("button", { name: "Publish this chapter" }).click();
+  await line.getByText("Published “Chapter 1”.", { exact: false }).waitFor({ timeout: 20000 });
+  assert.deepEqual(lastCall("author-act", (r) => r.body?.action === "publish-chapter").body, { book: "a-book", action: "publish-chapter", path: CH1_PATH });
+  assert.equal(await line.getByRole("link", { name: "Open it on the book's site" }).getAttribute("href"), "https://a-book.example.org/chapters/chapter-01");
+  // A new chapter has it too; a removed one, the order and pictures don't.
+  assert.equal(await page.locator("ul.drafts > li").filter({ hasText: "New chapter “Water”" }).getByRole("button", { name: "Publish this chapter" }).count(), 1);
+  for (const t of ["Removed “Rocks”", "Chapter order changed", "1 picture"]) assert.equal(await page.locator("ul.drafts > li").filter({ hasText: t }).getByRole("button", { name: "Publish this chapter" }).count(), 0, t);
+  assert.equal(await page.getByRole("button", { name: /^Publish \d+ changes$/ }).count(), 1, "Publish all still there");
+});
+
+test("drafts: a chapter linking to pages only in the drafts — Publish these too, or Publish without them with the broken links said plainly", async () => {
+  await signIn();
+  const linked = { error: "linked", userMessage: "This chapter links to pages that aren't live yet.", linked: [{ path: "concepts/soil-horizon.md", title: "Soil horizon", why: "a concept page only in the drafts" }] };
+  stub.s.publishChapterAnswers = [[409, linked], [200, { done: true, number: 171, url: "https://github.com/o/a-book/pull/171", title: "Chapter 1", autoMerge: true, linkedLeft: [], steps: [] }],
+    [409, linked], [200, { done: true, number: 172, url: "https://github.com/o/a-book/pull/172", title: "Chapter 1", autoMerge: true, linkedLeft: linked.linked, steps: [] }]];
+  await page.goto(`${origin}/#/a-book/drafts`);
+  const line = page.locator("ul.drafts > li").filter({ hasText: "Edited “Chapter 1”" });
+  await line.getByRole("button", { name: "Publish this chapter" }).click();
+  await line.getByText("links to a page the live book hasn't got yet", { exact: false }).waitFor();
+  assert.match(await line.innerText(), /Soil horizon \(a concept page only in the drafts\)/);
+  await line.getByRole("button", { name: "Publish these too" }).click();
+  await line.getByText("Published “Chapter 1”.", { exact: false }).waitFor({ timeout: 20000 });
+  assert.equal(lastCall("author-act", (r) => r.body?.action === "publish-chapter").body.linked, "with");
+  assert.ok(await line.getByRole("button", { name: "Publish this chapter" }).isDisabled(), "published: not again");
+  await page.reload();
+  await line.getByRole("button", { name: "Publish this chapter" }).click();
+  await line.getByRole("button", { name: "Publish without them" }).click();
+  await line.getByText("Published without “Soil horizon”: its link is broken on the live book until you publish it.").waitFor();
+  assert.equal(lastCall("author-act", (r) => r.body?.action === "publish-chapter").body.linked, "without");
+  await page.setViewportSize({ width: 360, height: 740 });
+  try {
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "no sideways scroll at 360 px");
+  } finally {
+    await page.setViewportSize({ width: 1100, height: 900 });
+  }
+});
+
+test("drafts: a chapter with a formatting problem can't be published on its own — listed with Fix, nothing sent", async () => {
+  await signIn();
+  stub.s.bookFiles.set(CH1_PATH, Buffer.from(stub.s.bookFiles.get(CH1_PATH).toString("utf8") + "\n![](../assets/chapter-01/image1.png)\n"));
+  await page.goto(`${origin}/#/a-book/drafts`);
+  const line = page.locator("ul.drafts > li").filter({ hasText: "Edited “Chapter 1”" });
+  await line.getByRole("button", { name: "Publish this chapter" }).click();
+  await line.getByText("can't go to readers yet", { exact: false }).waitFor();
+  assert.match(await line.getByRole("link", { name: "Fix" }).first().getAttribute("href"), new RegExp(`^#/a-book/edit/${encodeURIComponent(CH1_PATH)}/line/\\d+$`));
+  assert.equal(stub.s.requests.filter((r) => r.endpoint === "author-act" && r.body?.action === "publish-chapter").length, 0);
+});
+
 test("drafts: a publish that fails says so in plain words, with Try again", async () => {
   await signIn();
   stub.s.publish = { ...stub.s.publish, lint: [], lint_count: 0 };
@@ -1242,7 +1295,7 @@ test("review: one continuous text as the book site renders it, every edit inline
   assert.doesNotMatch(await page.locator("main").innerText() + await page.locator(".rv-pop").innerText(), /\.md\b|chapter-0\d/);
   // The bar: Tick all leaves the older-version edit alone.
   await page.mouse.move(5, 5);
-  assert.equal(await page.locator(".rv-bar .publish-reason").innerText(), "Tick at least one edit to accept.");
+  assert.equal(await page.locator(".rv-bar .publish-reason").innerText(), "Tick an edit, or edit a paragraph, to save.");
   await page.getByRole("button", { name: "Tick all", exact: true }).click();
   assert.equal(await page.locator(".rv-count").innerText(), "4 ticked");
   assert.ok(!(await edit("p21-wyy2li-old").locator(".rv-tick").isChecked()));
@@ -1397,7 +1450,7 @@ test("review: a batch with the older-version edit; Still to decide afterwards li
   await edit("p21-yyge7x").locator(".rv-alts").click();
   await page.locator(".rv-pop").getByRole("button", { name: "Show Sam Lee's instead" }).click();
   await edit("p22-vffdtv").locator(".rv-tick").check();
-  await page.getByRole("button", { name: "Accept 5 changes into drafts" }).click();
+  await page.getByRole("button", { name: "Save to drafts: 5 accepted, 0 paragraphs edited" }).click();
   await page.getByRole("heading", { name: "Accepted" }).waitFor();
   const sent = lastCall("author-act", (r) => r.body?.action === "review-accept").body;
   assert.deepEqual([...sent.hunks].sort(), ["i31", "p21-t26svd", "p21-wyy2li-old", "p22-vffdtv", "p23-20vndj"]);
@@ -1418,14 +1471,184 @@ test("review: the drafts moved meanwhile — redrawn on them, ticks still good k
   await edit("p23-20vndj").locator(".rv-tick").check();
   stub.s.reviewAnswers.push([409, { error: "review moved", userMessage: "The drafts changed while you were reviewing, so nothing was accepted. The review has been brought up to date.",
     view: REVIEW.moved, kept: ["p23-20vndj"], invalid: [{ id: "p21-t26svd", why: "its paragraph changed in the drafts since" }] }]);
-  await page.getByRole("button", { name: "Accept 2 changes into drafts" }).click();
+  await page.getByRole("button", { name: "Save to drafts: 2 accepted, 0 paragraphs edited" }).click();
   await page.getByText("The drafts changed while you were reviewing").waitFor();
   assert.match(await page.locator(".note.warn").innerText(), /No longer ticked: Jo Reader's edit \(part 1 of 3\): its paragraph changed in the drafts since\./);
   assert.ok(await edit("p23-20vndj").locator(".rv-tick").isChecked());
   assert.equal(await page.getByRole("heading", { name: "Accepted" }).count(), 0);
-  await page.getByRole("button", { name: "Accept 1 change into drafts" }).click();
+  await page.getByRole("button", { name: "Save to drafts: 1 accepted, 0 paragraphs edited" }).click();
   await page.getByRole("heading", { name: "Accepted" }).waitFor();
   assert.equal(lastCall("author-act", (r) => r.body?.action === "review-accept").body.drafts, REVIEW.moved.drafts);
+});
+
+// --- the author's own paragraph edits in the review ------------------------------------------------
+
+const block = (words) => page.locator(".rv-text .rv-block").filter({ hasText: words }).first();
+const CLAY = "Clay soils hold water; sandy soils drain fast.";
+/** No edits left in this browser, and nothing asking before the next test navigates. */
+const forgetEdits = () => page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith("tb-review-edits:")) localStorage.removeItem(k); });
+async function editBlock(words) {
+  await block(words).hover({ position: { x: 20, y: 6 } });
+  await page.locator(".rv-pencil-edit").click();
+  return page.locator(".rv-editor-text");
+}
+
+test("review: edit a paragraph — pencil on hover, the editor at the text's font and width, saved with two ticked edits as one drafts commit", async () => {
+  try {
+    await openReview();
+    await edit("p21-t26svd").locator(".rv-tick").check();
+    await edit("i31").locator(".rv-tick").check();
+    const ta = await editBlock("Clay soils hold");
+    assert.equal(await ta.inputValue(), CLAY);
+    const [font, width] = await page.evaluate(() => {
+      const t = document.querySelector(".rv-editor-text");
+      const p = document.querySelector(".rv-text p");
+      return [getComputedStyle(t).fontFamily === getComputedStyle(p).fontFamily && getComputedStyle(t).fontSize === getComputedStyle(p).fontSize, Math.abs(t.getBoundingClientRect().width - p.getBoundingClientRect().width)];
+    });
+    assert.ok(font, "same font");
+    assert.ok(width < 2, `same width (${width})`);
+    await ta.fill("Clay soils hold water, and sandy soils let it drain away fast.");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    const mine = page.locator(".rv-text .rv-mine");
+    await mine.first().waitFor();
+    assert.equal(await page.locator(".rv-mine-mark").innerText(), "YOUR EDIT");
+    assert.equal(await page.locator(".rv-text .rv-mine .rv-tick").count(), 0, "no checkbox");
+    assert.equal(await mine.locator("ins").first().evaluate((n) => getComputedStyle(n).textDecorationStyle), "double");
+    // Suggestions in that paragraph aren't in the text any more: they wait below.
+    assert.equal(await page.locator('.rv-text .rv-edit[data-id="p21-yyge7x"], .rv-text .rv-edit[data-id="p22-vffdtv"]').count(), 0);
+    const left = await page.locator(".rv-left > ul > li").allInnerTexts();
+    assert.equal(left.filter((t) => /made on an older version: you edited its paragraph/.test(t.split("\n")[0])).length, 2, left.join("|"));
+    const go = page.getByRole("button", { name: "Save to drafts: 2 accepted, 1 paragraph edited" });
+    await go.click();
+    await page.getByRole("heading", { name: "Accepted" }).waitFor();
+    const calls = stub.s.requests.filter((r) => r.endpoint === "author-act" && r.body?.action === "review-accept");
+    assert.equal(calls.length, 1, "one save, one commit");
+    assert.deepEqual([...calls[0].body.hunks].sort(), ["i31", "p21-t26svd"]);
+    assert.deepEqual(calls[0].body.edits, [{ at: 4, end: 5, orig: `${CLAY}\n\n`, text: "Clay soils hold water, and sandy soils let it drain away fast." }]);
+    // Still to decide afterwards: the two in the paragraph, as made on an older version.
+    const after = (await page.locator(".rv-left > ul > li").allInnerTexts()).map((t) => t.split("\n")[0]);
+    assert.ok(after.includes("Proposed edit “Clay and sand” — Sam Lee (made on an older version)"), after.join("|"));
+    await page.locator(".rv-publish").getByRole("button", { name: "Publish this chapter" }).waitFor();
+    assert.equal(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("tb-review-edits:")).length), 0, "nothing left to keep");
+  } finally {
+    await forgetEdits();
+  }
+});
+
+test("review: a ticked edit inside an edited paragraph is still accepted; Esc cancels; the edit survives a reload; leaving asks first", async () => {
+  try {
+    await openReview();
+    await edit("p23-20vndj").locator(".rv-tick").check();
+    // The keyboard: a paragraph takes focus, Enter opens its editor, Esc cancels.
+    await page.keyboard.press("Shift");
+    await block("Farmers").focus();
+    await page.locator(".rv-pencil").waitFor();
+    await page.keyboard.press("Enter");
+    const ta = page.locator(".rv-editor-text");
+    const ticked = await ta.inputValue();
+    assert.match(ticked, /^Farmers should test their soil/, "begun from the ticked edit");
+    await page.keyboard.press("Escape");
+    await ta.waitFor({ state: "detached" });
+    assert.ok(await block("Farmers").isVisible());
+    await block("Farmers").focus();
+    await page.keyboard.press("Enter");
+    await ta.fill(`${ticked} Twice a year is better.`);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("button", { name: "Save to drafts: 1 accepted, 1 paragraph edited" }).waitFor();
+    // Any question on leaving: yes, unless the test says no.
+    let stay = false;
+    const asked = [];
+    page.on("dialog", (d) => {
+      asked.push(d.message());
+      return stay ? d.dismiss() : d.accept();
+    });
+    // A reload keeps it, and its ticked edit.
+    await page.reload();
+    await page.locator(".rv-text .rv-mine").first().waitFor();
+    await page.getByRole("button", { name: "Save to drafts: 1 accepted, 1 paragraph edited" }).waitFor();
+    // An editor open with typing in it comes back too.
+    const ta2 = await editBlock("A soil profile");
+    await ta2.fill("A soil profile has layers.");
+    await page.reload();
+    assert.equal(await page.locator(".rv-editor-text").inputValue(), "A soil profile has layers.");
+    await page.getByRole("button", { name: "Cancel" }).click();
+    // Going elsewhere in the site asks; staying keeps the page.
+    stay = true;
+    await page.evaluate(() => { location.hash = "#/a-book/history"; });
+    await page.waitForFunction(() => location.hash.includes("/review/"));
+    assert.match(asked.at(-1), /aren't saved to the drafts yet/);
+    stay = false;
+    assert.ok(await page.locator(".rv-text .rv-mine").first().isVisible());
+    await page.getByRole("button", { name: "Save to drafts: 1 accepted, 1 paragraph edited" }).click();
+    await page.getByRole("heading", { name: "Accepted" }).waitFor();
+    const sent = lastCall("author-act", (r) => r.body?.action === "review-accept").body;
+    assert.deepEqual(sent.hunks, ["p23-20vndj"], "accepted, with credit");
+    assert.equal(sent.edits.length, 1);
+    assert.match(sent.edits[0].text, /Twice a year is better\.$/);
+  } finally {
+    await forgetEdits();
+  }
+});
+
+test("review: an edit with a formatting problem isn't saved; headings and two paragraphs stay in the chapter editor; add a paragraph after", async () => {
+  try {
+    await openReview();
+    let ta = await editBlock("Clay soils hold");
+    await ta.fill("## A heading");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByText("Headings are added in the chapter editor, not here.").waitFor();
+    await ta.fill("One.\n\nTwo.");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByText("One paragraph at a time", { exact: false }).waitFor();
+    await ta.fill(`${CLAY} ![](../assets/chapter-02/image1.png)`);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    // A new paragraph after this one, after an edit higher up was saved.
+    await block("Farmers").hover({ position: { x: 20, y: 6 } });
+    await page.locator(".rv-pencil-add").click();
+    ta = page.locator(".rv-editor-text");
+    assert.equal(await ta.inputValue(), "");
+    await ta.fill("Compost helps every soil.");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    const go = page.getByRole("button", { name: "Save to drafts: 0 accepted, 2 paragraphs edited" });
+    await go.click();
+    await page.getByText("A paragraph you edited needs a formatting fix before it can be saved", { exact: false }).waitFor();
+    assert.equal(stub.s.requests.filter((r) => r.endpoint === "author-act" && r.body?.action === "review-accept").length, 0, "nothing sent");
+  } finally {
+    await forgetEdits();
+  }
+});
+
+test("review: the drafts moved during a review edit — the edit is put where its paragraph is now, or kept aside, never written over newer text", async () => {
+  try {
+    await openReview();
+    await edit("p23-20vndj").locator(".rv-tick").check();
+    let ta = await editBlock("Clay soils hold");
+    await ta.fill("Clay soils hold water, and sandy soils let it drain away fast.");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    ta = await editBlock("Soil forms");
+    await ta.fill("Soil forms over centuries.");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    const moved = REVIEW.moved.paragraphs;
+    stub.s.reviewAnswers.push([409, { error: "review moved", userMessage: "The drafts changed while you were reviewing, so nothing was accepted. The review has been brought up to date.",
+      view: REVIEW.moved, kept: ["p23-20vndj"], invalid: [] }]);
+    await page.getByRole("button", { name: "Save to drafts: 1 accepted, 2 paragraphs edited" }).click();
+    await page.getByText("The drafts changed while you were reviewing").waitFor();
+    // What moved and what didn't decides it: an edit whose paragraph reads the same is kept.
+    const same = (orig) => moved.some((_, k) => moved.slice(k, k + orig.n).join("") === orig.text);
+    const clayKept = same({ n: 1, text: `${CLAY}\n\n` });
+    const soilKept = same({ n: 2, text: "Soil forms slowly from weathered rock\nand living things over many years.\n\n" });
+    const n = Number(clayKept) + Number(soilKept);
+    assert.ok(n < 2, "the fixture moves one of them");
+    await page.getByRole("button", { name: `Save to drafts: 1 accepted, ${n === 1 ? "1 paragraph" : `${n} paragraphs`} edited` }).waitFor();
+    if (n < 2) {
+      await page.getByText("couldn't be put back", { exact: false }).waitFor();
+      const kept = await page.locator(".rv-lost textarea").evaluateAll((ts) => ts.map((t) => t.value));
+      assert.ok(kept.some((t) => /Soil forms over centuries\.|drain away fast/.test(t)), kept.join("|"));
+    }
+    assert.equal(stub.s.requests.filter((r) => r.endpoint === "author-act" && r.body?.action === "review-accept").length, 1);
+  } finally {
+    await forgetEdits();
+  }
 });
 
 test("review on a phone (360 px): one column, no sideways scrolling; tap an edit or a note marker for its popover; the bar on screen", async () => {
@@ -1448,6 +1671,7 @@ async function phoneReview() {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "no horizontal scroll");
   assert.ok(await page.locator(".rv-margin").isHidden());
   // Tapping a note's marker: its note, and its words marked in the text.
+  await page.locator(".rv-text .rv-note-mark").evaluate((n) => n.scrollIntoView({ block: "center" }));
   await page.locator(".rv-text .rv-note-mark").tap();
   const pop = page.locator(".rv-pop");
   await pop.waitFor();
@@ -1464,6 +1688,23 @@ async function phoneReview() {
   const bar = await page.locator(".rv-bar").boundingBox();
   assert.ok(bar.x >= 0 && bar.x + bar.width <= 360 && bar.y + bar.height <= 740 + 1, JSON.stringify(bar));
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "still none with the popover open");
+  // Tapping a paragraph outside an edit mark: Edit this paragraph, in place, still one column.
+  await page.locator(".rv-summary").tap();
+  const at = await block("A soil profile").evaluate((b) => {
+    b.scrollIntoView({ block: "center" });
+    const w = document.createTreeWalker(b, NodeFilter.SHOW_TEXT, { acceptNode: (n) => n.textContent.trim() && !n.parentElement.closest(".rv-edit, .rv-note-mark, mark") ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP });
+    const r = document.createRange();
+    r.selectNodeContents(w.nextNode());
+    const q = r.getClientRects()[0];
+    return { x: q.left + 4, y: q.top + q.height / 2 };
+  });
+  await page.touchscreen.tap(at.x, at.y);
+  assert.ok(await page.locator(".rv-pencil").isHidden(), "no hover pencil on a phone");
+  await pop.getByRole("button", { name: "Edit this paragraph" }).tap();
+  const ta = page.locator(".rv-editor-text");
+  await ta.waitFor();
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "none with the editor open");
+  await page.getByRole("button", { name: "Cancel" }).tap();
 }
 
 test("history: a review's one change lists each item it accepted on its own line", async () => {
