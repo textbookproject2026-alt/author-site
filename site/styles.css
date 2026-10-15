@@ -441,7 +441,25 @@ mark.rv-flash { color: inherit; background: transparent; text-decoration: underl
 .rv-bar .publish-reason { margin: 0 0 0.4rem; }
 .rv-bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .rv-bar-row .rv-count { color: var(--portal-muted); font-size: 0.9rem; }
-.rv-bar-row .btn.primary { margin-left: auto; }
+.rv-bar-row .btn.primary { margin-left: auto; white-space: normal; text-align: center; justify-content: center; }
+/* The author's own paragraph edits: a double underline and a "your edit" label, never a checkbox. */
+.rv-mine ins { background: none; text-decoration: underline double 1px var(--portal-accent); text-underline-offset: 0.2em; }
+.rv-mine del { background: none; text-decoration: line-through double var(--portal-accent); color: var(--portal-muted); }
+.rv-mine-mark { display: inline; margin-left: 0.25em; padding: 0 0.3em; font: 600 0.7rem/1.4 var(--portal-font-ui); letter-spacing: 0.02em; text-transform: uppercase; vertical-align: 0.15em; border: 1px dashed var(--portal-accent); border-radius: 3px; color: var(--portal-accent); white-space: nowrap; cursor: pointer; }
+.rv-block { border-radius: 2px; }
+.rv-block:focus-visible { outline: 2px solid var(--portal-accent-soft); outline-offset: 3px; }
+.rv-pencil { position: absolute; z-index: 20; display: flex; flex-direction: column; gap: 2px; }
+.rv-pencil[hidden] { display: none; }
+.rv-pencil button { width: 1.75rem; height: 1.75rem; padding: 0; border: 1px solid var(--portal-border); border-radius: 4px; background: var(--portal-bg); color: var(--portal-accent); font: 1rem/1 var(--portal-font-ui); cursor: pointer; }
+.rv-pencil button:hover, .rv-pencil button:focus-visible { border-color: var(--portal-accent); }
+.rv-editor { margin: 0 0 1rem; }
+.rv-editor .btn, .rv-editor .muted { font-family: var(--portal-font-ui); }
+.rv-editor-text { display: block; box-sizing: border-box; width: 100%; min-height: 4em; padding: 0.4rem 0.5rem; margin: 0.25rem 0; font: inherit; font-family: var(--portal-font-text); line-height: inherit; color: inherit; background: var(--portal-bg); border: 1px solid var(--portal-accent-soft); border-radius: 4px; resize: vertical; overflow-wrap: anywhere; }
+.rv-lost { margin: 0.75rem 0; }
+.rv-lost textarea { display: block; box-sizing: border-box; width: 100%; font: inherit; font-family: var(--portal-font-text); }
+.rv-publish, .publish-chapter { margin-top: 0.5rem; overflow-wrap: anywhere; }
+/* In a drafts line: what it says takes the line's whole width. */
+.publish-chapter:has(> div:not(:empty)) { flex-basis: 100%; }
 .rv-left { margin-top: 1.5rem; }
 .rv-words { font-family: var(--portal-font-text); white-space: pre-line; overflow-wrap: anywhere; margin: 0.4rem 0 0.25rem; }
 .rv-words del { text-decoration: line-through; background: var(--portal-del-strong); color: inherit; border-radius: 2px; }

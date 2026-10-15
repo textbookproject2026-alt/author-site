@@ -42,6 +42,9 @@ import { bookPath, forPreview, sanitise } from "./preview.js";
 import { words, threeWay, openedKey } from "./suggestions.js";
 import { declineButton } from "./decline.js";
 import { diff, tokens } from "./diff.js";
+import { lintText } from "./lint.js";
+import { covers, keyOf, loadEdits, prefill, rangeFor, reanchor, resultOf, saveEdits } from "./review-edits.js";
+import { publishChapterButton } from "./publish-chapter.js";
 
 /** lib/review.mjs clash: ranges sharing a paragraph, or an insertion at the other's edge. */
 export const clash = (a, b) => (a.at < b.end && b.at < a.end) || ((a.at === a.end || b.at === b.end) && a.at <= b.end && b.at <= a.end);
@@ -135,7 +138,7 @@ export function groupsOf(v) {
 
 // --- the text, with the edits in it -------------------------------------------------------------
 
-const TOKEN = /C4N([EN])(\d+)Z/g;
+const TOKEN = /C4N([ENB])([\d_]+)Z/g;
 const MARK = /^C4N([GA])([\d_]+)([SE])$/;
 
 /**
@@ -211,7 +214,7 @@ function linesMd(P, lo, hi, picks, runs, noteAt) {
   let i = lo;
   for (const x of mine) {
     for (; i < x.at; i++) out += line(i);
-    out += inline(x, runs, tok(x.at, x.end));
+    out += inline(x, runs, [tok(x.at, x.end), x.tail].filter(Boolean).join(" "));
     i = Math.max(i, x.end);
   }
   for (; i < hi; i++) out += line(i);
@@ -254,9 +257,9 @@ function regionsOf(P, groups, front) {
 }
 
 /** The chapter's Markdown with the edits shown in it, and each group's alternatives after it. */
-function documentMarkdown(v, groups, shownIn, regions, front, runs) {
+function documentMarkdown(v, groups, shownIn, regions, front, runs, mine = []) {
   const P = v.paragraphs;
-  const { end } = blocksOf(P);
+  const { start, end } = blocksOf(P);
   // A note's marker at the end of the paragraph it was written on.
   const noteAt = new Map();
   v.notes.forEach((n, k) => {
@@ -264,7 +267,18 @@ function documentMarkdown(v, groups, shownIn, regions, front, runs) {
     const l = end[Math.min(n.at, P.length - 1)];
     noteAt.set(l, [noteAt.get(l), `C4NN${k}Z`].filter(Boolean).join(" "));
   });
-  const picks = (alt = []) => groups.map((g, k) => alt.find(([gk]) => gk === k)?.[1] ?? g.hunks[shownIn[k]]);
+  // Each paragraph that can be edited here, marked at its end ("C4NB<lo>_<hi>Z"): not a
+  // heading, code, a table or HTML. Headings and new chapters stay in the chapter editor.
+  for (let i = front; i < P.length; i++) {
+    if (end[i] !== i) continue;
+    const lo = start[i];
+    if (lo < front || /^(#{1,6}\s|```|~~~|\||<|---\s*$)/.test(P[lo]) || !P.slice(lo, i + 1).join("").trim()) continue;
+    if (mine.some((e) => e.lo < e.hi && lo < e.hi && e.lo <= i)) continue;
+    noteAt.set(i, [noteAt.get(i), `C4NB${lo}_${i + 1}Z`].filter(Boolean).join(" "));
+  }
+  // The author's own edits, as edits of their own ("your edit"), each marked for editing again.
+  const own = mine.map((e) => ({ id: `mine-${keyOf(e)}`, at: e.lo, end: e.hi, from: P.slice(e.lo, e.hi).join(""), to: e.text, tail: `C4NB${e.lo}_${e.hi}Z` }));
+  const picks = (alt = []) => [...groups.map((g, k) => alt.find(([gk]) => gk === k)?.[1] ?? g.hunks[shownIn[k]]), ...own];
   const wrap = (tag, body) => `\n\nC4N${tag}S\n\n${body.replace(/\n*$/, "")}\n\nC4N${tag}E\n\n`;
   let md = "";
   let i = front;
@@ -302,12 +316,12 @@ async function render(md) {
 function swapTokens(root, make) {
   const found = [];
   const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  while (walk.nextNode()) if (/C4N[EN]\d+Z/.test(walk.currentNode.nodeValue)) found.push(walk.currentNode);
+  while (walk.nextNode()) if (/C4N[ENB][\d_]+Z/.test(walk.currentNode.nodeValue)) found.push(walk.currentNode);
   for (const t of found) {
     const parts = [];
     let last = 0;
     for (const m of t.nodeValue.matchAll(TOKEN)) {
-      parts.push(document.createTextNode(t.nodeValue.slice(last, m.index)), make(m[1], Number(m[2])));
+      parts.push(document.createTextNode(t.nodeValue.slice(last, m.index)), make(m[1], m[1] === "B" ? m[2] : Number(m[2])));
       last = m.index + m[0].length;
     }
     parts.push(document.createTextNode(t.nodeValue.slice(last)));
@@ -464,16 +478,71 @@ export async function reviewScreen(slug, path) {
   const restore = back?.restore && back.path === path ? back : null;
   if (back?.restore) store.set(RETURN(slug), null);
   const stage = h("div", { class: "review" });
-  await draw(stage, book, v, new Set(restore?.ticked ?? []), null, restore);
+  // Edits not yet saved to the drafts, from this browser: where their paragraphs are now.
+  const kept = loadEdits(slug, path);
+  const placed = reanchor(v.paragraphs, kept.edits);
+  edState = { slug, path, edits: placed.kept, lost: [...(kept.lost ?? []), ...placed.lost], open: kept.open ?? null };
+  saveEdits(slug, path, edState);
+  guardLeaving(stage);
+  await draw(stage, book, v, new Set([...(restore?.ticked ?? []), ...edState.edits.flatMap((e) => e.took ?? [])]), null, restore);
   return [...bookHeader(book, "drafts", `Review: ${title}`), stage];
 }
+
+// The author's paragraph edits on the page being reviewed (review-edits.js), kept in this
+// browser as they change: { slug, path, edits, lost, open }.
+let edState = { edits: [], lost: [], open: null };
+const keepEdits = () => saveEdits(edState.slug, edState.path, edState);
+const unsaved = () => edState.edits.length > 0 || Boolean(edState.open?.dirty);
+
+/**
+ * Leaving the review with edits not saved to the drafts asks first: a reload or closing
+ * the tab (beforeunload), and going elsewhere in the site (the hash). They are kept in this
+ * browser either way. Listened for from here, as this module loads: before the site's own
+ * hashchange listener, which starts drawing the next screen at once.
+ */
+// Whether the last thing the author did was press a key (the pencil follows the keyboard's focus).
+let byKeys = false;
+globalThis.document?.addEventListener?.("keydown", () => (byKeys = true), { capture: true });
+globalThis.document?.addEventListener?.("pointerdown", () => (byKeys = false), { capture: true });
+let guarded = null; // { stage, here, back }: the review on screen
+function guardLeaving(stage) {
+  guarded = { stage, here: location.hash, back: false };
+}
+globalThis.window?.addEventListener?.("beforeunload", (e) => {
+  if (guarded?.stage.isConnected && unsaved()) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
+globalThis.window?.addEventListener?.("hashchange", (e) => {
+  const g = guarded;
+  if (!g?.stage.isConnected) return;
+  if (g.back) {
+    g.back = false;
+    e.stopImmediatePropagation();
+    return;
+  }
+  if (location.hash === g.here || !unsaved()) {
+    g.here = location.hash;
+    return;
+  }
+  if (!window.confirm("Your paragraph edits aren't saved to the drafts yet. Leave anyway? They're kept in this browser for when you come back.")) {
+    e.stopImmediatePropagation();
+    g.back = true;
+    location.hash = g.here;
+  }
+}, true);
 
 async function draw(stage, book, v, ticked, said, restore = null) {
   const slug = book.slug;
   const byId = new Map(v.hunks.map((x) => [x.id, x]));
   const byKey = new Map(v.items.map((i) => [i.key, i]));
   for (const id of ticked) if (!byId.has(id) || !tickable(byId.get(id))) ticked.delete(id);
-  const groups = groupsOf(v);
+  // Suggestions in a paragraph the author edited aren't shown in it: ticked ones are in the
+  // author's words (accepted, credited), the rest are listed to decide.
+  const mine = edState.edits;
+  const inMine = (x) => mine.some((e) => covers(e, x));
+  const groups = groupsOf({ ...v, hunks: v.hunks.filter((x) => !inMine(x)) });
   const groupOf = new Map(groups.flatMap((g, k) => g.hunks.map((x) => [x.id, k])));
   // Which edit each group shows: the one shown before (Back), a ticked one, else the first.
   const before = new Set(restore?.shown ?? []);
@@ -484,7 +553,7 @@ async function draw(stage, book, v, ticked, said, restore = null) {
   const regions = regionsOf(P, groups, front);
   const regionOf = new Map(regions.flatMap((r, ri) => r.groups.map((g) => [g, ri])));
   const runs = [];
-  const { frag } = await render(documentMarkdown(v, groups, shownIn, regions, front, runs));
+  const { frag } = await render(documentMarkdown(v, groups, shownIn, regions, front, runs, mine));
   const body = h("div", { class: "preview rv-text" });
   body.append(frag);
 
@@ -530,6 +599,14 @@ async function draw(stage, book, v, ticked, said, restore = null) {
   };
   const editNode = (k) => {
     const r = runs[k];
+    if (r.id.startsWith("mine-")) {
+      // The author's own: no box, its own look (double underline, "your edit"), not colour alone.
+      const span = h("span", { class: "rv-edit rv-mine", "data-mine": r.id.slice(5) });
+      if (r.del) span.append(marked("del", "removed", forPreview(r.del)));
+      if (r.ins) span.append(marked("ins", "added", forPreview(r.ins)));
+      if (r.first) span.append(h("span", { class: "rv-mine-mark", text: "your edit" }));
+      return span;
+    }
     const x = byId.get(r.id);
     const it = byKey.get(x.item);
     const g = groups[groupOf.get(x.id)];
@@ -552,8 +629,28 @@ async function draw(stage, book, v, ticked, said, restore = null) {
     return span;
   };
   const noteNode = (k) => h("button", { type: "button", class: "rv-note-mark", "data-note": String(k), "aria-label": `Note from ${byKey.get(v.notes[k].item).who}`, text: "note" });
-  swapTokens(body, (kind, k) => (kind === "E" ? editNode(k) : noteNode(k)));
-  for (const nodes of kept.values()) for (const n of nodes) swapTokens(n, (kind, k) => (kind === "E" ? editNode(k) : noteNode(k)));
+  // A paragraph's end marker: the block it ends becomes editable (data-lo, data-hi).
+  const blockNode = (k) => h("span", { class: "rv-anchor", "data-range": k, hidden: true });
+  const make = (kind, k) => (kind === "E" ? editNode(k) : kind === "N" ? noteNode(k) : blockNode(k));
+  swapTokens(body, make);
+  for (const nodes of kept.values()) for (const n of nodes) swapTokens(n, make);
+  const blocks = (root) => {
+    for (const a of Array.from(root.querySelectorAll?.(".rv-anchor") ?? [])) {
+      let el = a;
+      while (el.parentElement && el.parentElement !== body && el.parentElement.nodeName !== "DIV") el = el.parentElement;
+      const [lo, hi] = a.dataset.range.split("_").map(Number);
+      el.classList.add("rv-block");
+      el.dataset.lo = String(lo);
+      el.dataset.hi = String(hi);
+      el.tabIndex = 0;
+      el.setAttribute("aria-label", "A paragraph: press Enter to edit it");
+      // The space the marker was put after goes with it.
+      if (a.previousSibling?.nodeType === 3) a.previousSibling.textContent = a.previousSibling.textContent.replace(/\s+$/, "");
+      a.remove();
+    }
+  };
+  blocks(body);
+  for (const nodes of kept.values()) for (const n of nodes) if (n.nodeType === 1) blocks(n);
   // The book site's typography: the text, then each alternative kept aside on its own.
   await smarten([body]);
   for (const nodes of kept.values()) {
@@ -624,10 +721,28 @@ async function draw(stage, book, v, ticked, said, restore = null) {
       h("p", { text: n.text }),
       links(it));
   };
+  const aboutMine = (span) => {
+    const e = mine.find((x) => keyOf(x) === span.dataset.mine);
+    clear(pop,
+      h("p", { class: "rv-pop-who" }, h("strong", { text: "Your edit" }), h("span", { class: "muted", text: " · saved with the rest when you save to the drafts" })),
+      h("div", { class: "rv-pop-actions row" },
+        h("button", { type: "button", class: "btn small", text: "Edit again", onclick: () => e && openEditor(e.lo, e.hi, { insert: e.lo === e.hi, own: e }) }),
+        h("button", { type: "button", class: "btn small", text: "Discard your edit", onclick: () => {
+          edState.edits = edState.edits.filter((x) => x !== e);
+          keepEdits();
+          redraw();
+        } })));
+  };
+  // On a phone (no hover, no pencil): tapping a paragraph outside an edit offers the same.
+  const aboutBlock = (el) => clear(pop, h("div", { class: "rv-pop-actions" },
+    h("button", { type: "button", class: "btn small", text: "Edit this paragraph", onclick: () => openEditor(Number(el.dataset.lo), Number(el.dataset.hi)) }),
+    h("button", { type: "button", class: "btn small", text: "Add a paragraph after this one", onclick: () => openEditor(Number(el.dataset.hi), Number(el.dataset.hi), { insert: true }) })));
   const show = (target, pin) => {
     clearTimeout(hideTimer);
     if (pinned && !pin && pinned !== target) return;
-    if (target.classList.contains("rv-note-mark")) {
+    if (target.classList.contains("rv-mine")) aboutMine(target);
+    else if (target.classList.contains("rv-block")) aboutBlock(target);
+    else if (target.classList.contains("rv-note-mark")) {
       aboutNote(target);
       notePassage(Number(target.dataset.note));
     } else aboutEdit(target);
@@ -668,7 +783,11 @@ async function draw(stage, book, v, ticked, said, restore = null) {
   body.addEventListener("pointerdown", (e) => (pointer = e.pointerType || "mouse"));
   body.addEventListener("click", (e) => {
     const t = owner(e);
-    if (!t) return;
+    if (!t) {
+      const block = e.target.closest?.(".rv-block");
+      if (block && pointer !== "mouse" && !e.target.closest("a")) show(block, true);
+      return;
+    }
     if (e.target.matches("input") && pointer === "mouse") return;
     // A second tap on the words closes it; the box and "N alternatives" always open it.
     if (pinned === t && !e.target.closest("input, button")) return close();
@@ -720,6 +839,138 @@ async function draw(stage, book, v, ticked, said, restore = null) {
     visibleBox(groups[g].hunks[k].id)?.focus();
   };
 
+  // --- editing a paragraph here ---
+  const tickedHunks = () => [...ticked].map((id) => byId.get(id)).filter((x) => x && tickable(x));
+  const blockAt = (lo, hi) => body.querySelector(`.rv-block[data-lo="${lo}"][data-hi="${hi}"]`);
+  const { start: blockStart } = blocksOf(P);
+  const redraw = async (words = null) => {
+    remember();
+    const r = store.get(RETURN(slug));
+    store.set(RETURN(slug), null);
+    pop.remove();
+    pencil.remove();
+    // Until the new one is drawn (GitHub renders it), this text takes no clicks.
+    body.inert = true;
+    await draw(stage, book, v, ticked, words ? [words] : null, { ...r, restore: true });
+  };
+  /**
+   * The editor in place of lines lo..hi (the block shown there), at the text's font and
+   * width, starting from its Markdown with the ticked edits in it; `insert`: a new paragraph
+   * after the block ending at line lo - 1. Save, Cancel, Esc. One at a time.
+   */
+  function openEditor(lo, hi, { insert = false, own = null, text: given = null } = {}) {
+    if (body.inert) return;
+    close();
+    pencilHide();
+    const open = stage.querySelector(".rv-editor textarea");
+    if (open) return open.focus();
+    const range = own ? { lo: own.lo, hi: own.hi } : insert ? { lo, hi: lo } : rangeFor(v.hunks.filter(tickable), lo, hi);
+    const start = own ? own.text : insert ? "" : prefill(P, range.lo, range.hi, tickedHunks());
+    const el = own ? blockAt(own.lo, own.hi) : insert ? body.querySelector(`.rv-block[data-hi="${lo}"]`) : blockAt(lo, hi);
+    const ta = h("textarea", { class: "rv-editor-text", "aria-label": insert ? "A new paragraph" : "This paragraph, as Markdown", spellcheck: "true" });
+    ta.value = given ?? start;
+    const why = h("p", { class: "publish-reason", role: "alert", hidden: true });
+    const fit = () => {
+      ta.style.height = "auto";
+      ta.style.height = `${ta.scrollHeight + 2}px`;
+    };
+    const box = h("div", { class: "rv-editor" },
+      h("p", { class: "muted small", text: insert ? "A new paragraph after this one" : "Editing this paragraph (Markdown). Esc cancels." }),
+      ta, why,
+      h("div", { class: "row" },
+        h("button", { type: "button", class: "btn primary small", text: "Save", onclick: () => save() }),
+        h("button", { type: "button", class: "btn small", text: "Cancel", onclick: () => cancel() })));
+    // A new paragraph's editor goes after its paragraph; any other takes the place of what it edits.
+    (el ?? body.lastElementChild)?.after(box);
+    if (el && !(insert && !own)) el.hidden = true;
+    edState.open = { lo, hi, insert, own: own ? keyOf(own) : null, text: ta.value, dirty: given !== null && given !== start };
+    keepEdits();
+    fit();
+    ta.focus();
+    ta.addEventListener("input", () => {
+      fit();
+      edState.open.text = ta.value;
+      edState.open.dirty = ta.value !== start;
+      keepEdits();
+    });
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cancel();
+      }
+    });
+    function cancel() {
+      box.remove();
+      if (el && !(insert && !own)) el.hidden = false;
+      edState.open = null;
+      keepEdits();
+      el?.focus();
+    }
+    function save() {
+      const text = ta.value.replace(/\s+$/, "");
+      const say = (t) => {
+        why.textContent = t;
+        why.hidden = false;
+      };
+      // Headings and new chapters stay in the chapter editor; one paragraph at a time.
+      if (/^#{1,6}\s/m.test(text)) return say("Headings are added in the chapter editor, not here.");
+      if (/\n[ \t]*\n/.test(text.trim())) return say("One paragraph at a time: for another, save this and use “Add a paragraph after this one”.");
+      if ((insert && !text.trim()) || (!own && text === start.replace(/\s+$/, ""))) return cancel();
+      const e = { lo: range.lo, hi: range.hi, orig: P.slice(range.lo, range.hi).join(""), text };
+      // The ticked edits it was begun from stay ticked (accepted, credited) after a reload.
+      e.took = tickedHunks().filter((x) => covers(e, x)).map((x) => x.id);
+      if (range.lo === range.hi && range.lo > 0) {
+        // A new paragraph is found again after the paragraph it follows.
+        const s0 = blockStart[range.lo - 1];
+        Object.assign(e, { after: P.slice(s0, range.lo).join(""), afterN: range.lo - s0 });
+      }
+      edState.edits = [...edState.edits.filter((x) => keyOf(x) !== keyOf(e)), e];
+      edState.open = null;
+      keepEdits();
+      redraw();
+    }
+  }
+  // The pencil in the margin beside the paragraph under the pointer or the keyboard.
+  const pencil = h("div", { class: "rv-pencil", hidden: true },
+    h("button", { type: "button", class: "rv-pencil-edit", "aria-label": "Edit this paragraph", title: "Edit this paragraph", text: "✎" }),
+    h("button", { type: "button", class: "rv-pencil-add", "aria-label": "Add a paragraph after this one", title: "Add a paragraph after this one", text: "+" }));
+  let pencilFor = null;
+  let pencilTimer = 0;
+  const pencilAt = (el) => {
+    if (stage.querySelector(".rv-editor")) return;
+    clearTimeout(pencilTimer);
+    pencilFor = el;
+    pencil.hidden = false;
+    const r = el.getBoundingClientRect();
+    pencil.style.top = `${r.top + window.scrollY}px`;
+    pencil.style.left = `${Math.max(2, r.left + window.scrollX - pencil.offsetWidth - 6)}px`;
+  };
+  function pencilHide() {
+    pencil.hidden = true;
+    pencilFor = null;
+  }
+  // A mouse's only: a tap's emulated hover doesn't bring it (a phone has the popover).
+  body.addEventListener("pointerover", (e) => {
+    const b = e.target.closest?.(".rv-block");
+    if (b && e.pointerType === "mouse" && matchMedia("(hover: hover)").matches) pencilAt(b);
+  });
+  body.addEventListener("mouseout", (e) => {
+    if (e.relatedTarget && (body.contains(e.relatedTarget) || pencil.contains(e.relatedTarget))) return;
+    pencilTimer = setTimeout(pencilHide, 400);
+  });
+  pencil.addEventListener("mouseenter", () => clearTimeout(pencilTimer));
+  pencil.addEventListener("mouseleave", () => (pencilTimer = setTimeout(pencilHide, 400)));
+  // From the keyboard only: a tap focuses the paragraph too, and a phone has its popover.
+  body.addEventListener("focusin", (e) => byKeys && e.target.classList?.contains("rv-block") && pencilAt(e.target));
+  body.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.classList?.contains("rv-block")) {
+      e.preventDefault();
+      openEditor(Number(e.target.dataset.lo), Number(e.target.dataset.hi));
+    }
+  });
+  pencil.querySelector(".rv-pencil-edit").addEventListener("click", () => pencilFor && openEditor(Number(pencilFor.dataset.lo), Number(pencilFor.dataset.hi)));
+  pencil.querySelector(".rv-pencil-add").addEventListener("click", () => pencilFor && openEditor(Number(pencilFor.dataset.hi), Number(pencilFor.dataset.hi), { insert: true }));
+
   // --- the margin: each note beside its paragraph ---
   const side = h("div", { class: "rv-margin" });
   const sideNotes = new Map();
@@ -747,13 +998,19 @@ async function draw(stage, book, v, ticked, said, restore = null) {
 
   // --- what can't be ticked inline: Still to decide, before any accept ---
   const left = h("div", {});
-  const drawLeft = () => clear(left, stillToDecide(book, v, ticked, byId, byKey, { shown: new Set(groups.map((g, k) => g.hunks[shownIn[k]].id)), after: reload }));
+  const drawLeft = () => clear(left, stillToDecide(book, v, ticked, byId, byKey, { shown: new Set(groups.map((g, k) => g.hunks[shownIn[k]].id)), after: reload, edited: inMine }));
   const reload = async (words) => {
     remember();
     const r = store.get(RETURN(slug));
     store.set(RETURN(slug), null);
     pop.remove();
-    await draw(stage, book, await loadView(slug, v.path), new Set(r.ticked), [words], { ...r, restore: true });
+    pencil.remove();
+    const nv = await loadView(slug, v.path);
+    const placed = reanchor(nv.paragraphs, edState.edits);
+    edState.edits = placed.kept;
+    edState.lost = [...edState.lost, ...placed.lost];
+    keepEdits();
+    await draw(stage, book, nv, new Set(r.ticked), [words], { ...r, restore: true });
   };
 
   // --- the bar ---
@@ -766,10 +1023,11 @@ async function draw(stage, book, v, ticked, said, restore = null) {
     for (const [id, boxes] of checks) for (const box of boxes) box.checked = ticked.has(id);
     for (const s of body.querySelectorAll(".rv-edit")) s.classList.toggle("ticked", ticked.has(s.dataset.id));
     const n = ticked.size;
-    go.textContent = `Accept ${plural(n, "change")} into drafts`;
-    go.disabled = n === 0;
-    reason.textContent = n ? "" : "Tick at least one edit to accept.";
-    reason.hidden = n > 0;
+    const m = mine.length;
+    go.textContent = `Save to drafts: ${n} accepted, ${plural(m, "paragraph")} edited`;
+    go.disabled = n + m === 0;
+    reason.textContent = n + m ? "" : "Tick an edit, or edit a paragraph, to save.";
+    reason.hidden = n + m > 0;
     count.textContent = `${n} ticked`;
     // The popover's button says what a tap on it will do now (a box tapped meanwhile included).
     const t = pop.querySelector(".rv-pop-tick");
@@ -784,29 +1042,66 @@ async function draw(stage, book, v, ticked, said, restore = null) {
   };
   go.addEventListener("click", async () => {
     go.disabled = true;
-    clear(outcome, busy("Putting the ticked edits into the drafts…"));
     const ids = [...ticked];
+    // The chapter as it will be saved, through the book's formatting rules (as the editor's):
+    // a problem in a paragraph the author edited stops the save; others were there before.
+    if (mine.length) {
+      clear(outcome, busy("Checking the formatting…"));
+      const res = resultOf(P, tickedHunks(), mine);
+      const problems = await lintText(book, v.drafts, v.path, res.text).catch(() => null);
+      const theirs = (problems ?? []).filter((x) => [...res.lines.values()].some(([a, b]) => x.line >= a && x.line <= b));
+      if (theirs.length) {
+        go.disabled = false;
+        clear(outcome, note([h("p", { text: "A paragraph you edited needs a formatting fix before it can be saved:" }), h("ul", {}, theirs.map((x) => h("li", { text: x.words })))], "warn"));
+        return;
+      }
+    }
+    clear(outcome, busy("Putting it into the drafts…"));
+    const edited = (x) => mine.some((e) => covers(e, x));
     try {
-      const r = await act(slug, "review-accept", { path: v.path, drafts: v.drafts, hunks: ids });
+      const r = await act(slug, "review-accept", { path: v.path, drafts: v.drafts, hunks: ids, edits: mine.map((e) => ({ at: e.lo, end: e.hi, orig: e.orig, text: e.text })) });
       forgetCount(slug);
+      edState.edits = [];
+      edState.open = null;
+      keepEdits();
       pop.remove();
-      clear(stage, ...afterwards(book, v, r, ids));
+      pencil.remove();
+      clear(stage, ...afterwards(book, v, r, ids, edited));
       stage.scrollIntoView({ block: "start" });
     } catch (err) {
       if (err?.status === 409 && err.body?.view) {
-        // Nothing was written: drawn again on the drafts as they are now.
+        // Nothing was written: drawn again on the drafts as they are now. The author's edits
+        // go where their paragraphs are now; one whose paragraph changed is kept aside, shown.
         const names = (err.body.invalid ?? []).map((b) => {
           const x = byId.get(b.id);
           return x ? `${byKey.get(x.item).who}'s edit${partOf(x) ? ` (${partOf(x)})` : ""}: ${b.why}` : b.why;
         });
+        const placed = reanchor(err.body.view.paragraphs, edState.edits);
+        edState.edits = placed.kept;
+        edState.lost = [...edState.lost, ...placed.lost];
+        keepEdits();
         pop.remove();
-        await draw(stage, book, withOverlaps(err.body.view), new Set(err.body.kept ?? []), [err.body.userMessage, names.length ? `No longer ticked: ${names.join("; ")}.` : "Everything you ticked is still ticked."]);
+        pencil.remove();
+        await draw(stage, book, withOverlaps(err.body.view), new Set(err.body.kept ?? []), [err.body.userMessage,
+          names.length ? `No longer ticked: ${names.join("; ")}.` : "Everything you ticked is still ticked.",
+          placed.lost.length ? `${plural(placed.lost.length, "of your paragraph edits")} couldn't be put back: ${placed.lost.length === 1 ? "its" : "their"} paragraph changed in the drafts. ${placed.lost.length === 1 ? "It is" : "They are"} kept below, to copy in again.` : ""]);
         return;
       }
-      go.disabled = ticked.size === 0;
+      go.disabled = ticked.size + mine.length === 0;
       clear(outcome, errorNote(err));
     }
   });
+  // Edits whose paragraph changed under them: never thrown away, never written over the new text.
+  const lostNote = edState.lost.length ? note([
+    h("p", { text: "Your edits to paragraphs that have changed in the drafts since. Copy what you want into the paragraph as it is now:" }),
+    edState.lost.map((e, k) => h("div", { class: "rv-lost" },
+      h("textarea", { class: "rv-editor-text", readonly: true, rows: "3", "aria-label": "Your edit" }, e.text),
+      h("button", { type: "button", class: "btn small", text: "Discard this", onclick: () => {
+        edState.lost = edState.lost.filter((_, i) => i !== k);
+        keepEdits();
+        redraw();
+      } }))),
+  ], "warn") : null;
 
   // Above the text: how much is waiting (the count under Still to decide is its list's),
   // and the notes on the whole chapter, three at first.
@@ -832,16 +1127,21 @@ async function draw(stage, book, v, ticked, said, restore = null) {
     // Nothing to tick: one plain line, and no bar.
     !groups.length && toDecide ? h("p", { class: "rv-quiet", text: `Nothing to tick here; ${plural(toDecide, "item")} to decide below.` }) : null,
     chapterNotes,
+    lostNote,
     h("div", { class: "rv-body" }, body, side),
-    groups.length ? h("div", { class: "rv-bar" }, reason,
+    groups.length || mine.length ? h("div", { class: "rv-bar" }, reason,
       h("div", { class: "rv-bar-row" },
-        h("button", { type: "button", class: "btn", text: "Tick all", onclick: () => all(true) }),
-        h("button", { type: "button", class: "btn", text: "Untick all", onclick: () => all(false) }),
-        count, go),
+        groups.length ? [h("button", { type: "button", class: "btn", text: "Tick all", onclick: () => all(true) }),
+          h("button", { type: "button", class: "btn", text: "Untick all", onclick: () => all(false) }), count] : null, go),
       outcome) : null,
     left,
-    pop);
+    pop, pencil);
   refresh();
+  // An editor open when the page was left (or reloaded): open again with what was typed.
+  if (edState.open) {
+    const o = edState.open;
+    openEditor(o.lo, o.hi, { insert: o.insert, own: o.own ? mine.find((e) => keyOf(e) === o.own) : null, text: o.text });
+  }
   if (restore?.y != null) requestAnimationFrame(() => window.scrollTo(0, restore.y));
   // Notes follow their paragraph when the width (and so the wrapping) changes.
   if (typeof ResizeObserver === "function") new ResizeObserver(() => body.isConnected && layout()).observe(body);
@@ -849,7 +1149,7 @@ async function draw(stage, book, v, ticked, said, restore = null) {
 
 // --- afterwards ----------------------------------------------------------------------------------
 
-function afterwards(book, v, r, ids) {
+function afterwards(book, v, r, ids, edited = () => false) {
   const byId = new Map(v.hunks.map((x) => [x.id, x]));
   const byKey = new Map(v.items.map((i) => [i.key, i]));
   return [
@@ -863,7 +1163,9 @@ function afterwards(book, v, r, ids) {
       r.url ? h("p", {}, h("a", { href: r.url, target: "_blank", rel: "noopener", text: "See the change on GitHub" })) : null,
     ]),
     r.warning ? note([h("p", { text: r.warning })], "warn") : null,
-    stillToDecide(book, v, new Set(ids), byId, byKey, null),
+    stillToDecide(book, v, new Set(ids), byId, byKey, null, edited),
+    // Its changes are in the drafts now: this chapter can go to readers on its own.
+    h("div", { class: "rv-publish" }, publishChapterButton(book, v.path, titlesNow?.get(v.path) ?? v.path)),
     h("div", { class: "actions" },
       h("a", { class: "btn", href: `#/${book.slug}/drafts`, text: "Back to Drafts" }),
       h("a", { class: "btn", href: `#/${book.slug}/edit/${encodeURIComponent(v.path)}`, text: "Open the chapter in the editor" })),
@@ -877,13 +1179,14 @@ function afterwards(book, v, r, ids) {
  * not shown and what can't be shown here; a part of a proposal is declined with the whole
  * of it then, as nothing of it is accepted yet. `after(words)` redraws once one is answered.
  */
-function stillToDecide(book, v, ticked, byId, byKey, before) {
+function stillToDecide(book, v, ticked, byId, byKey, before, edited = () => false) {
   const slug = book.slug;
   const entries = [];
   for (const it of v.items) {
     const hs = it.hunks.map((id) => byId.get(id));
     if (before) {
-      const why = (x) => (x.lost ? "its words aren't in the chapter any more" : x.stale ? "made on an older version" : !before.shown.has(x.id) ? "an alternative to the one shown" : null);
+      const why = (x) => (before.edited?.(x) ? (ticked.has(x.id) ? null : "made on an older version: you edited its paragraph")
+        : x.lost ? "its words aren't in the chapter any more" : x.stale ? "made on an older version" : !before.shown.has(x.id) ? "an alternative to the one shown" : null);
       const open = hs.filter((x) => !x.already);
       const left = open.filter(why);
       if (it.kind === "note" || it.why || !open.length) entries.push({ it, whole: true, why: whyLeft(it, byId, byKey) });
@@ -893,8 +1196,9 @@ function stillToDecide(book, v, ticked, byId, byKey, before) {
     }
     const mine = it.hunks.filter((id) => ticked.has(id));
     if (mine.length && it.hunks.every((id) => ticked.has(id) || byId.get(id).already)) continue;
-    if (!mine.length) entries.push({ it, whole: true, why: whyLeft(it, byId, byKey) });
-    else for (const id of it.hunks.filter((x) => !ticked.has(x) && !byId.get(x).already)) entries.push({ it, x: byId.get(id), why: byId.get(id).stale ? "made on an older version" : "not ticked" });
+    const open = hs.filter((x) => !x.already);
+    if (!mine.length) entries.push({ it, whole: true, why: open.length && open.every(edited) ? "made on an older version" : whyLeft(it, byId, byKey) });
+    else for (const id of it.hunks.filter((x) => !ticked.has(x) && !byId.get(x).already)) entries.push({ it, x: byId.get(id), why: byId.get(id).stale || edited(byId.get(id)) ? "made on an older version" : "not ticked" });
   }
   if (!entries.length) return h("section", { class: "rv-left", "data-count": "0" }, h("p", { class: "muted", text: "Nothing is left to decide on this chapter." }));
   const kept = new Set();
