@@ -62,7 +62,7 @@ const OUTDATED = "The paragraph has changed since this suggestion was made, so i
  * word, onto the paragraph as it is now), Edit before accepting, Decline as outdated and
  * Decline with a reason.
  */
-function answers(slug, c, choices, outdated, out, after) {
+export function answers(slug, c, choices, outdated, out, after) {
   const answered = (words) => {
     after();
     return words;

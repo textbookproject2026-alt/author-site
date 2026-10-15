@@ -400,15 +400,31 @@ ul.people .badge { display: inline-block; margin: 0.35rem 0 0.5rem; }
 /* Review all in chapter: track changes in the running text; notes in the margin. */
 .rv-summary { margin: 0.75rem 0; font-weight: 600; }
 .rv-chapter-notes { margin: 0 0 0.75rem; font-size: 0.95rem; overflow-wrap: anywhere; }
+.rv-chapter-notes-h { margin: 0; font-weight: 600; }
+.rv-chapter-notes ul { margin: 0.2rem 0 0.2rem; padding-left: 1.1rem; }
+.rv-chapter-notes li { margin: 0.1rem 0; }
+.rv-quiet { margin: 0 0 0.75rem; color: var(--portal-muted); }
+.rv-back { margin: 0 0 0.5rem; }
+.rv-pop-links { margin: 0.35rem 0 0; }
+.rv-pop-links a, .rv-pop-title a { color: var(--portal-accent); }
+/* A note and its passage show each other: a soft background that fades, with an
+   underline or an outline as well, so it isn't colour alone. */
+@keyframes rv-fade { from { background-color: var(--portal-mark); } to { background-color: transparent; } }
+mark.rv-flash { color: inherit; background: transparent; text-decoration: underline 2px var(--portal-accent); text-underline-offset: 0.2em; animation: rv-fade 2s ease-out forwards; }
+.rv-flash-block, .rv-flash-note { outline: 2px dashed var(--portal-accent-soft); outline-offset: 3px; animation: rv-fade 2s ease-out forwards; }
+.rv-margin-note { cursor: pointer; }
+@media (prefers-reduced-motion: reduce) {
+  mark.rv-flash, .rv-flash-block, .rv-flash-note { animation: none; background-color: var(--portal-mark); }
+}
 .rv-body { position: relative; }
 .rv-text { padding: 0; border: 0; background: none; box-shadow: none; }
-.rv-text .rv-changed { position: relative; }
-.rv-text .rv-changed::before { content: ""; position: absolute; left: -0.7rem; top: 0.2em; bottom: 0.2em; width: 2px; background: var(--portal-accent-soft); border-radius: 1px; }
 .rv-edit { border-radius: 2px; }
 .rv-edit.ticked { background: var(--portal-wash); box-shadow: 0 0 0 2px var(--portal-wash); }
 .rv-edit del { background: var(--portal-del-strong); text-decoration: line-through; color: inherit; border-radius: 2px; }
 .rv-edit ins { background: var(--portal-add-strong); text-decoration: underline; text-underline-offset: 0.15em; color: inherit; border-radius: 2px; }
 .rv-edit del + ins, .three-way del + ins, .rv-words del + ins { margin-left: 0.2em; }
+/* A change that is only a space or a line break, shown as its sign. */
+.rv-edit .rv-ws { padding: 0 0.15em; font: 600 0.85em var(--portal-font-ui); }
 .rv-old ins { text-decoration-style: dotted; text-decoration-thickness: 2px; }
 .rv-old del { text-decoration-style: dotted; }
 .rv-tick { width: 0.85em; height: 0.85em; margin: 0 0.2em 0 0.05em; vertical-align: -0.08em; accent-color: var(--portal-accent); cursor: pointer; }
@@ -436,7 +452,6 @@ ul.people .badge { display: inline-block; margin: 0.35rem 0 0.5rem; }
 }
 @media (max-width: 760px) {
   .rv-margin { display: none; }
-  .rv-text .rv-changed::before { left: -0.55rem; }
   .rv-bar { margin: 1rem -16px 0; border-radius: 0; border-left: 0; border-right: 0; padding: 0.6rem 16px; }
   .rv-bar-row .btn.primary { width: 100%; margin-left: 0; }
 }

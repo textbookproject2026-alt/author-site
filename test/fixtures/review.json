@@ -4,7 +4,8 @@
   "drafts": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "paragraphs": [
    "# Chapter 2: Soils\n\n",
-   "Soil forms slowly from weathered rock and living things.\n\n",
+   "Soil forms slowly from weathered rock\n",
+   "and living things over many years.\n\n",
    "A soil profile has layers called horizons, from the topsoil down to the bedrock.\n\n",
    "Clay soils hold water; sandy soils drain fast.\n\n",
    "Farmers test their soil every few years.\n\n",
@@ -16,11 +17,11 @@
     "kind": "edit",
     "number": 21,
     "who": "Jo Reader",
-    "title": "Tighten the soil chapter",
+    "title": "Edit ¶2 of chapter-02.md: Tighten the soil chapter",
     "summary": "Small fixes to wording through the chapter.",
     "url": "https://github.com/someone/a-book/pull/21",
     "hunks": [
-     "p21-c4sgo1",
+     "p21-t26svd",
      "p21-yyge7x",
      "p21-wyy2li-old"
     ]
@@ -82,23 +83,56 @@
     "url": "https://github.com/someone/a-book/issues/33",
     "hunks": [],
     "why": "a note to the authors"
+   },
+   {
+    "key": "i34",
+    "kind": "note",
+    "number": 34,
+    "who": "Max",
+    "title": "Could the chapter open with a photo?",
+    "summary": "",
+    "url": "https://github.com/someone/a-book/issues/34",
+    "hunks": [],
+    "why": "a note to the authors"
+   },
+   {
+    "key": "i35",
+    "kind": "note",
+    "number": 35,
+    "who": "Kim",
+    "title": "A short glossary box at the end would help.",
+    "summary": "",
+    "url": "https://github.com/someone/a-book/issues/35",
+    "hunks": [],
+    "why": "a note to the authors"
+   },
+   {
+    "key": "i36",
+    "kind": "note",
+    "number": 36,
+    "who": "Pat",
+    "title": "Please add further reading.",
+    "summary": "",
+    "url": "https://github.com/someone/a-book/issues/36",
+    "hunks": [],
+    "why": "a note to the authors"
    }
   ],
   "hunks": [
    {
-    "id": "p21-c4sgo1",
+    "id": "p21-t26svd",
     "item": "p21",
     "at": 1,
     "end": 2,
-    "from": "Soil forms slowly from weathered rock and living things.\n\n",
-    "to": "Soil forms very slowly from weathered rock and living things.\n\n",
+    "from": "Soil forms slowly from weathered rock\n",
+    "to": "Soil forms very slowly from weathered rock\n",
     "overlaps": []
    },
    {
     "id": "p21-yyge7x",
     "item": "p21",
-    "at": 3,
-    "end": 4,
+    "at": 4,
+    "end": 5,
     "from": "Clay soils hold water; sandy soils drain fast.\n\n",
     "to": "Clay soils hold water, while sandy soils drain fast.\n\n",
     "overlaps": [
@@ -108,13 +142,13 @@
    {
     "id": "p21-wyy2li-old",
     "item": "p21",
-    "at": 5,
-    "end": 6,
+    "at": 6,
+    "end": 7,
     "from": "Erosion can carry off topsoil in a single storm.\n",
     "to": "Erosion can strip topsoil in one storm.\n",
     "stale": [
      {
-      "line": 10,
+      "line": 11,
       "base": "Erosion can remove topsoil in a single storm.",
       "current": "Erosion can carry off topsoil in a single storm.",
       "suggested": "Erosion can strip topsoil in one storm.",
@@ -126,8 +160,8 @@
    {
     "id": "p22-vffdtv",
     "item": "p22",
-    "at": 3,
-    "end": 4,
+    "at": 4,
+    "end": 5,
     "from": "Clay soils hold water; sandy soils drain fast.\n\n",
     "to": "Clay soils hold water well; sandy soils drain quickly.\n\n",
     "overlaps": [
@@ -137,8 +171,8 @@
    {
     "id": "p23-20vndj",
     "item": "p23",
-    "at": 4,
-    "end": 5,
+    "at": 5,
+    "end": 6,
     "from": "Farmers test their soil every few years.\n\n",
     "to": "Farmers should test their soil every two or three years.\n\n",
     "overlaps": []
@@ -146,8 +180,8 @@
    {
     "id": "i31",
     "item": "i31",
-    "at": 2,
-    "end": 3,
+    "at": 3,
+    "end": 4,
     "from": "A soil profile has layers called horizons, from the topsoil down to the bedrock.\n\n",
     "to": "A soil profile has layers known as horizons, from the topsoil down to the bedrock.\n\n",
     "overlaps": []
@@ -156,13 +190,33 @@
   "notes": [
    {
     "item": "i32",
-    "at": 4,
-    "text": "Which farmers? A source would help here."
+    "at": 5,
+    "text": "Which farmers? A source would help here.",
+    "quote": "test their soil every few"
    },
    {
     "item": "i33",
     "at": -1,
-    "text": "A diagram of a soil profile would help the whole chapter."
+    "text": "A diagram of a soil profile would help the whole chapter.",
+    "quote": ""
+   },
+   {
+    "item": "i34",
+    "at": -1,
+    "text": "Could the chapter open with a photo?",
+    "quote": ""
+   },
+   {
+    "item": "i35",
+    "at": -1,
+    "text": "A short glossary box at the end would help.",
+    "quote": ""
+   },
+   {
+    "item": "i36",
+    "at": -1,
+    "text": "Please add further reading.",
+    "quote": ""
    }
   ]
  },
@@ -171,7 +225,8 @@
   "drafts": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   "paragraphs": [
    "# Chapter 2: Soils\n\n",
-   "Soil forms quite slowly from weathered rock and living things.\n\n",
+   "Soil forms quite slowly from weathered rock\n",
+   "and living things over many years.\n\n",
    "A soil profile has layers called horizons, from the topsoil down to the bedrock.\n\n",
    "Clay soils hold water; sandy soils drain fast.\n\n",
    "Farmers test their soil every few years.\n\n",
@@ -183,11 +238,11 @@
     "kind": "edit",
     "number": 21,
     "who": "Jo Reader",
-    "title": "Tighten the soil chapter",
+    "title": "Edit ¶2 of chapter-02.md: Tighten the soil chapter",
     "summary": "Small fixes to wording through the chapter.",
     "url": "https://github.com/someone/a-book/pull/21",
     "hunks": [
-     "p21-c4sgo1-old",
+     "p21-t26svd-old",
      "p21-yyge7x",
      "p21-wyy2li-old"
     ]
@@ -249,23 +304,56 @@
     "url": "https://github.com/someone/a-book/issues/33",
     "hunks": [],
     "why": "a note to the authors"
+   },
+   {
+    "key": "i34",
+    "kind": "note",
+    "number": 34,
+    "who": "Max",
+    "title": "Could the chapter open with a photo?",
+    "summary": "",
+    "url": "https://github.com/someone/a-book/issues/34",
+    "hunks": [],
+    "why": "a note to the authors"
+   },
+   {
+    "key": "i35",
+    "kind": "note",
+    "number": 35,
+    "who": "Kim",
+    "title": "A short glossary box at the end would help.",
+    "summary": "",
+    "url": "https://github.com/someone/a-book/issues/35",
+    "hunks": [],
+    "why": "a note to the authors"
+   },
+   {
+    "key": "i36",
+    "kind": "note",
+    "number": 36,
+    "who": "Pat",
+    "title": "Please add further reading.",
+    "summary": "",
+    "url": "https://github.com/someone/a-book/issues/36",
+    "hunks": [],
+    "why": "a note to the authors"
    }
   ],
   "hunks": [
    {
-    "id": "p21-c4sgo1-old",
+    "id": "p21-t26svd-old",
     "item": "p21",
     "at": 1,
     "end": 2,
-    "from": "Soil forms quite slowly from weathered rock and living things.\n\n",
-    "to": "Soil forms very slowly from weathered rock and living things.\n\n",
+    "from": "Soil forms quite slowly from weathered rock\n",
+    "to": "Soil forms very slowly from weathered rock\n",
     "stale": [
      {
       "line": 2,
-      "base": "Soil forms slowly from weathered rock and living things.",
-      "current": "Soil forms quite slowly from weathered rock and living things.",
-      "suggested": "Soil forms very slowly from weathered rock and living things.",
-      "merged": "Soil forms quite slowly from weathered rock and living things."
+      "base": "Soil forms slowly from weathered rock",
+      "current": "Soil forms quite slowly from weathered rock",
+      "suggested": "Soil forms very slowly from weathered rock",
+      "merged": "Soil forms quite slowly from weathered rock"
      }
     ],
     "overlaps": []
@@ -273,8 +361,8 @@
    {
     "id": "p21-yyge7x",
     "item": "p21",
-    "at": 3,
-    "end": 4,
+    "at": 4,
+    "end": 5,
     "from": "Clay soils hold water; sandy soils drain fast.\n\n",
     "to": "Clay soils hold water, while sandy soils drain fast.\n\n",
     "overlaps": [
@@ -284,13 +372,13 @@
    {
     "id": "p21-wyy2li-old",
     "item": "p21",
-    "at": 5,
-    "end": 6,
+    "at": 6,
+    "end": 7,
     "from": "Erosion can carry off topsoil in a single storm.\n",
     "to": "Erosion can strip topsoil in one storm.\n",
     "stale": [
      {
-      "line": 10,
+      "line": 11,
       "base": "Erosion can remove topsoil in a single storm.",
       "current": "Erosion can carry off topsoil in a single storm.",
       "suggested": "Erosion can strip topsoil in one storm.",
@@ -302,8 +390,8 @@
    {
     "id": "p22-vffdtv",
     "item": "p22",
-    "at": 3,
-    "end": 4,
+    "at": 4,
+    "end": 5,
     "from": "Clay soils hold water; sandy soils drain fast.\n\n",
     "to": "Clay soils hold water well; sandy soils drain quickly.\n\n",
     "overlaps": [
@@ -313,8 +401,8 @@
    {
     "id": "p23-20vndj",
     "item": "p23",
-    "at": 4,
-    "end": 5,
+    "at": 5,
+    "end": 6,
     "from": "Farmers test their soil every few years.\n\n",
     "to": "Farmers should test their soil every two or three years.\n\n",
     "overlaps": []
@@ -322,8 +410,8 @@
    {
     "id": "i31",
     "item": "i31",
-    "at": 2,
-    "end": 3,
+    "at": 3,
+    "end": 4,
     "from": "A soil profile has layers called horizons, from the topsoil down to the bedrock.\n\n",
     "to": "A soil profile has layers known as horizons, from the topsoil down to the bedrock.\n\n",
     "overlaps": []
@@ -332,13 +420,85 @@
   "notes": [
    {
     "item": "i32",
-    "at": 4,
-    "text": "Which farmers? A source would help here."
+    "at": 5,
+    "text": "Which farmers? A source would help here.",
+    "quote": "test their soil every few"
    },
    {
     "item": "i33",
     "at": -1,
-    "text": "A diagram of a soil profile would help the whole chapter."
+    "text": "A diagram of a soil profile would help the whole chapter.",
+    "quote": ""
+   },
+   {
+    "item": "i34",
+    "at": -1,
+    "text": "Could the chapter open with a photo?",
+    "quote": ""
+   },
+   {
+    "item": "i35",
+    "at": -1,
+    "text": "A short glossary box at the end would help.",
+    "quote": ""
+   },
+   {
+    "item": "i36",
+    "at": -1,
+    "text": "Please add further reading.",
+    "quote": ""
+   }
+  ]
+ },
+ "quiet": {
+  "path": "chapters/chapter-02.md",
+  "drafts": "cccccccccccccccccccccccccccccccccccccccc",
+  "paragraphs": [
+   "# Chapter 2: Soils\n\n",
+   "Soil forms slowly from weathered rock\n",
+   "and living things over many years.\n\n",
+   "A soil profile has layers called horizons, from the topsoil down to the bedrock.\n\n",
+   "Clay soils hold water; sandy soils drain fast.\n\n",
+   "Farmers test their soil every few years.\n\n",
+   "Erosion can carry off topsoil in a single storm.\n"
+  ],
+  "items": [
+   {
+    "key": "i32",
+    "kind": "note",
+    "number": 32,
+    "who": "Grace",
+    "title": "Which farmers? A source would help here.",
+    "summary": "",
+    "url": "https://github.com/someone/a-book/issues/32",
+    "hunks": [],
+    "why": "a note to the authors"
+   },
+   {
+    "key": "i33",
+    "kind": "note",
+    "number": 33,
+    "who": "Lin",
+    "title": "A diagram of a soil profile would help the whole chapter.",
+    "summary": "",
+    "url": "https://github.com/someone/a-book/issues/33",
+    "hunks": [],
+    "why": "a note to the authors"
+   }
+  ],
+  "hunks": [],
+  "notes": [
+   {
+    "item": "i32",
+    "at": 5,
+    "text": "Which farmers? A source would help here.",
+    "quote": "test their soil every few"
+   },
+   {
+    "item": "i33",
+    "at": -1,
+    "text": "A diagram of a soil profile would help the whole chapter.",
+    "quote": ""
    }
   ]
  }
