@@ -84,8 +84,20 @@ test("the Contents always has blank lines around its heading and list (markdownl
   );
   // A list packed against its heading and the next one (platform-test-book's drafts, 9 Oct) gets them.
   const packed = parseContents("## Contents\n1. [[a|A]]\n2. [[b|B]]\n## Next\n");
-  assert.equal(withOrder(packed, [1, 0]), "## Contents\n\n2. [[b|B]]\n1. [[a|A]]\n\n## Next\n");
+  assert.equal(withOrder(packed, [1, 0]), "## Contents\n\n1. [[b|B]]\n2. [[a|A]]\n\n## Next\n", "and counted again");
   // Text before the list keeps a blank line on both sides.
   const intro = parseContents("## Contents\nRead in order:\n- [[a|A]]\n");
   assert.equal(withOrder(intro, [0]), "## Contents\n\nRead in order:\n\n- [[a|A]]\n");
+});
+
+test("a numbered Contents is counted again after a move, an addition or a removal (no gap or repeat for markdownlint)", () => {
+  const NUMBERED = "# Book\n\n## Contents\n\n1. [[chapters/chapter-01|One]]\n2. [[chapters/chapter-02|Two]]\n3. [[chapters/chapter-03|Three]]\n\nAfter.\n";
+  const p = parseContents(NUMBERED);
+  assert.equal(withOrder(p, [2, 0, 1]), "# Book\n\n## Contents\n\n1. [[chapters/chapter-03|Three]]\n2. [[chapters/chapter-01|One]]\n3. [[chapters/chapter-02|Two]]\n\nAfter.\n");
+  // A new chapter's line is written like the first item's ("1. "), then counted.
+  assert.equal(withItem(p, [itemLine(p, "chapters/chapter-04.md", "Four")], 1), "# Book\n\n## Contents\n\n1. [[chapters/chapter-01|One]]\n2. [[chapters/chapter-04|Four]]\n3. [[chapters/chapter-02|Two]]\n4. [[chapters/chapter-03|Three]]\n\nAfter.\n");
+  assert.equal(withOrder(p, [0, 2]), "# Book\n\n## Contents\n\n1. [[chapters/chapter-01|One]]\n2. [[chapters/chapter-03|Three]]\n\nAfter.\n");
+  // From its own first number, and "1)" kept as written; bullets untouched.
+  assert.equal(withOrder(parseContents(NUMBERED.replace(/^(\d)\. /gm, (m, d) => `${Number(d) + 4}) `)), [1, 0, 2]), NUMBERED.replace("1. [[chapters/chapter-01|One]]\n2. [[chapters/chapter-02|Two]]", "5) [[chapters/chapter-02|Two]]\n6) [[chapters/chapter-01|One]]").replace("3. ", "7) "));
+  assert.equal(withOrder(parseContents(INDEX), [0, 1, 2]), INDEX);
 });
