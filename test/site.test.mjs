@@ -272,10 +272,10 @@ test("chapters: reading order with each chapter's status, the removed one listed
   await page.getByRole("heading", { name: "Chapters, in reading order" }).waitFor();
   const rows = page.locator("ol.reorder > li");
   await rows.nth(2).waitFor();
-  assert.deepEqual((await rows.allInnerTexts()).map((t) => t.split("\n").filter((l) => !/suggestions?$/.test(l)).slice(0, 3).join(" | ")), ["⠿ | Soils | Published", "⠿ | Chapter 1 | Draft changes", "⠿ | Water | New", "⠿ | Realism | Published", "⠿ | Glossary | Published"]);
+  assert.deepEqual((await rows.allInnerTexts()).map((t) => t.split("\n").filter((l) => !/(suggestions?|notes?)$/.test(l)).slice(0, 3).join(" | ")), ["⠿ | Soils | Published", "⠿ | Chapter 1 | Draft changes", "⠿ | Water | New", "⠿ | Realism | Published", "⠿ | Glossary | Published"]);
   // Each chapter's open reader suggestions, written and proposed, linking to its editor.
   assert.equal(await rows.nth(0).locator(".badge.suggestions").innerText(), "1 suggestion");
-  assert.equal(await rows.nth(1).locator(".badge.suggestions").innerText(), "2 suggestions");
+  assert.equal(await rows.nth(1).locator(".badge.suggestions").innerText(), "1 note", "counted as Drafts counts: the accepted one is done");
   assert.equal(await rows.nth(1).locator(".badge.suggestions").getAttribute("href"), `#/a-book/edit/${encodeURIComponent(CH1_PATH)}`);
   assert.equal(await rows.nth(2).locator(".badge.suggestions").count(), 0);
   // The concept page and the glossary aren't in index.md's Contents: at its end, flagged, as the builder adds them.
@@ -597,19 +597,282 @@ test("import: replacing says so on the button; a .pages file is refused in plain
 
 // --- Drafts -------------------------------------------------------------------------------------------
 
-test("drafts: one plain line per chapter, with who and when; View changes; nothing behind the scenes; no file names", async () => {
+// The stub book: Soils has a reader's proposed edit; Chapter 1 a reader's note (an accepted
+// one too, done) and a paragraph edited in the drafts; Water is new (with its picture),
+// Rocks removed, and the chapter order changed.
+const row = (key) => page.locator(`.drafts-row[data-row="${key}"]`);
+const rowTexts = () => page.locator(".drafts-row").evaluateAll((rs) => rs.map((r) => [r.querySelector(".drafts-row-title").textContent, r.querySelector(".drafts-row-status").textContent, r.querySelector(".drafts-row-go").textContent]));
+async function openDrafts() {
   await signIn();
   await page.goto(`${origin}/#/a-book/drafts`);
-  await page.getByRole("heading", { name: "What's in the drafts (5)" }).waitFor();
-  const lines = (await page.locator("ul.drafts > li").allInnerTexts()).map((t) => t.split("\n")[0]);
-  assert.deepEqual(lines, ["Edited “Chapter 1” (1 paragraph)", "Removed “Rocks”", "New chapter “Water”", "Chapter order changed", "1 picture added or changed"]);
-  assert.match(await page.locator("ul.drafts > li").first().innerText(), /author-one, 10 minutes ago/);
-  await page.locator("ul.drafts > li").first().getByRole("button", { name: "View changes" }).click();
-  await page.locator("ul.drafts > li .diff ins").first().waitFor();
-  assert.equal(await page.getByRole("link", { name: "Preview the book with drafts" }).getAttribute("href"), "https://drafts.a-book.pages.dev/");
+  await page.locator(".drafts-row").first().waitFor();
+}
+
+test("drafts: by chapter — the summary, Publish all (N) and Preview; one row each in Contents order with one primary button; the tab counts the rows", async () => {
+  await openDrafts();
+  assert.equal(await page.locator(".drafts-summary").innerText(), "2 chapters to review, 2 chapters and the rest of the book ready to publish");
+  assert.deepEqual(await rowTexts(), [
+    ["Soils", "1 suggestion", "Review"],
+    ["Chapter 1", "1 note · 1 paragraph edited, not live", "Review"],
+    ["Water", "new, not live", "Publish"],
+    ["Rocks", "removed, not live", "Publish"],
+    ["Rest of the book", "chapter order changed, not live", "Publish"],
+  ]);
+  for (const r of await page.locator(".drafts-row").all()) assert.equal(await r.locator(".btn.primary").count(), 1, "one primary button a row");
   await page.getByRole("link", { name: "Drafts (5)" }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Publish all (4)" }).count(), 1);
+  assert.equal(await page.getByRole("link", { name: "Preview the book with drafts" }).getAttribute("href"), "https://drafts.a-book.pages.dev/");
+  assert.equal(await row("chapters/chapter-02.md").getByRole("link", { name: "Review" }).getAttribute("href"), `#/a-book/review/${encodeURIComponent("chapters/chapter-02.md")}`);
+  // Gone: the written list, the picker, the global checks; nothing appears twice.
+  for (const gone of ["Written suggestions", "Before publishing", "Reader suggestions"]) assert.equal(await page.getByRole("heading", { name: gone }).count(), 0, gone);
+  assert.equal(await page.locator("#review-pick").count(), 0);
+  assert.equal(await page.getByText("Fix a typo").count(), 0, "the proposal is in Soils' review, not here");
+  assert.equal(await page.getByText("Could this be clearer?").count(), 0, "an accepted suggestion is in History, not here");
   await noFileNames();
+  assert.doesNotMatch(await page.locator("main").innerText(), /author-one|textbookproject2026-alt|\[bot\]/);
 });
+
+test("drafts: ⋯ View changes says who (a person, never an account) and when, with the difference; the Rest of the book's each with its own Discard", async () => {
+  await openDrafts();
+  const ch1 = row("chapters/chapter-01.md");
+  await ch1.locator(".more-menu > summary").click();
+  await ch1.getByRole("menuitem", { name: "View changes" }).click();
+  await ch1.locator(".diff ins").first().waitFor();
+  assert.match(await ch1.locator(".draft-change").innerText(), /Changed by Author One, 10 minutes ago/);
+  const rest = row("rest");
+  await rest.locator(".more-menu > summary").click();
+  assert.deepEqual(await rest.getByRole("menuitem").allInnerTexts(), ["View changes", "Discard"], "one change: Discard here too");
+  await rest.getByRole("menuitem", { name: "View changes" }).click();
+  await rest.locator(".draft-change").getByText("Chapter order changed").waitFor();
+  assert.equal(await rest.locator(".draft-change").getByRole("button", { name: "Discard" }).count(), 1);
+  await noFileNames();
+  assert.doesNotMatch(await page.locator("main").innerText(), /author-one/);
+});
+
+test("drafts: Discard (⋯) asks first, then puts it back as readers have it: a removed chapter returns to its place; a new one goes; the order", async () => {
+  await openDrafts();
+  const discard = async (r) => {
+    await r.locator(".more-menu > summary").click();
+    await r.getByRole("menuitem", { name: "Discard" }).click();
+    await r.getByRole("alertdialog").waitFor();
+    assert.equal(sends().length, n, "nothing before it's confirmed");
+    await r.getByRole("button", { name: "Discard it" }).click();
+    await page.waitForFunction(() => !document.querySelector('[role="alertdialog"]'));
+    n++;
+  };
+  let n = 0;
+  await discard(row("chapters/chapter-03.md"));
+  const sent = sends()[0];
+  assert.equal(sent.base, HEAD);
+  assert.equal(sent.message, "Discard: Removed “Rocks”");
+  assert.deepEqual(sent.files[0], { path: "chapters/chapter-03.md", text: ROCKS });
+  // After Soils, as for readers.
+  assert.match(sent.files[1].text, /- \[\[chapters\/chapter-02\|Soils\]\]\n- \[\[chapters\/chapter-03\|Rocks\]\]\n- \[\[chapters\/chapter-01\|Chapter 1\]\]/);
+  await row("chapters/chapter-04.md").waitFor();
+  await discard(row("chapters/chapter-04.md"));
+  const gone = sends().at(-1);
+  assert.deepEqual(gone.deletes, ["chapters/chapter-04.md"]);
+  assert.doesNotMatch(gone.files[0].text, /chapter-04/);
+  // The order: in the Rest of the book's View changes.
+  const rest = row("rest");
+  await rest.locator(".more-menu > summary").click();
+  await rest.getByRole("menuitem", { name: "View changes" }).click();
+  await rest.locator(".draft-change").getByRole("button", { name: "Discard" }).click();
+  await rest.getByRole("button", { name: "Discard it" }).click();
+  await page.waitForFunction(() => !document.querySelector('[role="alertdialog"]'));
+  assert.match(sends().at(-1).files[0].text, /- \[\[chapters\/chapter-01\|Chapter 1\]\]\n- \[\[chapters\/chapter-02\|Soils\]\]\n- \[\[chapters\/chapter-04\|Water\]\]/);
+  void INDEX_LIVE;
+});
+
+test("drafts: a type change is the Rest of the book's \"settings changed\", apart from the front page; Discard takes it out", async () => {
+  await signIn();
+  const index = stub.s.bookFiles.get("index.md").toString("utf8");
+  stub.s.bookFiles.set("index.md", Buffer.from("---\nresource_type: paper\n---\n\n" + index));
+  await page.goto(`${origin}/#/a-book/drafts`);
+  const rest = row("rest");
+  await rest.waitFor();
+  assert.equal(await rest.locator(".drafts-row-status").innerText(), "chapter order changed, settings changed, not live");
+  await rest.locator(".more-menu > summary").click();
+  await rest.getByRole("menuitem", { name: "View changes" }).click();
+  const type = rest.locator(".draft-change").filter({ hasText: "Type changed to “Paper”" });
+  await type.getByRole("button", { name: "Discard" }).click();
+  await Promise.all([page.waitForResponse((r) => r.url().includes("author-send")), type.getByRole("button", { name: "Discard it" }).click()]);
+  assert.equal(sends()[0].message, "Discard: Type changed to “Paper”");
+  assert.equal(sends()[0].files[0].text, index);
+});
+
+test("drafts: counts agree — the tab, the summary, a chapter's row and its review page; suggestions have a text change, notes don't", async () => {
+  // Soils' readers as the review fixture has them: each proposal, each written one.
+  const v = REVIEW.view;
+  stub.s.changes = v.items.filter((i) => i.kind === "edit").map((i) => ({ number: i.number, who: i.who, title: i.title, when: new Date().toISOString(), url: i.url, path: v.path, choices: CHOICES }));
+  stub.s.suggestions = v.items.filter((i) => i.kind !== "edit").map((i) => ({ number: i.number, who: i.who, path: v.path, page: "chapter-02", suggestion: i.title, original: i.kind === "suggestion" && i.hunks.length ? "the words it replaces" : "", reasoning: "", when: new Date().toISOString(), url: i.url, open: true, accepted: false }));
+  await openDrafts();
+  const soils = row("chapters/chapter-02.md");
+  const status = await soils.locator(".drafts-row-status").innerText();
+  assert.equal(status, "4 suggestions, 5 notes");
+  await page.getByRole("link", { name: "Drafts (5)" }).waitFor();
+  assert.equal(await page.locator(".drafts-row").count(), 5);
+  await soils.getByRole("link", { name: "Review" }).click();
+  await page.locator(".rv-summary").waitFor();
+  assert.match(await page.locator(".rv-summary").innerText(), new RegExp(`^${status}`));
+  await page.getByRole("link", { name: "Drafts (5)" }).waitFor();
+});
+
+test("drafts: the Rest of the book — a note on no chapter makes it Review, opening a list with Decline and Keep open; its counts agree", async () => {
+  stub.s.suggestions.push({ number: 9, who: "Lin", path: "", page: "", suggestion: "A lovely book; more pictures please.", original: "", reasoning: "", when: new Date().toISOString(), url: "https://github.com/someone/a-book/issues/9", open: true, accepted: false });
+  await openDrafts();
+  const rest = row("rest");
+  assert.equal(await rest.locator(".drafts-row-status").innerText(), "1 note · chapter order changed, not live");
+  await rest.getByRole("link", { name: "Review" }).click();
+  await page.getByRole("heading", { name: "Review: Rest of the book" }).waitFor();
+  assert.equal(await page.locator(".rv-summary").innerText(), "1 note");
+  const item = page.locator(".review-rest > li");
+  assert.equal(await item.count(), 1);
+  assert.match(await item.innerText(), /On the book as a whole\s+Note — Lin/);
+  await item.getByRole("button", { name: "Keep open" }).click();
+  await item.getByText("Kept open: it stays waiting for later.").waitFor();
+  await item.getByRole("button", { name: "Decline…" }).click();
+  await item.getByLabel("Why is this being declined?").fill("Thank you: we'll add more when we can.");
+  await item.getByRole("button", { name: "Decline", exact: true }).click();
+  await item.getByText(/^Declined: your reason is posted/).waitFor();
+  assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "suggestion-decline", number: 9, reason: "Thank you: we'll add more when we can." });
+});
+
+test("drafts: the Rest of the book's Publish sends publish-rest, and says when it's live", async () => {
+  await openDrafts();
+  const rest = row("rest");
+  await rest.getByRole("button", { name: "Publish" }).click();
+  await rest.getByText("Published “The rest of the book”.", { exact: false }).waitFor({ timeout: 20000 });
+  assert.deepEqual(lastCall("author-act", (r) => r.body?.action === "publish-rest").body, { book: "a-book", action: "publish-rest" });
+});
+
+test("drafts: a chapter's Publish sends only that chapter, then says when it's live", async () => {
+  stub.s.publishChapterStates = [{ state: "checking", checks: [], sha: SENT }, { state: "merged", checks: [], sha: SENT }];
+  await openDrafts();
+  const water = row("chapters/chapter-04.md");
+  await water.getByRole("button", { name: "Publish" }).click();
+  await water.getByText("Published “Chapter 1”.", { exact: false }).waitFor({ timeout: 20000 });
+  assert.deepEqual(lastCall("author-act", (r) => r.body?.action === "publish-chapter").body, { book: "a-book", action: "publish-chapter", path: "chapters/chapter-04.md" });
+});
+
+test("drafts: a chapter linking to pages only in the drafts — Publish these too, or Publish without them with the broken links said plainly", async () => {
+  await signIn();
+  const linked = { error: "linked", userMessage: "This chapter links to pages that aren't live yet.", linked: [{ path: "concepts/soil-horizon.md", title: "Soil horizon", why: "only in the drafts" }] };
+  stub.s.publishChapterAnswers = [[409, linked], [200, { done: true, number: 171, url: "https://github.com/o/a-book/pull/171", title: "Water", autoMerge: true, linkedLeft: [], steps: [] }],
+    [409, linked], [200, { done: true, number: 172, url: "https://github.com/o/a-book/pull/172", title: "Water", autoMerge: true, linkedLeft: linked.linked, steps: [] }]];
+  await page.goto(`${origin}/#/a-book/drafts`);
+  const water = row("chapters/chapter-04.md");
+  await water.getByRole("button", { name: "Publish" }).click();
+  await water.getByText("links to a page the live book hasn't got yet", { exact: false }).waitFor();
+  assert.match(await water.innerText(), /Soil horizon \(only in the drafts\)/);
+  await water.getByRole("button", { name: "Publish these too" }).click();
+  await water.getByText("Published “Water”.", { exact: false }).waitFor({ timeout: 20000 });
+  assert.equal(lastCall("author-act", (r) => r.body?.action === "publish-chapter").body.linked, "with");
+  assert.ok(await water.getByRole("button", { name: "Publish", exact: true }).isDisabled(), "published: not again");
+  await page.reload();
+  await water.getByRole("button", { name: "Publish", exact: true }).click();
+  await water.getByRole("button", { name: "Publish without them" }).click();
+  await water.getByText("Published without “Soil horizon”: its link is broken on the live book until you publish it.").waitFor();
+  assert.equal(lastCall("author-act", (r) => r.body?.action === "publish-chapter").body.linked, "without");
+});
+
+test("drafts: formatting problems show on their row in place of Publish, with Fix in the editor; Publish all asks first and shows them again, and waits", async () => {
+  stub.s.suggestions = [];
+  stub.s.publish = { ...stub.s.publish, state: "lint", can_publish: false, state_words: "This cannot go to readers yet.",
+    lint: [{ path: CH1_PATH, line: 3, rule: "MD045", description: "Images should have alternate text" }, { path: "docs/README.md", line: 1, rule: "MD041", description: "First line" }], lint_count: 2,
+    links: { checked: true, dead: [{ url: "https://gone.example/x", file: CH1_PATH, status: "404" }] } };
+  await openDrafts();
+  const ch1 = row("chapters/chapter-01.md");
+  const fix = ch1.getByRole("link", { name: "1 problem to fix" });
+  assert.equal(await fix.getAttribute("href"), `#/a-book/edit/${encodeURIComponent(CH1_PATH)}/line/3`);
+  assert.equal(await ch1.getByRole("button", { name: "Publish" }).count(), 0);
+  assert.match(await page.locator(".drafts-summary").innerText(), /1 chapter with problems to fix$/);
+  await page.getByRole("button", { name: "Publish all (4)" }).click();
+  const panel = page.getByRole("region", { name: "Publish all" });
+  await panel.getByRole("heading", { name: "Formatting: 2 problems to fix" }).waitFor();
+  assert.match(await panel.locator(".check.bad li").innerText(), /^Chapter 1, line 3: A picture has no description/);
+  await panel.getByText("1 problem in the book's behind-the-scenes files", { exact: false }).waitFor();
+  await panel.getByText("1 link to other websites doesn't work").waitFor();
+  assert.equal(await panel.getByRole("button", { name: "Publish all 4" }).isDisabled(), true);
+  assert.equal(await panel.locator(".publish-reason").textContent(), "Fix the 2 formatting problems first.");
+  await noFileNames();
+  await fix.click();
+  await page.waitForFunction(() => document.querySelector("#editor-text")?.selectionEnd > 0);
+});
+
+test("drafts: Publish all — asks first, then one press: Publishing… then Published with links to the changed chapters", async () => {
+  stub.s.publish = { ...stub.s.publish, open: false, number: null, state: "not_open", can_publish: false, lint: [], lint_count: 0 };
+  await openDrafts();
+  await page.getByRole("button", { name: "Publish all (4)" }).click();
+  const panel = page.getByRole("region", { name: "Publish all" });
+  await panel.getByText("✓ Formatting: nothing to fix.").waitFor();
+  assert.equal(stub.s.requests.filter((r) => r.endpoint === "author-act").length, 0, "nothing sent before it's confirmed");
+  stub.s.publish = { ...stub.s.publish, open: true, number: 30, state: "clean", can_publish: true };
+  await panel.getByRole("button", { name: "Publish all 4" }).click();
+  await panel.getByRole("heading", { name: "Published" }).waitFor();
+  const acts = stub.s.requests.filter((r) => r.endpoint === "author-act").map((r) => r.body);
+  assert.deepEqual(acts, [{ book: "a-book", action: "publish-prepare" }, { book: "a-book", action: "publish", number: 30, confirm: true }]);
+  assert.deepEqual(await panel.locator(".published li a").evaluateAll((as) => as.map((a) => [a.textContent, a.href])),
+    [["Chapter 1", "https://a-book.example.org/chapters/chapter-01"], ["Water", "https://a-book.example.org/chapters/chapter-04"]]);
+});
+
+test("drafts: Publish all while the formatting is being checked says so and waits, then shows the answer; a check that couldn't run says so with Check again", async () => {
+  const sha = "c".repeat(40);
+  stub.s.publish = { ...stub.s.publish, state: "checking", can_publish: false, state_words: "The pages' formatting is being checked.", lint: undefined, lint_count: undefined, lint_job: { sha } };
+  stub.s.lintAnswer = { ...stub.s.publish, state: "clean", can_publish: true, lint: [], lint_count: 0, lint_job: undefined };
+  await openDrafts();
+  await page.getByRole("button", { name: "Publish all (4)" }).click();
+  const panel = page.getByRole("region", { name: "Publish all" });
+  await panel.getByText("Checking the formatting of what would go live.", { exact: false }).waitFor();
+  assert.equal(await panel.locator(".publish-reason").textContent(), "The formatting is being checked.");
+  await page.waitForFunction(() => document.querySelector(".drafts-row") && !document.querySelector(".publish-all:not([hidden])"), null, { timeout: 15000 });
+  assert.deepEqual(lastCall("author-read", (c) => c.query.what === "lint")?.query, { what: "lint", book: "a-book", sha });
+  stub.s.lintAnswer = null;
+  stub.s.publish = { ...stub.s.publish, state: "unchecked", can_publish: false, lint: undefined, lint_job: undefined, state_words: "The pages' formatting couldn't be checked just now." };
+  await page.reload();
+  await page.getByRole("button", { name: "Publish all (4)" }).click();
+  await panel.getByText("The formatting check couldn't be run just now, so publishing waits for it.").waitFor();
+  await panel.getByRole("button", { name: "Check again" }).waitFor();
+});
+
+test("drafts: a publish that fails says so in plain words, with Try again", async () => {
+  stub.s.publish = { ...stub.s.publish, lint: [], lint_count: 0 };
+  await openDrafts();
+  await page.route(`${origin}/fn/author-act?*`, (route) => route.fulfill({ status: 409, contentType: "application/json", headers: { "access-control-allow-origin": origin }, body: JSON.stringify({ error: "x", userMessage: "What is waiting to go live has changed." }) }), { times: 1 });
+  await page.getByRole("button", { name: "Publish all (4)" }).click();
+  await page.getByRole("button", { name: "Publish all 4" }).click();
+  await page.getByText("What is waiting to go live has changed.").waitFor();
+  await page.getByRole("button", { name: "Try again" }).waitFor();
+});
+
+test("drafts: what readers sent that couldn't be loaded says so with Try again; one failed try is retried unseen", async () => {
+  stub.s.suggestionsFail = 1;
+  await openDrafts();
+  assert.equal(await row("chapters/chapter-01.md").locator(".drafts-row-status").innerText(), "1 note · 1 paragraph edited, not live");
+  stub.s.suggestionsFail = 2;
+  await page.reload();
+  await page.getByText("What readers sent couldn't be loaded just now, so some of it may be missing here.").waitFor();
+  await page.getByRole("button", { name: "Try again" }).click();
+  await page.waitForFunction(() => !document.body.innerText.includes("couldn't be loaded just now"));
+});
+
+test("drafts on a phone (360 px): each row title, status, then its button the full width, ⋯ at the top right; one column, no sideways scroll", async () => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await openDrafts();
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "no sideways scroll");
+  for (const r of await page.locator(".drafts-row").all()) {
+    const [t, b, m, li] = await Promise.all([r.locator(".drafts-row-text").boundingBox(), r.locator(".btn.primary").boundingBox(), r.locator(".more-menu > summary").boundingBox().catch(() => null), r.boundingBox()]);
+    assert.ok(b.y >= t.y + t.height - 1, "the button below the title and status");
+    assert.ok(b.width >= li.width - 2, `the button the full width (${b.width} of ${li.width})`);
+    if (m) assert.ok(m.x > t.x && m.y <= t.y + 12 && m.x + m.width <= li.x + li.width + 1, `⋯ at the top right: ${JSON.stringify({ m, t, li })}`);
+  }
+  const ch1 = row("chapters/chapter-01.md");
+  await ch1.locator(".more-menu > summary").click();
+  await ch1.getByRole("menuitem", { name: "View changes" }).click();
+  await ch1.locator(".diff").first().waitFor();
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "none with a change open");
+});
+
 
 test("settings: \"This is a…\" shows the book's type (the registry's when index.md has none) and saves a change to the drafts", async () => {
   await signIn();
@@ -629,74 +892,29 @@ test("settings: \"This is a…\" shows the book's type (the registry's when inde
   await page.getByText("Saved to the drafts. Readers see it when you publish.").waitFor();
 });
 
-test("drafts: a type change is one plain line, apart from the front page; Discard takes it out", async () => {
+test("proposals in the editor: Accept folds one into the drafts, Decline closes it", async () => {
   await signIn();
-  const index = stub.s.bookFiles.get("index.md").toString("utf8");
-  stub.s.bookFiles.set("index.md", Buffer.from("---\nresource_type: paper\n---\n\n" + index));
-  await page.goto(`${origin}/#/a-book/drafts`);
-  await page.getByRole("heading", { name: "What's in the drafts (6)" }).waitFor();
-  const line = page.locator("ul.drafts > li").filter({ hasText: "Type changed to “Paper”" });
-  assert.equal(await line.count(), 1);
-  assert.equal(await page.getByText("Edited the front page").count(), 0, "the type alone isn't a front page edit");
-  assert.equal(await line.getByRole("button", { name: "View changes" }).count(), 0);
-  await line.getByRole("button", { name: "Discard" }).click();
-  await Promise.all([page.waitForResponse((r) => r.url().includes("author-send")), page.getByRole("button", { name: "Discard it" }).click()]);
-  assert.equal(sends()[0].message, "Discard: Type changed to “Paper”");
-  assert.equal(sends()[0].files[0].text, index);
-});
-
-test("drafts: Discard puts one line back as readers have it, on the drafts: a removed chapter returns to its place", async () => {
-  await signIn();
-  await page.goto(`${origin}/#/a-book/drafts`);
-  const removed = page.locator("ul.drafts > li").nth(1);
-  await removed.getByRole("button", { name: "Discard" }).click();
-  await page.getByRole("button", { name: "Discard it" }).click();
-  await page.waitForFunction(() => document.querySelectorAll("ul.drafts > li").length === 5 && !document.querySelector('[role="alertdialog"]'));
-  const sent = sends()[0];
-  assert.equal(sent.base, HEAD);
-  assert.equal(sent.message, "Discard: Removed “Rocks”");
-  assert.deepEqual(sent.files[0], { path: "chapters/chapter-03.md", text: ROCKS });
-  // After Soils, as for readers.
-  assert.match(sent.files[1].text, /- \[\[chapters\/chapter-02\|Soils\]\]\n- \[\[chapters\/chapter-03\|Rocks\]\]\n- \[\[chapters\/chapter-01\|Chapter 1\]\]/);
-
-  await page.locator("ul.drafts > li").nth(2).getByRole("button", { name: "Discard" }).click();
-  await page.getByRole("button", { name: "Discard it" }).click();
-  await page.waitForFunction(() => !document.querySelector('[role="alertdialog"]'));
-  const gone = sends().at(-1);
-  assert.deepEqual(gone.deletes, ["chapters/chapter-04.md"]);
-  assert.doesNotMatch(gone.files[0].text, /chapter-04/);
-
-  await page.locator("ul.drafts > li").nth(3).getByRole("button", { name: "Discard" }).click();
-  await page.getByRole("button", { name: "Discard it" }).click();
-  await page.waitForFunction(() => !document.querySelector('[role="alertdialog"]'));
-  assert.match(sends().at(-1).files[0].text, /- \[\[chapters\/chapter-01\|Chapter 1\]\]\n- \[\[chapters\/chapter-02\|Soils\]\]\n- \[\[chapters\/chapter-04\|Water\]\]/);
-  void INDEX_LIVE;
-});
-
-test("drafts: reader suggestions at the top — Accept folds one into the drafts, Decline closes it", async () => {
-  await signIn();
-  await page.goto(`${origin}/#/a-book/drafts`);
-  await page.getByRole("heading", { name: "Reader suggestions" }).waitFor();
+  await page.goto(`${origin}/#/a-book/edit/${encodeURIComponent("chapters/chapter-02.md")}`);
+  await page.getByRole("heading", { name: /Reader suggestions on this page/ }).waitFor();
   const row = page.locator("li", { hasText: "Fix a typo" });
   await row.getByRole("button", { name: "View changes" }).click();
   await page.getByText("The three domains.").waitFor();
   await row.getByRole("button", { name: "Accept" }).click();
   await page.getByText("Accepted: it is in the drafts.").waitFor();
   assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "change-accept", number: 12, title: "Fix a typo" });
-  await page.goto(`${origin}/#/a-book/drafts`);
+  await page.reload();
   const typo = page.locator("li", { hasText: "Fix a typo" });
   await typo.getByRole("button", { name: "Decline…" }).click();
   await typo.getByLabel("Why is this being declined?").fill("We keep the original wording here.");
   await typo.getByRole("button", { name: "Decline", exact: true }).click();
   await page.getByText(/^Declined: your reason is posted, with a note thanking them\./).waitFor();
   assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "change-decline", number: 12, reason: "We keep the original wording here." });
-  await page.getByRole("link", { name: /recieve/ }).waitFor();
 });
 
-test("drafts: a suggestion whose paragraph changed: Use the suggestion, Edit before accepting, Decline as outdated, all sent as the function listed them", async () => {
+test("proposals in the editor: a suggestion whose paragraph changed: Use the suggestion, Edit before accepting, Decline as outdated, all sent as the function listed them", async () => {
   await signIn();
   stub.s.changes[0].needsLook = true;
-  await page.goto(`${origin}/#/a-book/drafts`);
+  await page.goto(`${origin}/#/a-book/edit/${encodeURIComponent("chapters/chapter-02.md")}`);
   const row = page.locator("li", { hasText: "Fix a typo" });
   await row.getByText("needs a look — paragraph changed").waitFor();
   assert.equal(await row.getByRole("button", { name: "Accept", exact: true }).count(), 0);
@@ -712,12 +930,12 @@ test("drafts: a suggestion whose paragraph changed: Use the suggestion, Edit bef
   assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "change-decline", number: 12, reason: "The paragraph has changed since this suggestion was made, so it no longer applies as written." });
 });
 
-test("drafts: Use the suggestion on clashing words writes nothing; Edit before accepting puts in the rest and opens the editor beside what was kept", async () => {
+test("proposals in the editor: Use the suggestion on clashing words writes nothing; Edit before accepting puts in the rest and opens the editor beside what was kept", async () => {
   await signIn();
   stub.s.changes[0].needsLook = true;
   const p = { path: "chapters/chapter-02.md", line: 2, base: "Converted from Word.", current: "Converted from Word, then edited.", suggested: "Converted from a Word file.", merged: "Converted from a Word, then edited." };
   stub.s.acceptAnswers.push([409, { error: "overlap", userMessage: "This suggestion was made on an older version of this paragraph.", overlap: { number: 12, paragraphs: [p] }, choices: CHOICES }]);
-  await page.goto(`${origin}/#/a-book/drafts`);
+  await page.goto(`${origin}/#/a-book/edit/${encodeURIComponent("chapters/chapter-02.md")}`);
   const row = page.locator("li", { hasText: "Fix a typo" });
   await row.getByRole("button", { name: "Use the suggestion" }).click();
   await row.getByText("Their change couldn't be put in by itself: you and the reader changed the same words. Nothing was changed.").waitFor();
@@ -739,13 +957,13 @@ test("drafts: Use the suggestion on clashing words writes nothing; Edit before a
   assert.equal(await page.locator("#editor-text").inputValue(), stub.s.bookFiles.get("chapters/chapter-02.md").toString());
 });
 
-test("drafts at phone width: the outdated suggestion's buttons and the clash view fit, nothing scrolls sideways", async () => {
+test("proposals in the editor at phone width: the outdated suggestion's buttons and the clash view fit, nothing scrolls sideways", async () => {
   await page.setViewportSize({ width: 375, height: 800 });
   await signIn();
   stub.s.changes[0].needsLook = true;
   stub.s.acceptAnswers.push([409, { error: "overlap", userMessage: "This suggestion was made on an older version of this paragraph.", choices: CHOICES,
     overlap: { number: 12, paragraphs: [{ path: "chapters/chapter-02.md", line: 2, base: "Converted from Word.", current: "Converted from Word, then edited.", suggested: "Converted from a Word file.", merged: "Converted from a Word, then edited." }] } }]);
-  await page.goto(`${origin}/#/a-book/drafts`);
+  await page.goto(`${origin}/#/a-book/edit/${encodeURIComponent("chapters/chapter-02.md")}`);
   const row = page.locator("li", { hasText: "Fix a typo" });
   await row.getByText("needs a look — paragraph changed").waitFor();
   for (const name of ["Use the suggestion", "Edit before accepting", "Decline as outdated"]) assert.ok(await row.getByRole("button", { name }).isVisible(), name);
@@ -759,162 +977,10 @@ test("drafts at phone width: the outdated suggestion's buttons and the clash vie
 test("errors on accept say why in plain words, never a bare 'Something went wrong'", async () => {
   await signIn();
   stub.s.acceptAnswers.push([409, { error: "github: PUT merge failed (status 405)" }]);
-  await page.goto(`${origin}/#/a-book/drafts`);
+  await page.goto(`${origin}/#/a-book/edit/${encodeURIComponent("chapters/chapter-02.md")}`);
   const row = page.locator("li", { hasText: "Fix a typo" });
   await row.getByRole("button", { name: "Accept" }).click();
   await row.getByText(/This changed since the page was loaded\. Nothing was changed\./).waitFor();
-});
-
-test("drafts: written suggestions that couldn't be loaded say so with Try again, never an empty list; one failed try is retried unseen", async () => {
-  await signIn();
-  // One 503 (the API's CPU limit, say): the read is tried again and the list shows.
-  stub.s.suggestionsFail = 1;
-  await page.goto(`${origin}/#/a-book/drafts`);
-  await page.getByRole("heading", { name: "Written suggestions" }).waitFor();
-  await page.getByRole("link", { name: /recieve/ }).waitFor();
-  // Both tries fail: it says so, instead of showing no suggestions.
-  stub.s.suggestionsFail = 2;
-  await page.reload();
-  await page.getByText("Readers' written suggestions couldn't be loaded just now, so some may be missing here.").waitFor();
-  assert.equal(await page.getByRole("link", { name: /recieve/ }).count(), 0);
-  await page.getByRole("button", { name: "Try again" }).click();
-  await page.getByRole("link", { name: /recieve/ }).waitFor();
-  assert.equal(await page.getByText(/couldn't be loaded just now/).count(), 0);
-});
-
-test("drafts: formatting problems block Publish — each with its chapter and Fix; dead links don't; the reason is right above the button", async () => {
-  await signIn();
-  stub.s.publish = { ...stub.s.publish, state: "lint", can_publish: false, state_words: "This cannot go to readers yet.",
-    lint: [{ path: CH1_PATH, line: 3, rule: "MD045", description: "Images should have alternate text" }, { path: "docs/README.md", line: 1, rule: "MD041", description: "First line" }], lint_count: 2,
-    links: { checked: true, dead: [{ url: "https://gone.example/x", file: CH1_PATH, status: "404" }] } };
-  await page.goto(`${origin}/#/a-book/drafts`);
-  await page.getByRole("heading", { name: "Formatting: 2 problems to fix" }).waitFor();
-  const fix = page.getByRole("link", { name: "Fix" });
-  assert.equal(await fix.getAttribute("href"), `#/a-book/edit/${encodeURIComponent(CH1_PATH)}/line/3`);
-  assert.match(await page.locator(".check.bad li").innerText(), /^Chapter 1, line 3: A picture has no description/);
-  await page.getByText("1 problem in the book's behind-the-scenes files", { exact: false }).waitFor();
-  await page.getByText("1 link to other websites doesn't work").waitFor();
-  const go = page.getByRole("button", { name: "Publish 5 changes" });
-  assert.equal(await go.isDisabled(), true);
-  assert.equal(await page.locator(".publish-reason").textContent(), "Fix the 2 formatting problems above first.");
-  assert.equal(await page.locator(".publish > *").first().evaluate((n) => n.className), "publish-reason", "the reason is directly above the button");
-  await noFileNames();
-  await fix.click();
-  await page.waitForFunction(() => document.querySelector("#editor-text")?.selectionEnd > 0);
-});
-
-test("drafts: while the formatting is being checked it says so and waits, then shows the answer by itself", async () => {
-  await signIn();
-  const sha = "c".repeat(40);
-  stub.s.lintAsks = 0;
-  stub.s.publish = { ...stub.s.publish, state: "checking", can_publish: false, state_words: "The pages' formatting is being checked.", lint: undefined, lint_count: undefined, lint_job: { sha } };
-  stub.s.lintAnswer = { ...stub.s.publish, state: "clean", can_publish: true, lint: [], lint_count: 0, lint_job: undefined };
-  await page.goto(`${origin}/#/a-book/drafts`);
-  await page.getByText("Checking the formatting of what would go live.", { exact: false }).waitFor();
-  assert.equal(await page.locator(".publish-reason").textContent(), "The formatting is being checked.");
-  assert.equal(await page.getByRole("button", { name: "Publish 5 changes" }).isDisabled(), true);
-  await page.getByText("✓ Formatting: nothing to fix.").waitFor({ timeout: 15000 });
-  assert.equal(await page.getByRole("button", { name: "Publish 5 changes" }).isDisabled(), false);
-  assert.deepEqual(lastCall("author-read", (c) => c.query.what === "lint")?.query, { what: "lint", book: "a-book", sha });
-  stub.s.lintAnswer = null;
-});
-
-test("drafts: a check that couldn't run says so with Check again, never an empty warning", async () => {
-  await signIn();
-  stub.s.publish = { ...stub.s.publish, state: "unchecked", can_publish: false, state_words: "The pages' formatting couldn't be checked just now." };
-  await page.goto(`${origin}/#/a-book/drafts`);
-  await page.getByText("The formatting check couldn't be run just now, so publishing waits for it.").waitFor();
-  assert.equal(await page.locator(".publish-reason").textContent(), "The formatting check couldn't be run just now.");
-  stub.s.publish = { ...stub.s.publish, state: "clean", can_publish: true, lint: [], lint_count: 0 };
-  await page.getByRole("button", { name: "Check again" }).click();
-  await page.getByText("✓ Formatting: nothing to fix.").waitFor();
-  assert.equal(await page.getByRole("button", { name: "Publish 5 changes" }).isDisabled(), false);
-
-  stub.s.publishError = true;
-  await page.evaluate(() => window.dispatchEvent(new HashChangeEvent("hashchange")));
-  await page.getByText("The checks couldn't be fetched just now, so publishing waits for them.").waitFor();
-  await page.getByRole("button", { name: "Check again" }).waitFor();
-});
-
-test("drafts: Publish N changes — one press, Publishing… then Published with links to the changed chapters", async () => {
-  await signIn();
-  stub.s.publish = { ...stub.s.publish, open: false, number: null, state: "not_open", can_publish: false, lint: [], lint_count: 0 };
-  await page.goto(`${origin}/#/a-book/drafts`);
-  const go = page.getByRole("button", { name: "Publish 5 changes" });
-  assert.equal(await go.isDisabled(), false);
-  assert.equal(await page.locator(".publish-preview").textContent(), "Publishing will move 5 changes from Being edited to Published.");
-  assert.equal(await page.getByRole("checkbox").count(), 0, "no tick box");
-  stub.s.publish = { ...stub.s.publish, open: true, number: 30, state: "clean", can_publish: true };
-  await go.click();
-  await page.getByRole("heading", { name: "Published" }).waitFor();
-  const acts = stub.s.requests.filter((r) => r.endpoint === "author-act").map((r) => r.body);
-  assert.deepEqual(acts, [{ book: "a-book", action: "publish-prepare" }, { book: "a-book", action: "publish", number: 30, confirm: true }]);
-  assert.deepEqual(await page.locator(".published li a").evaluateAll((as) => as.map((a) => [a.textContent, a.href])),
-    [["Chapter 1", "https://a-book.example.org/chapters/chapter-01"], ["Water", "https://a-book.example.org/chapters/chapter-04"]]);
-});
-
-test("drafts: Publish this chapter beside Publish all — only that chapter is sent, then it says when it's live", async () => {
-  await signIn();
-  stub.s.publishChapterStates = [{ state: "checking", checks: [], sha: SENT }, { state: "merged", checks: [], sha: SENT }];
-  await page.goto(`${origin}/#/a-book/drafts`);
-  const line = page.locator("ul.drafts > li").filter({ hasText: "Edited “Chapter 1”" });
-  await line.getByRole("button", { name: "Publish this chapter" }).click();
-  await line.getByText("Published “Chapter 1”.", { exact: false }).waitFor({ timeout: 20000 });
-  assert.deepEqual(lastCall("author-act", (r) => r.body?.action === "publish-chapter").body, { book: "a-book", action: "publish-chapter", path: CH1_PATH });
-  assert.equal(await line.getByRole("link", { name: "Open it on the book's site" }).getAttribute("href"), "https://a-book.example.org/chapters/chapter-01");
-  // A new chapter has it too; a removed one, the order and pictures don't.
-  assert.equal(await page.locator("ul.drafts > li").filter({ hasText: "New chapter “Water”" }).getByRole("button", { name: "Publish this chapter" }).count(), 1);
-  for (const t of ["Removed “Rocks”", "Chapter order changed", "1 picture"]) assert.equal(await page.locator("ul.drafts > li").filter({ hasText: t }).getByRole("button", { name: "Publish this chapter" }).count(), 0, t);
-  assert.equal(await page.getByRole("button", { name: /^Publish \d+ changes$/ }).count(), 1, "Publish all still there");
-});
-
-test("drafts: a chapter linking to pages only in the drafts — Publish these too, or Publish without them with the broken links said plainly", async () => {
-  await signIn();
-  const linked = { error: "linked", userMessage: "This chapter links to pages that aren't live yet.", linked: [{ path: "concepts/soil-horizon.md", title: "Soil horizon", why: "a concept page only in the drafts" }] };
-  stub.s.publishChapterAnswers = [[409, linked], [200, { done: true, number: 171, url: "https://github.com/o/a-book/pull/171", title: "Chapter 1", autoMerge: true, linkedLeft: [], steps: [] }],
-    [409, linked], [200, { done: true, number: 172, url: "https://github.com/o/a-book/pull/172", title: "Chapter 1", autoMerge: true, linkedLeft: linked.linked, steps: [] }]];
-  await page.goto(`${origin}/#/a-book/drafts`);
-  const line = page.locator("ul.drafts > li").filter({ hasText: "Edited “Chapter 1”" });
-  await line.getByRole("button", { name: "Publish this chapter" }).click();
-  await line.getByText("links to a page the live book hasn't got yet", { exact: false }).waitFor();
-  assert.match(await line.innerText(), /Soil horizon \(a concept page only in the drafts\)/);
-  await line.getByRole("button", { name: "Publish these too" }).click();
-  await line.getByText("Published “Chapter 1”.", { exact: false }).waitFor({ timeout: 20000 });
-  assert.equal(lastCall("author-act", (r) => r.body?.action === "publish-chapter").body.linked, "with");
-  assert.ok(await line.getByRole("button", { name: "Publish this chapter" }).isDisabled(), "published: not again");
-  await page.reload();
-  await line.getByRole("button", { name: "Publish this chapter" }).click();
-  await line.getByRole("button", { name: "Publish without them" }).click();
-  await line.getByText("Published without “Soil horizon”: its link is broken on the live book until you publish it.").waitFor();
-  assert.equal(lastCall("author-act", (r) => r.body?.action === "publish-chapter").body.linked, "without");
-  await page.setViewportSize({ width: 360, height: 740 });
-  try {
-    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "no sideways scroll at 360 px");
-  } finally {
-    await page.setViewportSize({ width: 1100, height: 900 });
-  }
-});
-
-test("drafts: a chapter with a formatting problem can't be published on its own — listed with Fix, nothing sent", async () => {
-  await signIn();
-  stub.s.bookFiles.set(CH1_PATH, Buffer.from(stub.s.bookFiles.get(CH1_PATH).toString("utf8") + "\n![](../assets/chapter-01/image1.png)\n"));
-  await page.goto(`${origin}/#/a-book/drafts`);
-  const line = page.locator("ul.drafts > li").filter({ hasText: "Edited “Chapter 1”" });
-  await line.getByRole("button", { name: "Publish this chapter" }).click();
-  await line.getByText("can't go to readers yet", { exact: false }).waitFor();
-  assert.match(await line.getByRole("link", { name: "Fix" }).first().getAttribute("href"), new RegExp(`^#/a-book/edit/${encodeURIComponent(CH1_PATH)}/line/\\d+$`));
-  assert.equal(stub.s.requests.filter((r) => r.endpoint === "author-act" && r.body?.action === "publish-chapter").length, 0);
-});
-
-test("drafts: a publish that fails says so in plain words, with Try again", async () => {
-  await signIn();
-  stub.s.publish = { ...stub.s.publish, lint: [], lint_count: 0 };
-  await page.goto(`${origin}/#/a-book/drafts`);
-  await page.route(`${origin}/fn/author-act?*`, (route) => route.fulfill({ status: 409, contentType: "application/json", headers: { "access-control-allow-origin": origin }, body: JSON.stringify({ error: "x", userMessage: "What is waiting to go live has changed." }) }), { times: 1 });
-  await page.getByRole("button", { name: "Publish 5 changes" }).click();
-  await page.getByText("What is waiting to go live has changed.").waitFor();
-  await page.getByRole("button", { name: "Try again" }).click();
-  await page.getByRole("heading", { name: "Published" }).waitFor();
 });
 
 test("old links land: Waiting for you and the publish screen open Drafts; a chapter opens in the editor", async () => {
@@ -1262,11 +1328,7 @@ const JO = "Edit ¶2 of Soils: Tighten the soil chapter";
 async function openReview() {
   await signIn();
   await page.goto(`${origin}/#/a-book/drafts`);
-  await page.getByRole("heading", { name: "Reader suggestions" }).waitFor();
-  const row = page.locator(".review-all li").filter({ hasText: "Soils" });
-  assert.match(await row.innerText(), /\d suggestions? waiting/);
-  assert.equal(await page.locator("#review-pick option").count(), 2, "and a picker");
-  await row.getByRole("link", { name: "Review all in chapter" }).click();
+  await page.locator('.drafts-row[data-row="chapters/chapter-02.md"]').getByRole("link", { name: "Review" }).click();
   await page.getByRole("heading", { name: "Review: Soils" }).waitFor();
   await page.locator(".rv-text .rv-edit").first().waitFor();
 }
@@ -1274,7 +1336,7 @@ async function openReview() {
 test("review: one continuous text as the book site renders it, every edit inline with a box before it; no rule, no file names", async () => {
   await openReview();
   assert.equal(stub.s.requests.filter((r) => r.endpoint === "author-read" && r.query.what === "review").length, 4);
-  assert.equal(await page.locator(".rv-summary").innerText(), "6 edits from 4 readers, 5 notes · 7 to decide below");
+  assert.equal(await page.locator(".rv-summary").innerText(), "4 suggestions, 5 notes · 7 to decide below");
   // A paragraph wrapped over two lines in the source is one paragraph, as on the book site.
   const blocks = await page.locator(".rv-text").evaluate((t) => [...t.children].filter((n) => /^(P|H\d)$/.test(n.nodeName) && n.textContent.trim()).map((n) => n.textContent.replace(/\[(?:removed|added): |\]/g, "")));
   assert.equal(blocks.length, 6);

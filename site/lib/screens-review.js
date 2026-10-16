@@ -465,6 +465,16 @@ const intoView = (el) => {
   if (r.top < 0 || r.bottom > window.innerHeight) el.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 };
 
+/**
+ * "4 suggestions, 2 notes", as Drafts counts the chapter's row (drafts.js rowsOf): a
+ * suggestion has a text change (a proposed edit, or a written one that says what it
+ * replaces); everything else is a note.
+ */
+export const waitingWords = (items) => {
+  const s = items.filter((it) => it.kind === "edit" || (it.kind === "suggestion" && it.hunks.length)).length;
+  return [s ? plural(s, "suggestion") : null, items.length - s ? plural(items.length - s, "note") : null].filter(Boolean).join(", ");
+};
+
 // --- the screen --------------------------------------------------------------------------------
 
 export async function reviewScreen(slug, path) {
@@ -1107,8 +1117,6 @@ async function draw(stage, book, v, ticked, said, restore = null) {
   // and the notes on the whole chapter, three at first.
   drawLeft();
   const toDecide = Number(left.querySelector("[data-count]")?.dataset.count ?? 0);
-  const edits = v.hunks.filter(tickable);
-  const readers = new Set(edits.map((x) => byKey.get(x.item).who));
   const top = v.notes.filter((n) => n.at < 0);
   const noteLine = (n) => h("li", {}, h("strong", { text: `${byKey.get(n.item).who}: ` }), n.text);
   const more = top.length > 3 ? h("button", { type: "button", class: "btn link", text: `Show ${top.length - 3} more` }) : null;
@@ -1122,7 +1130,7 @@ async function draw(stage, book, v, ticked, said, restore = null) {
   clear(stage,
     said ? note(said.filter(Boolean).map((t) => h("p", { text: t })), "warn") : null,
     !groups.length && !toDecide ? h("p", { class: "rv-summary", text: "Nothing is waiting on this chapter." })
-      : h("p", { class: "rv-summary" }, edits.length ? `${plural(edits.length, "edit")} from ${plural(readers.size, "reader")}, ${plural(v.notes.length, "note")}` : `No edits, ${plural(v.notes.length, "note")}`,
+      : h("p", { class: "rv-summary" }, waitingWords(v.items),
         toDecide ? h("span", { class: "muted", text: ` · ${toDecide} to decide below` }) : null),
     // Nothing to tick: one plain line, and no bar.
     !groups.length && toDecide ? h("p", { class: "rv-quiet", text: `Nothing to tick here; ${plural(toDecide, "item")} to decide below.` }) : null,

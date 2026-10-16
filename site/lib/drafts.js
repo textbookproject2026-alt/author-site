@@ -99,7 +99,7 @@ export async function draftItems(book, { texts = true } = {}) {
     const t = both.get(f.path) ?? {};
     const kind = f.status === "added" ? "new" : f.status === "removed" ? "removed" : "edited";
     return {
-      kind, path: f.path, previous: f.previous, who: f.who, when: f.when,
+      kind, path: f.path, previous: f.previous, who: f.who, login: f.login, when: f.when,
       title: titles.get(f.path, t.drafts ?? t.live),
       paragraphs: kind === "edited" && texts ? changedParagraphs(t.live, t.drafts) : null,
     };
@@ -109,26 +109,129 @@ export async function draftItems(book, { texts = true } = {}) {
     const dc = contentsOf(draftsIndex);
     if (lc && dc) {
       const inBoth = (a, b) => a.items.map((i) => i.path).filter((p) => p && b.items.some((j) => j.path === p));
-      if (inBoth(lc, dc).join("\n") !== inBoth(dc, lc).join("\n")) items.push({ kind: "order", path: INDEX, title: "Chapter order", who: index.who, when: index.when });
+      if (inBoth(lc, dc).join("\n") !== inBoth(dc, lc).join("\n")) items.push({ kind: "order", path: INDEX, title: "Chapter order", who: index.who, login: index.login, when: index.when });
     }
     // The type (Settings) is its own line; the rest of the front page is "Edited the front page".
     const [was, now] = [typeOf(liveIndex, reg?.type), typeOf(draftsIndex, reg?.type)];
-    if (was !== now) items.push({ kind: "type", type: now, title: "Type", who: index.who, when: index.when });
-    if (outsideContents(withoutType(liveIndex ?? "")) !== outsideContents(withoutType(draftsIndex ?? ""))) items.push({ kind: "front", path: INDEX, title: "Front page", who: index.who, when: index.when });
+    if (was !== now) items.push({ kind: "type", type: now, title: "Type", who: index.who, login: index.login, when: index.when });
+    if (outsideContents(withoutType(liveIndex ?? "")) !== outsideContents(withoutType(draftsIndex ?? ""))) items.push({ kind: "front", path: INDEX, title: "Front page", who: index.who, login: index.login, when: index.when });
   }
   if (pictures.length) {
     const newest = [...pictures].sort((a, b) => String(b.when).localeCompare(String(a.when)))[0];
-    items.push({ kind: "pictures", title: "Pictures", files: pictures, who: newest.who, when: newest.when });
+    items.push({ kind: "pictures", title: "Pictures", files: pictures, who: newest.who, login: newest.login, when: newest.when });
   }
   return { live: d.live, drafts: d.drafts, items, more: d.more ?? 0, titles, liveIndex, draftsIndex, texts: both };
 }
 
-// The tab's count: a light read (no page texts), kept briefly so every screen can show it.
+// --- Drafts by chapter -------------------------------------------------------------------------
+//
+// The Drafts tab is one row per chapter needing anything, in Contents order, and a last row,
+// "Rest of the book", for everything that isn't a chapter. A row needs something when
+// readers have something waiting on it (a suggestion: a proposed edit, or a written
+// suggestion with a text change; a note: anything else written) or the drafts have it
+// differently from the live book. Accepted written suggestions are done (History has them).
+
+/** A chapter: a page directly in chapters/ (the glossary, the front page and concept pages are the rest of the book). */
+export const isChapter = (path) => /^chapters\/[^/]+\.md$/i.test(path ?? "");
+/** A reader's written item with a text change counts as a suggestion; without one, as a note. */
+export const isNote = (s) => !s.original;
+export const REST = "rest";
+
+/** The words for what the drafts hold on a row, not yet live: "1 paragraph edited, not live". */
+function draftsWords(items) {
+  if (!items.length) return null;
+  const one = items.length === 1 ? items[0] : null;
+  if (one && isChapter(one.path)) {
+    if (one.kind === "new") return "new, not live";
+    if (one.kind === "removed") return "removed, not live";
+    return `${one.paragraphs ? `${plural(one.paragraphs, "paragraph")} edited` : "edited"}, not live`;
+  }
+  const words = items.map((it) => ({
+    new: `“${it.title}” new`, removed: `“${it.title}” removed`, edited: `“${it.title}” edited`, order: "chapter order changed",
+    front: "front page edited", type: "settings changed", pictures: plural(it.files?.length ?? 0, "picture"),
+  })[it.kind]);
+  return `${words.join(", ")}, not live`;
+}
+
+/**
+ * The rows. `state`: draftItems(); `changes`, `written`: the open proposals and written
+ * suggestions (accepted ones are left out here); `lint`: the book's formatting problems at
+ * the drafts' head ([{ path, line, … }]) or null.
+ * -> { rows: [{ key, path?, title, suggestions, notes, reader: [item], drafts: [item], lint: [problem], status, next }], upToDate }
+ *    next: "review" | "fix" | "publish"
+ */
+export function rowsOf(state, changes, written, lint = null) {
+  const contents = [...(contentsOf(state.draftsIndex)?.items ?? []), ...(contentsOf(state.liveIndex)?.items ?? [])]
+    .map((i) => i.path).filter((p) => isChapter(p));
+  const order = [...new Set(contents)];
+  const rows = new Map();
+  const row = (key, path) => {
+    if (!rows.has(key)) rows.set(key, { key, path, suggestions: 0, notes: 0, reader: [], drafts: [], lint: [] });
+    return rows.get(key);
+  };
+  const keyOf = (path) => (isChapter(path) ? path : REST);
+  for (const c of changes) {
+    const r = row(keyOf(c.path), isChapter(c.path) ? c.path : null);
+    r.suggestions++;
+    r.reader.push({ kind: "proposal", ...c });
+  }
+  for (const w of written.filter((x) => !x.accepted)) {
+    const r = row(keyOf(w.path), isChapter(w.path) ? w.path : null);
+    if (isNote(w)) r.notes++;
+    else r.suggestions++;
+    r.reader.push({ kind: isNote(w) ? "note" : "suggestion", ...w });
+  }
+  // Pictures go with the chapter whose folder they're in (assets/<chapter>/…) when that
+  // chapter is in the drafts too; the rest go with the rest of the book.
+  const changed = new Set(state.items.filter((it) => isChapter(it.path)).map((it) => it.path.split("/").pop().replace(/\.md$/i, "")));
+  for (const it of state.items) {
+    if (it.kind === "pictures") {
+      const mine = (f) => changed.has(f.path.split("/")[1]);
+      for (const stem of changed) {
+        const files = it.files.filter((f) => f.path.split("/")[1] === stem);
+        if (files.length) row(`chapters/${stem}.md`, `chapters/${stem}.md`).pictures = files;
+      }
+      const rest = it.files.filter((f) => !mine(f));
+      if (rest.length) row(REST, null).drafts.push({ ...it, files: rest });
+      continue;
+    }
+    row(keyOf(it.path), isChapter(it.path) ? it.path : null).drafts.push(it);
+  }
+  for (const x of lint ?? []) {
+    if (x.path && (isChapter(x.path) || x.path === "index.md" || x.path === "glossary.md" || x.path.startsWith("chapters/"))) {
+      const r = rows.get(keyOf(x.path));
+      if (r) r.lint.push(x);
+    }
+  }
+  const pos = (p) => {
+    const k = order.indexOf(p);
+    return k < 0 ? order.length : k;
+  };
+  const list = [...rows.values()].filter((r) => r.reader.length || r.drafts.length)
+    .sort((a, b) => (a.key === REST) - (b.key === REST) || pos(a.path) - pos(b.path) || String(a.path).localeCompare(String(b.path), undefined, { numeric: true }));
+  for (const r of list) {
+    r.title = r.key === REST ? "Rest of the book" : state.titles.get(r.path, null);
+    const said = [r.suggestions ? plural(r.suggestions, "suggestion") : null, r.notes ? plural(r.notes, "note") : null].filter(Boolean).join(", ");
+    r.status = [said || null, draftsWords(r.drafts)].filter(Boolean).join(" · ");
+    r.next = r.reader.length ? "review" : r.lint.length ? "fix" : "publish";
+  }
+  const upToDate = order.filter((p) => !rows.get(p) || (!rows.get(p).reader.length && !rows.get(p).drafts.length)).length;
+  return { rows: list, upToDate };
+}
+
+/** Readers' open items, as Drafts counts them: { changes, written } (a list that can't be read throws). */
+export async function readerItems(slug) {
+  const [c, w] = await Promise.all([read("changes", { book: slug }), read("suggestions", { book: slug })]);
+  return { changes: c.changes ?? [], written: w.suggestions ?? [] };
+}
+
+// The tab's count, the rows needing anything: a light read (no page texts), kept briefly so every screen can show it.
 const counts = new Map();
 export function draftCount(book) {
   const kept = counts.get(book.slug);
   if (kept && Date.now() - kept.at < 15_000) return kept.promise;
-  const promise = draftItems(book, { texts: false }).then((r) => r.items.length + r.more).catch(() => null);
+  const promise = Promise.all([draftItems(book, { texts: false }), readerItems(book.slug)])
+    .then(([state, r]) => rowsOf(state, r.changes, r.written).rows.length).catch(() => null);
   counts.set(book.slug, { at: Date.now(), promise });
   return promise;
 }

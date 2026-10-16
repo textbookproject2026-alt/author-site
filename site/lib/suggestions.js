@@ -4,7 +4,7 @@
 //   proposed   an edit made in the in-site editor, a pull request into drafts
 //              (read "changes"; `path` from the body propose-edit wrote)
 
-import { h, clear, busy, note, errorNote, when } from "./dom.js";
+import { h, clear, busy, note, errorNote, when, plural } from "./dom.js";
 import { read, act } from "./api.js";
 import { declineButton } from "./decline.js";
 import { diff, renderOps, tokens } from "./diff.js";
@@ -19,16 +19,29 @@ export async function openSuggestions(slug) {
   return { written: written ?? [], changes: changes ?? [], failed: written === null || changes === null };
 }
 
-/** path -> how many open suggestions name it. */
+/**
+ * path -> { suggestions, notes } waiting on it, counted as Drafts counts them (drafts.js
+ * rowsOf): a proposed edit, or a written suggestion with a text change, is a suggestion;
+ * anything else written is a note; an accepted one is done (History has it).
+ */
 export function countsByPath({ written, changes }) {
   const counts = new Map();
-  for (const s of [...written, ...changes]) if (s.path) counts.set(s.path, (counts.get(s.path) ?? 0) + 1);
+  const add = (path, k) => {
+    if (!path) return;
+    const c = counts.get(path) ?? { suggestions: 0, notes: 0 };
+    c[k]++;
+    counts.set(path, c);
+  };
+  for (const c of changes) add(c.path, "suggestions");
+  for (const w of written.filter((x) => !x.accepted)) add(w.path, w.original ? "suggestions" : "notes");
   return counts;
 }
 
-/** The badge beside a page on Chapters, linking to its editor's list; null for none. */
-export const countBadge = (n, href) =>
-  n ? h("a", { class: "badge suggestions", href, text: `${n} ${n === 1 ? "suggestion" : "suggestions"}` }) : null;
+/** The badge beside a page on Chapters ("2 suggestions, 1 note"), linking to its editor's list; null for none. */
+export const countBadge = (c, href) => {
+  const words = [c?.suggestions ? plural(c.suggestions, "suggestion") : null, c?.notes ? plural(c.notes, "note") : null].filter(Boolean).join(", ");
+  return words ? h("a", { class: "badge suggestions", href, text: words }) : null;
+};
 
 /** One button that runs `fn` once, showing progress and then what happened in `out` (words, or nodes). */
 function answerButton(text, cls, out, working, fn) {
