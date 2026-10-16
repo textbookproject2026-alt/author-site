@@ -632,6 +632,27 @@ test("drafts: by chapter — the summary, Publish all (N) and Preview; one row e
   assert.doesNotMatch(await page.locator("main").innerText(), /author-one|textbookproject2026-alt|\[bot\]/);
 });
 
+test("drafts: every row on one grid — the buttons one straight column, the same width, centred on the row's text; the ⋯ column kept on rows without a menu", async () => {
+  await openDrafts();
+  for (const width of [1280, 1080]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.reload();
+    await page.locator(".drafts-row").first().waitFor();
+    const rows = await page.locator(".drafts-row").evaluateAll((rs) => rs.map((r) => {
+      const b = r.querySelector(".btn.primary").getBoundingClientRect();
+      const t = r.querySelector(".drafts-row-text").getBoundingClientRect();
+      const m = r.querySelector(".more-menu, .more-menu-space").getBoundingClientRect();
+      return { x: b.x, w: b.width, mid: b.y + b.height / 2 - (t.y + t.height / 2), mx: m.x, mw: m.width };
+    }));
+    assert.equal(new Set(rows.map((r) => Math.round(r.x))).size, 1, `${width}: one column of buttons`);
+    assert.equal(new Set(rows.map((r) => Math.round(r.w))).size, 1, `${width}: Review and Publish the same width`);
+    assert.ok(rows.every((r) => Math.abs(r.mid) <= 1), `${width}: centred against the text`);
+    assert.equal(new Set(rows.map((r) => Math.round(r.mx))).size, 1, `${width}: the ⋯ column on every row`);
+    assert.ok(rows.every((r) => r.mw > 30), `${width}: kept, empty or not`);
+  }
+  await page.setViewportSize({ width: 1100, height: 900 });
+});
+
 test("drafts: ⋯ View changes says who (a person, never an account) and when, with the difference; the Rest of the book's each with its own Discard", async () => {
   await openDrafts();
   const ch1 = row("chapters/chapter-01.md");

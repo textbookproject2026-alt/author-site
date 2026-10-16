@@ -115,7 +115,8 @@ function rowLine(book, r, state, names) {
         h("strong", { class: "drafts-row-title", text: r.title }),
         h("p", { class: "muted drafts-row-status", text: r.status })),
       h("div", { class: "drafts-row-go" }, primary),
-      menu),
+      // The ⋯ column is there on every row, empty without a menu, so the buttons line up.
+      menu ?? h("span", { class: "more-menu-space", "aria-hidden": "true" })),
     out, view);
 }
 
