@@ -484,12 +484,16 @@ mark.rv-flash { color: inherit; background: transparent; text-decoration: underl
 .publish-all { margin: 0 0 1rem; padding: 0.75rem 1rem; border: 1px solid var(--portal-border); border-radius: 8px; }
 .drafts-rows { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--portal-border); }
 .drafts-row { padding: 0.75rem 0; border-bottom: 1px solid var(--portal-border); }
-.drafts-row-main { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "text go more"; align-items: center; gap: 0.5rem 0.75rem; }
+/* One grid for every row: the text, the primary button in a fixed column (every button the
+   same width, label centred), and the ⋯ column, kept even on a row without a menu. */
+.drafts-row-main { display: grid; grid-template-columns: minmax(0, 1fr) 11.5rem 2.25rem; grid-template-areas: "text go more"; align-items: center; gap: 0.5rem 0.75rem; }
 .drafts-row-text { grid-area: text; min-width: 0; }
 .drafts-row-title { display: block; overflow-wrap: anywhere; }
 .drafts-row-status { margin: 0.15rem 0 0; font-size: 0.9rem; overflow-wrap: anywhere; }
 .drafts-row-go { grid-area: go; }
-.drafts-row .more-menu { grid-area: more; }
+.drafts-row-go .btn { width: 100%; justify-content: center; text-align: center; white-space: normal; }
+.drafts-row .more-menu, .drafts-row .more-menu-space { grid-area: more; }
+.more-menu-space { width: 2.25rem; height: 2.25rem; }
 .drafts-row .draft-diff:not([hidden]) { margin-top: 0.75rem; }
 .drafts-row .publish-out:not(:empty), .drafts-row .row-out:not(:empty) { margin-top: 0.5rem; }
 .draft-change { margin: 0 0 1rem; overflow-wrap: anywhere; }
@@ -503,7 +507,6 @@ mark.rv-flash { color: inherit; background: transparent; text-decoration: underl
 .review-rest > li > p.muted.small { margin: 0 0 0.25rem; }
 /* A phone: title and status, ⋯ at the top right, then the button the full width. */
 @media (max-width: 640px) {
-  .drafts-row-main { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "text more" "go go"; align-items: start; }
-  .drafts-row-go .btn { width: 100%; justify-content: center; }
+  .drafts-row-main { grid-template-columns: minmax(0, 1fr) 2.25rem; grid-template-areas: "text more" "go go"; align-items: start; }
   .drafts-top > .btn, .drafts-preview .btn { flex: 1 1 auto; justify-content: center; }
 }
