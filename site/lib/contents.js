@@ -72,7 +72,16 @@ export function withOrder(parsed, order) {
   const items = order.map((k) => parsed.items[k]);
   // The spacing between items stays as it was: one blank line between them if there was any.
   const blank = parsed.gaps.some((g) => g > 0);
-  const list = items.flatMap((it, k) => [...(k && blank ? [""] : []), ...it.lines]);
+  // A numbered list counted again from its first number: an item moved, added or taken
+  // out leaves no gap or repeat (markdownlint MD029, which the books' lint runs).
+  const NUM = /^(\s*)(\d+)([.)])(\s)/;
+  const first = parsed.items.map((it) => NUM.exec(it.lines[0] ?? "")).find(Boolean);
+  let n = first ? Number(first[2]) : 0;
+  const numbered = (it) => {
+    const m = first && NUM.exec(it.lines[0] ?? "");
+    return m ? [it.lines[0].replace(NUM, `${m[1]}${n++}${m[3]}${m[4]}`), ...it.lines.slice(1)] : it.lines;
+  };
+  const list = items.flatMap((it, k) => [...(k && blank ? [""] : []), ...numbered(it)]);
   // A blank line after the heading, before the list and after it, as markdownlint
   // asks (MD022, MD032), whatever the page had: the Contents is the platform's
   // block, and a first item added to an empty one used to run into the next heading.
