@@ -2,12 +2,12 @@
 //
 //   top        one summary line ("2 chapters to review, 3 ready to publish"), Publish all (N)
 //              and Preview the book with drafts
-//   rows       one per chapter needing anything, in Contents order, then "Rest of the book"
-//              (pages other than chapters, the front page, settings, notes on no chapter):
-//              title, one status line, one primary button for the next step: Review when
-//              readers have something waiting, else Publish, or the formatting problems to
-//              fix in its place. View changes and Discard in its ⋯ menu.
-//   then       "N chapters up to date" for the rest of the Contents
+//   rows       every chapter, in Contents order, then "Rest of the book" (pages other than
+//              chapters, the front page, settings, notes on no chapter): title, one status
+//              line, and two buttons in two straight columns. Review: enabled when readers
+//              have something waiting on it. Publish: when it has changes that aren't live and
+//              no formatting problems (the count is a link to the editor in the status line).
+//              A greyed one is disabled and says why. View changes and Discard in its ⋯ menu.
 //   Publish all   asks first, with the checks on what goes live (formatting, links)
 //
 // Nothing accepted, declined or done is here: History has it. People are named, never an
@@ -55,13 +55,14 @@ export async function draftsScreen(slug) {
   ]);
   forgetCount(slug);
   const p = pub.error ? null : pub.publish;
-  const { rows, upToDate } = rowsOf(state, readers.changes ?? [], readers.written ?? [], Array.isArray(p?.lint) ? p.lint : null);
+  const { rows } = rowsOf(state, readers.changes ?? [], readers.written ?? [], Array.isArray(p?.lint) ? p.lint : null);
   const header = bookHeader(book, "drafts", "Drafts");
-  header[2].querySelector('[aria-current="page"]').textContent = `Drafts (${rows.length})`;
+  const needs = rows.filter((r) => r.needs);
+  header[2].querySelector('[aria-current="page"]').textContent = `Drafts (${needs.length})`;
   const toReview = rows.filter((r) => r.next === "review");
   const toPublish = rows.filter((r) => r.next === "publish");
   const toFix = rows.filter((r) => r.next === "fix");
-  const summary = rows.length
+  const summary = needs.length
     ? [toReview.length ? `${rowsWords(toReview)} to review` : null, toPublish.length ? `${rowsWords(toPublish)} ready to publish` : null,
       toFix.length ? `${rowsWords(toFix)} with problems to fix` : null].filter(Boolean).join(", ")
     : "Nothing waiting: readers have everything the drafts have, and nothing from readers is waiting.";
@@ -74,7 +75,6 @@ export async function draftsScreen(slug) {
     all.panel,
     readers.error ? couldntLoad() : null,
     rows.length ? h("ul", { class: "drafts-rows" }, rows.map((r) => rowLine(book, r, state, names))) : null,
-    upToDate ? h("p", { class: "muted drafts-uptodate", text: `${plural(upToDate, "chapter")} up to date` }) : null,
     automaticJobs(reg),
   ];
 }
@@ -89,17 +89,19 @@ function rowLine(book, r, state, names) {
   const slug = book.slug;
   const out = h("div", { class: "row-out", "aria-live": "polite" });
   const view = h("div", { class: "draft-diff", hidden: true });
-  let primary;
-  if (r.next === "review") {
-    primary = h("a", { class: "btn primary", href: r.key === REST ? `#/${slug}/review-rest` : `#/${slug}/review/${encodeURIComponent(r.path)}`, text: "Review" });
-  } else if (r.next === "fix") {
-    const first = r.lint[0];
-    primary = h("a", { class: "btn primary", href: `#/${slug}/edit/${encodeURIComponent(first.path)}/line/${first.line}`, text: `${plural(r.lint.length, "problem")} to fix` });
-  } else {
+  const review = r.canReview
+    ? h("a", { class: "btn primary", href: r.key === REST ? `#/${slug}/review-rest` : `#/${slug}/review/${encodeURIComponent(r.path)}`, text: "Review" })
+    : offButton("Review", r.why.review);
+  let publish;
+  if (r.canPublish) {
     const b = publishChapterButton(book, r.key === REST ? null : r.path, r.title, { label: "Publish", primary: true, wrap: false });
-    primary = b.button;
+    publish = b.button;
     out.append(b.out);
-  }
+  } else publish = offButton("Publish", r.why.publish);
+  // The status line: what's waiting and what isn't live, with the problems to fix linked to the editor.
+  const first = r.lint[0];
+  const status = h("p", { class: "muted drafts-row-status" }, r.status,
+    r.lint.length && r.drafts.length ? [" · ", h("a", { class: "drafts-row-fix", href: `#/${slug}/edit/${encodeURIComponent(first.path)}/line/${first.line}`, text: `${plural(r.lint.length, "problem")} to fix` })] : null);
   // ⋯: View changes and Discard, when the drafts hold something here.
   const menu = r.drafts.length ? moreMenu([
     ["View changes", () => {
@@ -109,15 +111,35 @@ function rowLine(book, r, state, names) {
     // One change: Discard here. The Rest of the book's several: each in View changes, with its own.
     r.drafts.length === 1 && discardOf(r.drafts[0], state) ? ["Discard", () => askDiscard(book, r.drafts[0], state, out)] : null,
   ]) : null;
-  return h("li", { class: "drafts-row", "data-row": r.key },
+  return h("li", { class: `drafts-row${r.needs ? "" : " up-to-date"}`, "data-row": r.key },
     h("div", { class: "drafts-row-main" },
       h("div", { class: "drafts-row-text" },
         h("strong", { class: "drafts-row-title", text: r.title }),
-        h("p", { class: "muted drafts-row-status", text: r.status })),
-      h("div", { class: "drafts-row-go" }, primary),
-      // The ⋯ column is there on every row, empty without a menu, so the buttons line up.
+        status),
+      h("div", { class: "drafts-row-review" }, review),
+      h("div", { class: "drafts-row-publish" }, publish),
+      // The ⋯ column is there on every row, empty without a menu, so the columns stay straight.
       menu ?? h("span", { class: "more-menu-space", "aria-hidden": "true" })),
     out, view);
+}
+
+/**
+ * A button that can't be pressed now, and says why: on hover and keyboard focus, and on a
+ * tap (which focuses it, or toggles it where a tap doesn't). Still focusable (aria-disabled,
+ * not `disabled`), so the reason can be reached; pressing it does nothing.
+ */
+let whyIds = 0;
+function offButton(text, why) {
+  const id = `why-${++whyIds}`;
+  const tip = h("span", { class: "off-why", id, role: "tooltip", text: why });
+  const b = h("button", { type: "button", class: "btn off", "aria-disabled": "true", "aria-describedby": id, text });
+  const slot = h("span", { class: "btn-slot" }, b, tip);
+  b.addEventListener("click", (e) => {
+    e.preventDefault();
+    slot.classList.toggle("show-why");
+  });
+  b.addEventListener("blur", () => slot.classList.remove("show-why"));
+  return slot;
 }
 
 /** The ⋯ menu: a native disclosure; each entry closes it. */

@@ -157,8 +157,9 @@ function draftsWords(items) {
  * The rows. `state`: draftItems(); `changes`, `written`: the open proposals and written
  * suggestions (accepted ones are left out here); `lint`: the book's formatting problems at
  * the drafts' head ([{ path, line, … }]) or null.
- * -> { rows: [{ key, path?, title, suggestions, notes, reader: [item], drafts: [item], lint: [problem], status, next }], upToDate }
- *    next: "review" | "fix" | "publish"
+ * -> { rows: [{ key, path?, title, suggestions, notes, reader: [item], drafts: [item], lint: [problem], status,
+ *      needs, canReview, canPublish, why: { review, publish }, next }] }: every chapter in the Contents, then
+ *    the Rest of the book; next: "review" | "fix" | "publish" | null (up to date)
  */
 export function rowsOf(state, changes, written, lint = null) {
   const contents = [...(contentsOf(state.draftsIndex)?.items ?? []), ...(contentsOf(state.liveIndex)?.items ?? [])]
@@ -207,16 +208,27 @@ export function rowsOf(state, changes, written, lint = null) {
     const k = order.indexOf(p);
     return k < 0 ? order.length : k;
   };
-  const list = [...rows.values()].filter((r) => r.reader.length || r.drafts.length)
+  // Every chapter in the Contents has a row (and the Rest of the book), up to date or not.
+  for (const p of order) row(p, p);
+  row(REST, null);
+  const list = [...rows.values()]
     .sort((a, b) => (a.key === REST) - (b.key === REST) || pos(a.path) - pos(b.path) || String(a.path).localeCompare(String(b.path), undefined, { numeric: true }));
   for (const r of list) {
     r.title = r.key === REST ? "Rest of the book" : state.titles.get(r.path, null);
     const said = [r.suggestions ? plural(r.suggestions, "suggestion") : null, r.notes ? plural(r.notes, "note") : null].filter(Boolean).join(", ");
-    r.status = [said || null, draftsWords(r.drafts)].filter(Boolean).join(" · ");
-    r.next = r.reader.length ? "review" : r.lint.length ? "fix" : "publish";
+    const pending = draftsWords(r.drafts);
+    r.needs = Boolean(r.reader.length || r.drafts.length);
+    // Each button, and why it can't be pressed when it can't (said on it and in the status line).
+    r.canReview = r.reader.length > 0;
+    r.canPublish = r.drafts.length > 0 && !r.lint.length;
+    r.why = {
+      review: r.canReview ? null : "Nothing waiting from readers",
+      publish: r.canPublish ? null : r.drafts.length ? `${plural(r.lint.length, "problem")} to fix first` : "Nothing to publish",
+    };
+    r.status = r.needs ? [said || "Nothing waiting from readers", pending || "nothing to publish"].join(" · ") : "Up to date";
+    r.next = r.reader.length ? "review" : !r.drafts.length ? null : r.lint.length ? "fix" : "publish";
   }
-  const upToDate = order.filter((p) => !rows.get(p) || (!rows.get(p).reader.length && !rows.get(p).drafts.length)).length;
-  return { rows: list, upToDate };
+  return { rows: list };
 }
 
 /** Readers' open items, as Drafts counts them: { changes, written } (a list that can't be read throws). */
@@ -231,7 +243,7 @@ export function draftCount(book) {
   const kept = counts.get(book.slug);
   if (kept && Date.now() - kept.at < 15_000) return kept.promise;
   const promise = Promise.all([draftItems(book, { texts: false }), readerItems(book.slug)])
-    .then(([state, r]) => rowsOf(state, r.changes, r.written).rows.length).catch(() => null);
+    .then(([state, r]) => rowsOf(state, r.changes, r.written).rows.filter((x) => x.needs).length).catch(() => null);
   counts.set(book.slug, { at: Date.now(), promise });
   return promise;
 }

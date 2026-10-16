@@ -601,24 +601,35 @@ test("import: replacing says so on the button; a .pages file is refused in plain
 // one too, done) and a paragraph edited in the drafts; Water is new (with its picture),
 // Rocks removed, and the chapter order changed.
 const row = (key) => page.locator(`.drafts-row[data-row="${key}"]`);
-const rowTexts = () => page.locator(".drafts-row").evaluateAll((rs) => rs.map((r) => [r.querySelector(".drafts-row-title").textContent, r.querySelector(".drafts-row-status").textContent, r.querySelector(".drafts-row-go").textContent]));
+// Each row: title, status, and its two buttons ("Review" / "Review (off)").
+const rowTexts = () => page.locator(".drafts-row").evaluateAll((rs) => rs.map((r) => {
+  const b = (sel) => {
+    const el = r.querySelector(`${sel} .btn`);
+    return `${el.textContent}${el.getAttribute("aria-disabled") === "true" ? " (off)" : ""}`;
+  };
+  return [r.querySelector(".drafts-row-title").textContent, r.querySelector(".drafts-row-status").textContent, b(".drafts-row-review"), b(".drafts-row-publish")];
+}));
 async function openDrafts() {
   await signIn();
   await page.goto(`${origin}/#/a-book/drafts`);
   await page.locator(".drafts-row").first().waitFor();
 }
 
-test("drafts: by chapter — the summary, Publish all (N) and Preview; one row each in Contents order with one primary button; the tab counts the rows", async () => {
+test("drafts: by chapter — the summary, Publish all (N) and Preview; every chapter in Contents order, each with Review and Publish; the tab counts the rows needing anything", async () => {
   await openDrafts();
   assert.equal(await page.locator(".drafts-summary").innerText(), "2 chapters to review, 2 chapters and the rest of the book ready to publish");
   assert.deepEqual(await rowTexts(), [
-    ["Soils", "1 suggestion", "Review"],
-    ["Chapter 1", "1 note · 1 paragraph edited, not live", "Review"],
-    ["Water", "new, not live", "Publish"],
-    ["Rocks", "removed, not live", "Publish"],
-    ["Rest of the book", "chapter order changed, not live", "Publish"],
+    ["Soils", "1 suggestion · nothing to publish", "Review", "Publish (off)"],
+    ["Chapter 1", "1 note · 1 paragraph edited, not live", "Review", "Publish"],
+    ["Water", "Nothing waiting from readers · new, not live", "Review (off)", "Publish"],
+    ["Rocks", "Nothing waiting from readers · removed, not live", "Review (off)", "Publish"],
+    ["Rest of the book", "Nothing waiting from readers · chapter order changed, not live", "Review (off)", "Publish"],
   ]);
-  for (const r of await page.locator(".drafts-row").all()) assert.equal(await r.locator(".btn.primary").count(), 1, "one primary button a row");
+  for (const r of await page.locator(".drafts-row").all()) {
+    assert.equal(await r.locator(".drafts-row-review .btn").count(), 1, "one Review a row");
+    assert.equal(await r.locator(".drafts-row-publish .btn").count(), 1, "one Publish a row");
+  }
+  assert.equal(await page.getByText(/chapters? up to date/).count(), 0, "no fold");
   await page.getByRole("link", { name: "Drafts (5)" }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Publish all (4)" }).count(), 1);
   assert.equal(await page.getByRole("link", { name: "Preview the book with drafts" }).getAttribute("href"), "https://drafts.a-book.pages.dev/");
@@ -632,25 +643,81 @@ test("drafts: by chapter — the summary, Publish all (N) and Preview; one row e
   assert.doesNotMatch(await page.locator("main").innerText(), /author-one|textbookproject2026-alt|\[bot\]/);
 });
 
-test("drafts: every row on one grid — the buttons one straight column, the same width, centred on the row's text; the ⋯ column kept on rows without a menu", async () => {
+test("drafts: every row on one grid — Review and Publish two straight columns of equal width, centred on the row's text; the ⋯ column kept on rows without a menu", async () => {
+  stub.s.changes = []; // Soils up to date: a row with no menu, both greyed
   await openDrafts();
   for (const width of [1280, 1080]) {
     await page.setViewportSize({ width, height: 900 });
     await page.reload();
     await page.locator(".drafts-row").first().waitFor();
     const rows = await page.locator(".drafts-row").evaluateAll((rs) => rs.map((r) => {
-      const b = r.querySelector(".btn.primary").getBoundingClientRect();
-      const t = r.querySelector(".drafts-row-text").getBoundingClientRect();
-      const m = r.querySelector(".more-menu, .more-menu-space").getBoundingClientRect();
-      return { x: b.x, w: b.width, mid: b.y + b.height / 2 - (t.y + t.height / 2), mx: m.x, mw: m.width };
+      const box = (sel) => r.querySelector(sel).getBoundingClientRect();
+      const t = box(".drafts-row-text");
+      const [rv, pb, m] = [box(".drafts-row-review .btn"), box(".drafts-row-publish .btn"), box(".more-menu, .more-menu-space")];
+      const mid = (b) => b.y + b.height / 2 - (t.y + t.height / 2);
+      return { rx: rv.x, rw: rv.width, px: pb.x, pw: pb.width, rmid: mid(rv), pmid: mid(pb), mx: m.x, mw: m.width };
     }));
-    assert.equal(new Set(rows.map((r) => Math.round(r.x))).size, 1, `${width}: one column of buttons`);
-    assert.equal(new Set(rows.map((r) => Math.round(r.w))).size, 1, `${width}: Review and Publish the same width`);
-    assert.ok(rows.every((r) => Math.abs(r.mid) <= 1), `${width}: centred against the text`);
-    assert.equal(new Set(rows.map((r) => Math.round(r.mx))).size, 1, `${width}: the ⋯ column on every row`);
-    assert.ok(rows.every((r) => r.mw > 30), `${width}: kept, empty or not`);
+    const one = (k) => new Set(rows.map((r) => Math.round(r[k]))).size === 1;
+    assert.ok(one("rx") && one("px"), `${width}: two straight columns`);
+    assert.ok(one("rw") && one("pw") && Math.round(rows[0].rw) === Math.round(rows[0].pw), `${width}: equal widths`);
+    assert.ok(rows.every((r) => Math.abs(r.rmid) <= 1 && Math.abs(r.pmid) <= 1), `${width}: centred against the text`);
+    assert.ok(one("mx") && rows.every((r) => r.mw > 30), `${width}: the ⋯ column on every row`);
   }
   await page.setViewportSize({ width: 1100, height: 900 });
+});
+
+test("drafts: each button is enabled exactly when its row's data says so; a greyed one is disabled, says why on hover, focus and tap, and passes AA", async () => {
+  stub.s.changes = []; // Soils now up to date
+  stub.s.publish = { ...stub.s.publish, lint: [{ path: CH1_PATH, line: 3, rule: "MD045", description: "Images should have alternate text" }], lint_count: 1 };
+  await openDrafts();
+  await page.getByRole("link", { name: "Drafts (4)" }).waitFor();
+  // What each row's data says, against what each button does.
+  const want = {
+    "chapters/chapter-02.md": [false, false, "Nothing waiting from readers", "Nothing to publish"],
+    "chapters/chapter-01.md": [true, false, null, "1 problem to fix first"],
+    "chapters/chapter-04.md": [false, true, "Nothing waiting from readers", null],
+    "chapters/chapter-03.md": [false, true, "Nothing waiting from readers", null],
+    rest: [false, true, "Nothing waiting from readers", null],
+  };
+  for (const [key, [rv, pb, rwhy, pwhy]] of Object.entries(want)) {
+    const r = row(key);
+    for (const [col, on, why] of [["review", rv, rwhy], ["publish", pb, pwhy]]) {
+      const b = r.locator(`.drafts-row-${col} .btn`);
+      assert.equal(await b.getAttribute("aria-disabled"), on ? null : "true", `${key} ${col}`);
+      assert.equal(await r.locator(`.drafts-row-${col} .off-why`).count() ? await r.locator(`.drafts-row-${col} .off-why`).textContent() : null, why, `${key} ${col} why`);
+    }
+  }
+  assert.equal(await row("chapters/chapter-02.md").locator(".drafts-row-status").innerText(), "Up to date");
+  // Greyed: pressing it does nothing; its reason shows on hover, on keyboard focus and on a tap.
+  const off = row("chapters/chapter-04.md").locator(".drafts-row-review .btn");
+  const why = row("chapters/chapter-04.md").locator(".drafts-row-review .off-why");
+  const before = page.url();
+  const acts = stub.s.requests.length;
+  // (force: Playwright won't press an aria-disabled button; a person can.)
+  await off.click({ force: true });
+  assert.equal(page.url(), before, "no navigation");
+  assert.equal(stub.s.requests.filter((r) => r.endpoint === "author-act").length, stub.s.requests.slice(0, acts).filter((r) => r.endpoint === "author-act").length, "nothing sent");
+  assert.ok(await why.isVisible(), "shown after a press (a tap)");
+  await page.mouse.move(5, 5);
+  await page.locator("h1").click();
+  await off.hover();
+  assert.ok(await why.isVisible(), "on hover");
+  await page.mouse.move(5, 5);
+  await page.keyboard.press("Tab");
+  await off.focus();
+  assert.ok(await why.isVisible(), "on focus");
+  assert.equal(await off.getAttribute("aria-describedby"), await why.getAttribute("id"));
+  // The label's contrast on the page: at least 4.5 (AA); a dashed outline and no fill, not colour alone.
+  const [ratio, border, fill] = await off.evaluate((b) => {
+    const rgb = (c) => c.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
+    const lum = ([r, g, bl]) => [r, g, bl].map((v) => (v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4).reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
+    const s = getComputedStyle(b);
+    const [l1, l2] = [lum(rgb(s.color)), lum(rgb(getComputedStyle(document.body).backgroundColor))];
+    return [(Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05), s.borderTopStyle, s.backgroundColor];
+  });
+  assert.ok(ratio >= 4.5, `contrast ${ratio}`);
+  assert.equal(border, "dashed");
+  assert.match(fill, /rgba\(0, 0, 0, 0\)|transparent/);
 });
 
 test("drafts: ⋯ View changes says who (a person, never an account) and when, with the difference; the Rest of the book's each with its own Discard", async () => {
@@ -712,7 +779,7 @@ test("drafts: a type change is the Rest of the book's \"settings changed\", apar
   await page.goto(`${origin}/#/a-book/drafts`);
   const rest = row("rest");
   await rest.waitFor();
-  assert.equal(await rest.locator(".drafts-row-status").innerText(), "chapter order changed, settings changed, not live");
+  assert.equal(await rest.locator(".drafts-row-status").innerText(), "Nothing waiting from readers · chapter order changed, settings changed, not live");
   await rest.locator(".more-menu > summary").click();
   await rest.getByRole("menuitem", { name: "View changes" }).click();
   const type = rest.locator(".draft-change").filter({ hasText: "Type changed to “Paper”" });
@@ -729,7 +796,7 @@ test("drafts: counts agree — the tab, the summary, a chapter's row and its rev
   stub.s.suggestions = v.items.filter((i) => i.kind !== "edit").map((i) => ({ number: i.number, who: i.who, path: v.path, page: "chapter-02", suggestion: i.title, original: i.kind === "suggestion" && i.hunks.length ? "the words it replaces" : "", reasoning: "", when: new Date().toISOString(), url: i.url, open: true, accepted: false }));
   await openDrafts();
   const soils = row("chapters/chapter-02.md");
-  const status = await soils.locator(".drafts-row-status").innerText();
+  const status = (await soils.locator(".drafts-row-status").innerText()).split(" · ")[0];
   assert.equal(status, "4 suggestions, 5 notes");
   await page.getByRole("link", { name: "Drafts (5)" }).waitFor();
   assert.equal(await page.locator(".drafts-row").count(), 5);
@@ -804,9 +871,11 @@ test("drafts: formatting problems show on their row in place of Publish, with Fi
     links: { checked: true, dead: [{ url: "https://gone.example/x", file: CH1_PATH, status: "404" }] } };
   await openDrafts();
   const ch1 = row("chapters/chapter-01.md");
-  const fix = ch1.getByRole("link", { name: "1 problem to fix" });
+  // The count is a link in the status line; Publish is greyed and says why.
+  const fix = ch1.locator(".drafts-row-status").getByRole("link", { name: "1 problem to fix" });
   assert.equal(await fix.getAttribute("href"), `#/a-book/edit/${encodeURIComponent(CH1_PATH)}/line/3`);
-  assert.equal(await ch1.getByRole("button", { name: "Publish" }).count(), 0);
+  assert.equal(await ch1.locator(".drafts-row-publish .btn").getAttribute("aria-disabled"), "true");
+  assert.equal(await ch1.locator(".drafts-row-publish .off-why").textContent(), "1 problem to fix first");
   assert.match(await page.locator(".drafts-summary").innerText(), /1 chapter with problems to fix$/);
   await page.getByRole("button", { name: "Publish all (4)" }).click();
   const panel = page.getByRole("region", { name: "Publish all" });
@@ -877,23 +946,27 @@ test("drafts: what readers sent that couldn't be loaded says so with Try again; 
   await page.waitForFunction(() => !document.body.innerText.includes("couldn't be loaded just now"));
 });
 
-test("drafts on a phone (360 px): each row title, status, then its button the full width, ⋯ at the top right; one column, no sideways scroll", async () => {
+test("drafts on a phone (360 px): each row title and status, then Review and Publish side by side at half width, ⋯ at the top right; no sideways scroll", async () => {
   await page.setViewportSize({ width: 360, height: 740 });
   await openDrafts();
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "no sideways scroll");
   for (const r of await page.locator(".drafts-row").all()) {
-    const [t, b, m, li] = await Promise.all([r.locator(".drafts-row-text").boundingBox(), r.locator(".btn.primary").boundingBox(), r.locator(".more-menu > summary").boundingBox().catch(() => null), r.boundingBox()]);
-    assert.ok(b.y >= t.y + t.height - 1, "the button below the title and status");
-    assert.ok(b.width >= li.width - 2, `the button the full width (${b.width} of ${li.width})`);
-    if (m) assert.ok(m.x > t.x && m.y <= t.y + 12 && m.x + m.width <= li.x + li.width + 1, `⋯ at the top right: ${JSON.stringify({ m, t, li })}`);
+    const [t, rv, pb, m, li] = await Promise.all([r.locator(".drafts-row-text").boundingBox(), r.locator(".drafts-row-review .btn").boundingBox(), r.locator(".drafts-row-publish .btn").boundingBox(), r.locator(".more-menu > summary").boundingBox().catch(() => null), r.boundingBox()]);
+    assert.ok(rv.y >= t.y + t.height - 1 && Math.abs(rv.y - pb.y) <= 1, "the buttons below the text, side by side");
+    assert.ok(Math.abs(rv.width - pb.width) <= 1 && rv.width + pb.width >= li.width - 20 && rv.width <= li.width / 2, `half width each (${rv.width}, ${pb.width} of ${li.width})`);
+    if (m) assert.ok(m.x + m.width <= li.x + li.width + 1 && m.y <= t.y + 12, `⋯ at the top right: ${JSON.stringify({ m, t, li })}`);
   }
   const ch1 = row("chapters/chapter-01.md");
   await ch1.locator(".more-menu > summary").click();
   await ch1.getByRole("menuitem", { name: "View changes" }).click();
   await ch1.locator(".diff").first().waitFor();
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "none with a change open");
+  // A greyed button's reason fits on the screen.
+  const off = row("chapters/chapter-04.md").locator(".drafts-row-review .btn");
+  await off.click({ force: true });
+  const tip = await row("chapters/chapter-04.md").locator(".drafts-row-review .off-why").boundingBox();
+  assert.ok(tip.x >= 0 && tip.x + tip.width <= 360, JSON.stringify(tip));
 });
-
 
 test("settings: \"This is a…\" shows the book's type (the registry's when index.md has none) and saves a change to the drafts", async () => {
   await signIn();
