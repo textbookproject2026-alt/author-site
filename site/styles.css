@@ -484,20 +484,27 @@ mark.rv-flash { color: inherit; background: transparent; text-decoration: underl
 .publish-all { margin: 0 0 1rem; padding: 0.75rem 1rem; border: 1px solid var(--portal-border); border-radius: 8px; }
 .drafts-rows { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--portal-border); }
 .drafts-row { padding: 0.75rem 0; border-bottom: 1px solid var(--portal-border); }
-/* One grid for every row: the text, the primary button in a fixed column (every button the
-   same width, label centred), and the ⋯ column, kept even on a row without a menu. */
-.drafts-row-main { display: grid; grid-template-columns: minmax(0, 1fr) 11.5rem 2.25rem; grid-template-areas: "text go more"; align-items: center; gap: 0.5rem 0.75rem; }
+/* One grid for every row: the text, then Review and Publish in two fixed columns of equal
+   width, then the ⋯ column, kept even on a row without a menu. */
+.drafts-row-main { display: grid; grid-template-columns: minmax(0, 1fr) 8.5rem 8.5rem 2.25rem; grid-template-areas: "text review publish more"; align-items: center; gap: 0.5rem 0.75rem; }
 .drafts-row-text { grid-area: text; min-width: 0; }
 .drafts-row-title { display: block; overflow-wrap: anywhere; }
 .drafts-row-status { margin: 0.15rem 0 0; font-size: 0.9rem; overflow-wrap: anywhere; }
-.drafts-row-go { grid-area: go; }
-.drafts-row-go .btn { width: 100%; justify-content: center; text-align: center; white-space: normal; }
+.drafts-row-review { grid-area: review; }
+.drafts-row-publish { grid-area: publish; }
+.drafts-row-review .btn, .drafts-row-publish .btn { width: 100%; justify-content: center; text-align: center; }
 .drafts-row .more-menu, .drafts-row .more-menu-space { grid-area: more; }
 .more-menu-space { width: 2.25rem; height: 2.25rem; }
+/* A button that can't be pressed now: a dashed outline and no fill (not colour alone), its
+   label in the muted text colour (AA on the page), and why, on hover, focus or tap. */
+.btn.off, .btn.off:hover:not(:disabled) { border: 1px dashed var(--portal-muted); background: transparent; color: var(--portal-muted); cursor: not-allowed; }
+.btn-slot { position: relative; display: block; }
+.off-why { position: absolute; bottom: calc(100% + 6px); left: 50%; z-index: 30; display: none; width: max-content; max-width: min(16rem, 80vw); padding: 0.3rem 0.55rem; border-radius: 6px; background: var(--portal-ink); color: var(--portal-bg); font-size: 0.8rem; font-weight: 600; line-height: 1.35; text-align: center; transform: translateX(-50%); pointer-events: none; }
+.btn-slot:hover .off-why, .btn-slot:focus-within .off-why, .btn-slot.show-why .off-why { display: block; }
+.drafts-row-fix { color: var(--portal-accent); font-weight: 600; }
 .drafts-row .draft-diff:not([hidden]) { margin-top: 0.75rem; }
 .drafts-row .publish-out:not(:empty), .drafts-row .row-out:not(:empty) { margin-top: 0.5rem; }
 .draft-change { margin: 0 0 1rem; overflow-wrap: anywhere; }
-.drafts-uptodate { margin: 0.75rem 0; }
 .more-menu { position: relative; }
 .more-menu > summary { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border: 1px solid transparent; border-radius: 8px; font-size: 1.25rem; line-height: 1; cursor: pointer; list-style: none; }
 .more-menu > summary::-webkit-details-marker { display: none; }
@@ -507,6 +514,11 @@ mark.rv-flash { color: inherit; background: transparent; text-decoration: underl
 .review-rest > li > p.muted.small { margin: 0 0 0.25rem; }
 /* A phone: title and status, ⋯ at the top right, then the button the full width. */
 @media (max-width: 640px) {
-  .drafts-row-main { grid-template-columns: minmax(0, 1fr) 2.25rem; grid-template-areas: "text more" "go go"; align-items: start; }
+  /* Stacked: the text, then Review and Publish side by side at half width each; ⋯ at the top right. */
+  .drafts-row-main { position: relative; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "text text" "review publish"; align-items: start; }
+  .drafts-row-text { padding-right: 2.75rem; }
+  .drafts-row .more-menu, .drafts-row .more-menu-space { position: absolute; top: 0; right: 0; }
+  .drafts-row-review .off-why { left: 0; transform: none; }
+  .drafts-row-publish .off-why { right: 0; left: auto; transform: none; }
   .drafts-top > .btn, .drafts-preview .btn { flex: 1 1 auto; justify-content: center; }
 }
