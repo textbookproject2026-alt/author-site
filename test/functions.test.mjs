@@ -376,13 +376,13 @@ test("test books: the maintainer's routes need a session (403 without), are for 
 });
 
 test("on no book (signed in, then their last book removed): an empty list, not a refusal", async () => {
-  sql(`INSERT INTO members (id, display_name, email, created_at) VALUES ('e5e5e5e5e5', 'Nobook', 'nobook@example.org', ${NOW});
-       INSERT INTO book_members (book, member_id, added_at) VALUES ('test-gone', 'e5e5e5e5e5', ${NOW});`);
-  const nobook = await signInAs("e5e5e5e5e5", "nobook@example.org");
-  sql(`DELETE FROM book_members WHERE member_id = 'e5e5e5e5e5'`);
+  sql(`INSERT INTO members (id, display_name, email, created_at) VALUES ('f7f7f7f7f7', 'Nobook', 'nobook@example.org', ${NOW});
+       INSERT INTO book_members (book, member_id, added_at) VALUES ('test-gone', 'f7f7f7f7f7', ${NOW});`);
+  const nobook = await signInAs("f7f7f7f7f7", "nobook@example.org");
+  sql(`DELETE FROM book_members WHERE member_id = 'f7f7f7f7f7'`);
   const res = await get("/fn/author-read?what=books", { cookie: nobook });
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { login: "m-e5e5e5e5e5", books: [] });
+  assert.deepEqual(await res.json(), { login: "m-f7f7f7f7f7", books: [] });
 });
 
 test("an invitation whose link is gone (a test book removed, or used) is no longer valid", async () => {
