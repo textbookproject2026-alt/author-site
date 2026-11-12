@@ -88,6 +88,10 @@ export function createStub({ siteOrigin }) {
     // the member, the book's people, the links that were "emailed".
     session: false,
     me: { id: "a1a1a1a1a1", name: "Author One", email: "author-one@example.org", github: null, notify: true, maintainer: false },
+    // /api/me's is_maintainer (the function's MAINTAINER_MEMBER_IDS): test-book controls.
+    isMaintainer: false,
+    // The test book the maintainer endpoint makes, in the list after `testBookAfter` reads.
+    testBookAfter: 1,
     members: [
       { id: "a1a1a1a1a1", name: "Author One", hasEmail: true, you: true, github: "author-one" },
       { id: "c2c2c2c2c2", name: "Co Author", hasEmail: true, you: false },
@@ -135,7 +139,7 @@ export function createStub({ siteOrigin }) {
     s.own.push({ path, method: req.method(), body, header });
     const j = (status, b, headers = {}) => route.fulfill({ status, contentType: "application/json", headers, body: JSON.stringify(b) });
     if (req.method() !== "GET" && header !== "1") return j(403, { error: "cross-site request" });
-    if (path === "/api/me" && req.method() === "GET") return j(200, s.session ? { member: s.me, books: ["a-book"], githubSignin: true } : { member: null, githubSignin: true });
+    if (path === "/api/me" && req.method() === "GET") return j(200, s.session ? { member: s.me, books: ["a-book"], is_maintainer: s.isMaintainer, githubSignin: true } : { member: null, githubSignin: true });
     if (path === "/api/me") {
       if (!s.session) return j(401, { error: "signed out" });
       if (typeof body.notify === "boolean") { s.me = { ...s.me, notify: body.notify }; return j(200, { ok: true }); }
@@ -240,11 +244,25 @@ export function createStub({ siteOrigin }) {
     if (s.status401) return json(route, 401, { error: "identity required", userMessage: "Please sign in again." });
     if (proxied ? !s.session || req.headers()["x-author-site"] !== "1" : req.headers().authorization !== `Bearer ${s.signedIn.token}`) return json(route, 401, { error: "identity required" });
 
+    // The maintainer's test books (api/maintainer.js): 403 to anyone else, as there.
+    if (endpoint.startsWith("maintainer/")) {
+      if (!s.isMaintainer) return json(route, 403, { error: "forbidden" });
+      const remove = /^maintainer\/test-books\/([a-z0-9-]+)\/remove$/.exec(endpoint);
+      if (remove) return json(route, 202, { slug: remove[1], issue: { number: 41 } });
+      if (body?.part) return json(route, 201, { sha: (s.requests.length).toString(16).padStart(40, "0") });
+      const slug = `test-${body.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+      s.made = { slug, title: body.title, status: "live", sandbox: true, repo: `books/${slug}`, drafts_branch: "drafts", live_branch: "main", domain: `${slug}.confused4now.org` };
+      return json(route, 201, { slug, issue: { number: 40 } });
+    }
+
     if (endpoint === "author-read") {
       const what = url.searchParams.get("what");
       if (what === "declined") return json(route, 200, { items: s.declined });
       if (what === "declined-change") return json(route, 200, { number: Number(url.searchParams.get("number")), files: [{ path: "chapters/chapter-01.md", before: "The old opening.\n", after: "The proposed opening.\n" }] });
-      if (what === "books") return json(route, 200, { login: s.signedIn.login, books: s.books });
+      if (what === "books") {
+        if (s.made && --s.testBookAfter <= 0 && !s.books.includes(s.made)) s.books = [...s.books, s.made];
+        return json(route, 200, { login: s.signedIn.login, books: s.books });
+      }
       if (what === "tree") return json(route, 200, s.tree);
       if (what === "file") {
         const path = url.searchParams.get("path");

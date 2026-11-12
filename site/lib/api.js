@@ -163,3 +163,20 @@ export async function proposed(book, path) {
     return [];
   }
 }
+
+/**
+ * The maintainer's test books (suggest-edit-function api/maintainer.js): a POST to
+ * /fn/maintainer/<path>, with no write key and no Actions fallback (it files a request,
+ * it doesn't write to a book; sent twice it would ask twice, so it is never retried).
+ */
+export async function maintainer(path, body) {
+  let res;
+  try {
+    res = await once(new URL(`/fn/maintainer/${path}`, location.origin), "POST", JSON.stringify(body ?? {}));
+  } catch {
+    throw new ApiError(0, null);
+  }
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, payload);
+  return payload;
+}

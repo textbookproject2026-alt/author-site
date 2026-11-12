@@ -9,7 +9,7 @@ import { importPart } from "./api.js";
 export const PART = 1024 * 1024;
 export const MAX_BYTES = 20 * 1024 * 1024;
 
-function readBase64(blob) {
+export function readBase64(blob) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(String(r.result).split(",")[1] || "");

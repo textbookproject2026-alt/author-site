@@ -1,9 +1,12 @@
 // GET /api/me — who is signed in: { member: { id, name, email, github, notify,
-//   maintainer }, books: [slug], githubSignin } or { member: null, githubSignin }.
+//   maintainer }, books: [slug], is_maintainer, githubSignin } or { member: null, githubSignin }.
+//   is_maintainer: the suggest-edit function says this member may make and remove test
+//   books (its MAINTAINER_MEMBER_IDS); it checks again on every such request, so this
+//   only decides what the page shows.
 // POST /api/me { notify } — emails about reader suggestions on or off.
 // POST /api/me { email } — a member moved over from GitHub gives an address: a link
 //   goes there, and the address is theirs once they open it (api/invite.js, claim).
-import { adoptNewBooks, allow, audit, body, booksOf, fail, isMaintainer, json, linkOrigin, mailBody, normEmail, prune, sameSite, sendMail, session, validEmail } from "../_lib/core.js";
+import { adoptNewBooks, allow, audit, body, booksOf, fail, isMaintainer, json, linkOrigin, mailBody, normEmail, prune, sameSite, sendMail, session, upstream, validEmail } from "../_lib/core.js";
 import { createLink } from "../_lib/links.js";
 
 export async function onRequestGet({ request, env, waitUntil }) {
@@ -16,8 +19,18 @@ export async function onRequestGet({ request, env, waitUntil }) {
   return json({
     member: { id: m.id, name: m.display_name, email: m.email, github: m.github, notify: !!m.notify, maintainer: isMaintainer(env, m) },
     books: await booksOf(env, m.id),
+    is_maintainer: await testBookMaintainer(env, m.id),
     githubSignin,
   });
+}
+
+/** Whether the function lets this member make test books (false if it can't be asked). */
+async function testBookMaintainer(env, id) {
+  try {
+    return (await upstream(env, id, { endpoint: "maintainer/test-books" })).status === 200;
+  } catch {
+    return false;
+  }
 }
 
 export async function onRequestPost({ request, env }) {

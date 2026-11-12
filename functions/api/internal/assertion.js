@@ -30,8 +30,9 @@ export async function onRequestPost({ request, env }) {
     if (!(await onBook(env, m.id, row.book))) return fail(404, "unknown"); // removed since: refused at once
     books = [row.book];
   } else {
+    // For no book: the list of one's own (none is an empty list), or the maintainer's
+    // test-book endpoints, which the function itself decides on.
     books = await booksOf(env, m.id);
-    if (!books.length) return fail(404, "unknown");
   }
   return json({ member: { id: m.id, name: m.display_name, github: m.github ?? null }, book: row.book, books });
 }

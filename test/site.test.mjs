@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { chromium } from "playwright-core";
 import { startServer } from "./server.mjs";
-import { createStub, importDone, CHOICES, API, HEAD, MOVED, SENT, LIVE, CH1_DRAFTS, ROCKS, INDEX_LIVE, REGISTRY, REVIEW } from "./stub.mjs";
+import { createStub, importDone, BOOK, CHOICES, API, HEAD, MOVED, SENT, LIVE, CH1_DRAFTS, ROCKS, INDEX_LIVE, REGISTRY, REVIEW } from "./stub.mjs";
 
 let server, origin, browser;
 before(async () => {
@@ -131,10 +131,69 @@ test("a claim link: confirm the address you'll sign in with", async () => {
   await page.getByRole("heading", { name: "Your books" }).waitFor();
 });
 
-test("an account that is no book's author is told so, and how to fix it", async () => {
+test("an account on no book is told so (an empty list)", async () => {
   stub.s.books = [];
   await signIn();
-  await page.getByText("isn't one of any book's authors").waitFor();
+  await page.getByText("You aren't on any book at the moment.").waitFor();
+  assert.equal(await page.getByRole("link", { name: "New test book" }).count(), 0);
+});
+
+test("test books: only the maintainer sees New test book; made with a file (removable before sending), building, then in the list badged Test", async () => {
+  await signIn();
+  assert.equal(await page.getByRole("link", { name: "New test book" }).count(), 0, "not for an author");
+  stub.s.isMaintainer = true;
+  stub.s.testBookAfter = 2;
+  await page.goto(`${origin}/`);
+  await page.reload();
+  await page.getByRole("link", { name: "New test book" }).click();
+  await page.getByRole("heading", { name: "New test book" }).waitFor();
+  await page.evaluate(async () => {
+    (await import("/lib/screens-test-book.js")).timing.pollMs = 50;
+  });
+  await page.getByLabel("Title").fill("Alec check");
+  await page.getByLabel("This is a…").selectOption("paper");
+  const docx = { mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: Buffer.concat([Buffer.from("PK\x03\x04", "binary"), Buffer.alloc(300)]) };
+  // A styled button, not the browser's input (and no "No file chosen").
+  assert.equal(await page.locator("#tb-files").isVisible(), false);
+  await page.getByRole("button", { name: /^Files \(optional\)/ }).waitFor();
+  assert.equal(await page.getByRole("button", { name: /^Files \(optional\)/ }).textContent(), "Choose files");
+  const odt = { mimeType: "application/vnd.oasis.opendocument.text", buffer: docx.buffer };
+  await page.locator("#tb-files").setInputFiles([{ name: "Chapter 1.docx", ...docx }, { name: "Chapter 2.odt", ...odt }, { name: "notes.pdf", ...docx }]);
+  await page.getByText("notes.pdf is not a Word (.docx, .doc), OpenDocument (.odt) or Markdown (.md) file.").waitFor();
+  await page.getByRole("button", { name: "Remove notes.pdf" }).click();
+  assert.equal(await page.getByText("is not a Word").count(), 0);
+  await page.getByRole("button", { name: "Create the test book" }).click();
+  await page.getByText("Building — usually ready in a few minutes.").waitFor();
+  await page.getByText("Test book test-alec-check requested, with 2 files.").waitFor();
+  await page.getByRole("link", { name: "open it" }).waitFor();
+  const made = lastCall("maintainer/test-books", (r) => r.body?.title);
+  assert.deepEqual({ title: made.body.title, type: made.body.content_type, files: made.body.files.map((f) => [f.name, f.parts.length]) }, { title: "Alec check", type: "paper", files: [["Chapter 1.docx", 1], ["Chapter 2.odt", 1]] });
+  await page.goto(`${origin}/#/`);
+  const row = page.locator("li", { has: page.getByRole("link", { name: "Alec check" }) });
+  await row.getByText("Test", { exact: true }).waitFor();
+});
+
+test("test books: Remove test book in the book's Settings, the maintainer's only, confirmed by typing the address", async () => {
+  stub.s.books = [...stub.s.books, { ...BOOK, slug: "test-smoke", title: "Smoke", sandbox: true }];
+  await signIn();
+  await page.goto(`${origin}/#/test-smoke/settings`);
+  await page.getByRole("heading", { name: "Type" }).waitFor();
+  assert.equal(await page.getByRole("heading", { name: "Remove test book" }).count(), 0, "not for an author");
+  stub.s.isMaintainer = true;
+  await page.reload();
+  await page.getByRole("heading", { name: "Remove test book" }).waitFor();
+  const go = page.getByRole("button", { name: "Remove test book" });
+  assert.equal(await go.isDisabled(), true);
+  await page.getByLabel("Type test-smoke to confirm").fill("test-smok");
+  assert.equal(await go.isDisabled(), true);
+  await page.getByLabel("Type test-smoke to confirm").fill("test-smoke");
+  await go.click();
+  await page.getByText("its site stops answering within a few minutes").waitFor();
+  assert.ok(lastCall("maintainer/test-books/test-smoke/remove"));
+  // A real book's Settings never shows it, maintainer or not.
+  await page.goto(`${origin}/#/a-book/settings`);
+  await page.getByRole("heading", { name: "Type" }).waitFor();
+  assert.equal(await page.getByRole("heading", { name: "Remove test book" }).count(), 0);
 });
 
 test("the guide opens in a new tab: from the header signed out, from the account menu signed in", async () => {

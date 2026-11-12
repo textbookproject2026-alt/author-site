@@ -7,20 +7,26 @@ import { h, clear, busy, note } from "./dom.js";
 import { read, send } from "./api.js";
 import { itemLine, parseContents, retitledChapter, titleOf, withItem, withLabel, withOrder, withoutPath } from "./contents.js";
 import { bookBySlug, bookHeader, myBooks } from "./books.js";
+import { identity } from "./auth.js";
 import { draftItems, forgetCount, titlesFrom } from "./drafts.js";
 import { savedAt } from "./screens-shared.js";
 import { discussionUrl, registryBook } from "./public.js";
 import { countBadge, countsByPath, openSuggestions } from "./suggestions.js";
 
 export async function booksScreen() {
-  const { login, books } = await myBooks();
+  const { books } = await myBooks();
+  // The platform maintainer's only (the server checks again): a test book in one step.
+  const make = identity()?.is_maintainer
+    ? h("div", { class: "actions" }, h("a", { class: "btn", href: "#/new-test-book", text: "New test book" }))
+    : null;
   if (!books.length) {
     return [
       h("h1", { text: "Your books" }),
       note([
-        h("p", {}, "You're signed in as ", h("strong", { text: `@${login}` }), ", but that account isn't one of any book's authors."),
-        h("p", { text: "If a book was set up for you under a different GitHub account, sign out and sign in with that one. Otherwise, ask the platform's technical contact to add this account to your book." }),
+        h("p", { text: "You aren't on any book at the moment." }),
+        h("p", { text: "When someone invites you to a book, the email's link brings you here and it shows in this list." }),
       ]),
+      make,
     ];
   }
   return [
@@ -30,9 +36,11 @@ export async function booksScreen() {
         h("div", { class: "row" },
           h("div", { class: "grow" },
             h("h2", { class: "flush" }, h("a", { href: `#/${b.slug}`, text: b.title })),
+            b.sandbox ? h("span", { class: "badge", text: "Test" }) : null,
             b.status === "preview" ? h("span", { class: "badge", text: "Preview: not listed for readers" }) : null,
             b.domain ? h("p", { class: "muted small below" }, h("a", { href: `https://${b.domain}/`, target: "_blank", rel: "noopener", text: "The book as readers see it" })) : null),
           h("a", { class: "btn", href: `#/${b.slug}/drafts`, text: "Drafts" }))))),
+    make,
   ];
 }
 
