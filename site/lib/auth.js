@@ -7,7 +7,7 @@
 import { apiBase } from "./api.js";
 import { reasonFor } from "./dom.js";
 
-let me = null; // { id, name, email, github, notify, maintainer, books }
+let me = null; // { id, name, email, github, notify, maintainer, books, is_maintainer }
 let githubSignin = false;
 const listeners = new Set();
 
@@ -41,7 +41,7 @@ export async function own(path, { method = "GET", body } = {}) {
 export async function loadMe() {
   const d = await own("/api/me").catch(() => ({ member: null }));
   githubSignin = d.githubSignin !== false;
-  me = d.member ? { ...d.member, books: d.books ?? [] } : null;
+  me = d.member ? { ...d.member, books: d.books ?? [], is_maintainer: d.is_maintainer === true } : null;
   changed();
   return me;
 }

@@ -9,7 +9,7 @@
 // POST /api/members { book, action: "set-email", member, email }   (a member who has none:
 //        a link goes to that address; it becomes theirs when it's opened)
 import {
-  allow, audit, body, bookEntry, cleanName, fail, isMaintainer, json, linkOrigin, mailBody, normEmail, now, onBook, sameSite, sendMail, session, validEmail,
+  allow, audit, body, bookEntry, bookTitle, cleanName, fail, isMaintainer, json, linkOrigin, mailBody, normEmail, now, onBook, sameSite, sendMail, session, validEmail,
 } from "../_lib/core.js";
 import { createLink, markNotMailed } from "../_lib/links.js";
 import { requestSync, syncStatus } from "../_lib/sync.js";
@@ -78,13 +78,13 @@ export async function onRequestPost({ request, env, waitUntil }) {
       return json({ ok: true, mailed: false, link });
     }
     const mail = mailBody({
-      lines: [`${me.display_name} invited you to work on ${entry.title} on Confused for Now.`, "Open the link to join. You'll confirm the name the book will credit you by, and then you're in. It works once, within seven days."],
+      lines: [`${me.display_name} invited you to work on ${bookTitle(entry)} on Confused for Now.`, "Open the link to join. You'll confirm the name the book will credit you by, and then you're in. It works once, within seven days."],
       button: "Join the book",
       url: link,
       footer: "Confused for Now publishes open textbooks. If you weren't expecting this, you can ignore it.",
     });
     try {
-      await sendMail(env, { to: email, subject: `${me.display_name} invited you to work on ${entry.title} on Confused for Now`, ...mail });
+      await sendMail(env, { to: email, subject: `${me.display_name} invited you to work on ${bookTitle(entry)} on Confused for Now`, ...mail });
     } catch (err) {
       console.error(`invite mail: ${err.message}`);
       await markNotMailed(env, token);

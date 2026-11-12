@@ -193,6 +193,27 @@ export async function bookEntry(slug) {
   return r.books.find((b) => b.slug === slug && b.status !== "retired") ?? null;
 }
 
+/** A book's title as invitations say it: a test book (registry `sandbox: true`) says so. */
+export const bookTitle = (entry, fallback = "") => `${entry?.title ?? fallback}${entry?.sandbox === true ? " (test book)" : ""}`;
+
+/**
+ * One request to the suggest-edit function as `memberId`: a single-use assertion bound
+ * to exactly this request (fn/[[path]].js explains), then the fetch, with only a content
+ * type, this site's origin and "Authorization: Member <id>". Returns the Response; throws
+ * if the function can't be reached.
+ */
+export async function upstream(env, memberId, { method = "GET", endpoint, params = new URLSearchParams(), bodyText = "", book = "" }) {
+  const id = randomToken();
+  const binding = await bindingOf({ method, endpoint, params, bodyText, book });
+  await env.DB.prepare("INSERT INTO assertions (id_hash, member_id, book, binding_hash, expires_at) VALUES (?, ?, ?, ?, ?)")
+    .bind(await hash(id), memberId, book, binding, now() + ASSERTION_SECONDS * 1000)
+    .run();
+  const headers = { authorization: `Member ${id}`, origin: SITE, accept: "application/json" };
+  if (method !== "GET") headers["content-type"] = "application/json";
+  const query = params.toString();
+  return fetch(`${UPSTREAM}/api/${endpoint}${query ? `?${query}` : ""}`, { method, headers, body: method === "GET" ? undefined : bodyText, redirect: "manual" });
+}
+
 /** Whether a member is the platform's maintainer (the GitHub login in PLATFORM_OWNER). */
 export const isMaintainer = (env, member) =>
   !!member?.github && member.github.toLowerCase() === String(env.PLATFORM_OWNER ?? "").toLowerCase();
@@ -300,6 +321,11 @@ export function prune(env, waitUntil) {
       env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(t),
       env.DB.prepare("DELETE FROM assertions WHERE expires_at < ?").bind(t - 3_600_000),
       env.DB.prepare("DELETE FROM rate WHERE expires_at < ?").bind(t),
+      // On no book and signed in nowhere (a test book they were on was removed, at most
+      // 30 days ago: a sign-in's life): their email goes. The name stays in the credits.
+      env.DB.prepare(
+        "UPDATE members SET email = NULL WHERE email IS NOT NULL AND NOT EXISTS (SELECT 1 FROM book_members b WHERE b.member_id = members.id) AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.member_id = members.id AND s.expires_at > ?)",
+      ).bind(t),
       // A browser not signed in on for 400 days (its cookie's life) is forgotten.
       env.DB.prepare("DELETE FROM devices WHERE first_seen < ? AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.member_id = devices.member_id)").bind(t - 400 * DAY),
     ]).catch(() => {}),

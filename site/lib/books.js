@@ -10,6 +10,11 @@ onChange(() => {
   books = null;
 });
 
+/** The list is asked for again next time (a test book made or removed). */
+export const forgetBooks = () => {
+  books = null;
+};
+
 export function myBooks() {
   books ??= read("books").catch((err) => {
     books = null;

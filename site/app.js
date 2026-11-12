@@ -4,6 +4,7 @@
 //
 // Routes (the hash, so a static host serves one page):
 //   #/                          your books
+//   #/new-test-book             a test book (the platform maintainer only)
 //   #/<book>                    Chapters: the reading order, each chapter's status
 //   #/<book>/edit/<path>[/line/<n>]  the editor (at line n); saves to the drafts as you type
 //   #/<book>/import             bring in a document
@@ -36,6 +37,7 @@ import { tidyScreen, tidyAllScreen } from "./lib/screens-tidy.js";
 import { editScreen } from "./lib/screens-edit.js";
 import { bookSettingsScreen, settingsScreen } from "./lib/screens-settings.js";
 import { peopleScreen } from "./lib/screens-people.js";
+import { newTestBookScreen } from "./lib/screens-test-book.js";
 import { historyScreen, revisionScreen } from "./lib/screens-history.js";
 import { creditsScreen } from "./lib/screens-credits.js";
 import { suggestionScreen } from "./lib/screens-suggestion.js";
@@ -278,6 +280,11 @@ async function invitationScreen(kind, token) {
 const ROUTES = [
   [/^$/, () => booksScreen()],
   [/^settings$/, () => settingsScreen()],
+  [/^new-test-book$/, () => {
+    if (identity()?.is_maintainer) return newTestBookScreen();
+    location.hash = "#/";
+    return [];
+  }],
   [/^signed-in$/, () => signedInScreen()],
   [/^([a-z0-9-]+)$/, (book) => chaptersScreen(book)],
   [/^([a-z0-9-]+)\/chapter\/(.+)$/, (book, path) => chapterScreen(book, decodeURIComponent(path))],

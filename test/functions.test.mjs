@@ -224,7 +224,7 @@ test("the proxy: only its list, only with a session on that book, never the brow
   // On the book: one assertion written, bound and hashed, then forwarded upstream.
   const before = rows("SELECT COUNT(*) AS n FROM assertions")[0].n;
   const res = await get("/fn/author-read?what=tree&book=platform-test-book", { cookie: alec });
-  assert.ok([200, 401, 403].includes(res.status), String(res.status)); // the function's answer, passed through
+  assert.ok([200, 401, 403].includes(res.status), `${res.status} ${await res.text()}`); // the function's answer, passed through
   assert.equal(res.headers.get("set-cookie"), null);
   const a = rows("SELECT member_id, book, length(id_hash) AS l, length(binding_hash) AS b, expires_at - " + Date.now() + " AS ttl FROM assertions ORDER BY expires_at DESC LIMIT 1")[0];
   assert.equal(rows("SELECT COUNT(*) AS n FROM assertions")[0].n, before + 1);
@@ -356,4 +356,38 @@ test("where you're signed in: each session with its browser, this one marked; si
   const bo = rows(`SELECT sid FROM sessions WHERE member_id != '${ALEC.id}' LIMIT 1`)[0];
   if (bo) assert.equal((await post("/api/sessions", { id: bo.sid }, { cookie: mac.session })).status, 404);
   assert.equal((await post("/api/sessions", { id: "../x" }, { cookie: mac.session })).status, 400);
+});
+
+test("test books: the maintainer's routes need a session (403 without), are for no book, and the function decides", async () => {
+  const alec = await signInAs(ALEC.id, ALEC.email);
+  assert.equal((await get("/fn/maintainer/test-books")).status, 403, "no session: 403, not 401");
+  assert.equal((await post("/fn/maintainer/test-books", { title: "Smoke" })).status, 403);
+  assert.equal((await post("/fn/maintainer/test-books/test-smoke/remove", {})).status, 403);
+  assert.equal((await post("/fn/maintainer/test-books", { title: "Smoke" }, { cookie: alec, headers: { ...site, origin: "https://evil.example" } })).status, 403, "CSRF");
+  assert.equal((await get("/fn/maintainer/test-books/test-smoke/remove", { cookie: alec })).status, 404, "remove is POST only");
+  assert.equal((await post("/fn/maintainer/test-books/Bad_Slug/remove", {}, { cookie: alec })).status, 404);
+  assert.equal((await post("/fn/maintainer/test-books", { title: "Smoke", book: "platform-test-book" }, { cookie: alec })).status, 400, "names no book");
+  // Forwarded with an assertion for no book; the real function can't read a local one back.
+  const res = await get("/fn/maintainer/test-books", { cookie: alec });
+  assert.ok([200, 401, 403].includes(res.status), `${res.status} ${await res.text()}`);
+  assert.equal(rows("SELECT book FROM assertions ORDER BY expires_at DESC LIMIT 1")[0].book, "");
+  // /api/me asks the same question: here the answer is no.
+  assert.equal((await (await get("/api/me", { cookie: alec })).json()).is_maintainer, false);
+});
+
+test("on no book (signed in, then their last book removed): an empty list, not a refusal", async () => {
+  sql(`INSERT INTO members (id, display_name, email, created_at) VALUES ('e5e5e5e5e5', 'Nobook', 'nobook@example.org', ${NOW});
+       INSERT INTO book_members (book, member_id, added_at) VALUES ('test-gone', 'e5e5e5e5e5', ${NOW});`);
+  const nobook = await signInAs("e5e5e5e5e5", "nobook@example.org");
+  sql(`DELETE FROM book_members WHERE member_id = 'e5e5e5e5e5'`);
+  const res = await get("/fn/author-read?what=books", { cookie: nobook });
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { login: "m-e5e5e5e5e5", books: [] });
+});
+
+test("an invitation whose link is gone (a test book removed, or used) is no longer valid", async () => {
+  const t = token();
+  const info = await post("/api/invite", { kind: "invite", token: t, action: "info" });
+  assert.equal(info.status, 410);
+  assert.match((await info.json()).userMessage, /^This invitation is no longer valid\./);
 });

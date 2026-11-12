@@ -10,12 +10,15 @@
 // either way and nobody is added to a book, or named, without it. A claim confirms an address for a member who has
 // none (filled in by another member, or given after a GitHub sign-in): only someone
 // who can read that inbox can confirm it.
-import { audit, body, bookEntry, cleanName, fail, json, linkOrigin, mailBody, memberId, now, sameSite, sendMail } from "../_lib/core.js";
+import { audit, body, bookEntry, bookTitle, cleanName, fail, json, linkOrigin, mailBody, memberId, now, sameSite, sendMail } from "../_lib/core.js";
 import { startSession } from "../_lib/signin.js";
 import { createLink, markNotMailed, peekLink, useLink } from "../_lib/links.js";
 import { requestSync } from "../_lib/sync.js";
 
-const GONE = (what) => fail(410, "link used or expired", `This ${what} has been used or has expired. Ask whoever sent it for a new one.`);
+const GONE = (what) =>
+  what === "invitation"
+    ? fail(410, "link used or expired", "This invitation is no longer valid. Ask whoever sent it for a new one.")
+    : fail(410, "link used or expired", `This ${what} has been used or has expired. Ask whoever sent it for a new one.`);
 
 export async function onRequestPost({ request, env, waitUntil }) {
   if (!sameSite(request)) return fail(403, "cross-site request");
@@ -32,7 +35,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
     }
     const entry = await bookEntry(link.book).catch(() => null);
     const inviter = await env.DB.prepare("SELECT display_name FROM members WHERE id = ?").bind(link.created_by).first();
-    return json({ title: entry?.title ?? link.book, name: link.name, email: link.email, inviter: inviter?.display_name ?? "Someone" });
+    return json({ title: bookTitle(entry, link.book), name: link.name, email: link.email, inviter: inviter?.display_name ?? "Someone" });
   }
 
   const link = await useLink(env, kind, b.token);
@@ -59,13 +62,13 @@ export async function onRequestPost({ request, env, waitUntil }) {
   if (!link.mailed) {
     const token = await createLink(env, { kind: "invite", book: link.book, email: link.email, name, createdBy: link.created_by });
     const mail = mailBody({
-      lines: [`Hello ${name},`, `You opened an invitation to work on ${entry.title} on Confused for Now. To make sure it's you, here it is again at this address. It works once, within seven days.`],
+      lines: [`Hello ${name},`, `You opened an invitation to work on ${bookTitle(entry)} on Confused for Now. To make sure it's you, here it is again at this address. It works once, within seven days.`],
       button: "Join the book",
       url: `${linkOrigin(request)}/#/invite/${token}`,
       footer: "If you didn't open an invitation, you can ignore this: nothing happens unless the link is opened.",
     });
     try {
-      await sendMail(env, { to: link.email, subject: `Your invitation to ${entry.title} on Confused for Now`, ...mail });
+      await sendMail(env, { to: link.email, subject: `Your invitation to ${bookTitle(entry)} on Confused for Now`, ...mail });
     } catch (err) {
       console.error(`invite re-send: ${err.message}`);
       await markNotMailed(env, token);

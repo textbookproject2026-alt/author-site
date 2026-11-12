@@ -8,6 +8,8 @@ import { forgetCount } from "./drafts.js";
 import { registryBook } from "./public.js";
 import { BOOK_TYPES, typeOf, withType } from "./booktype.js";
 import { deepseekKey, keepDeepseekKey, keyHint, testDeepseekKey } from "./deepseek.js";
+import { identity } from "./auth.js";
+import { removeTestBook } from "./screens-test-book.js";
 
 export function settingsScreen() {
   const input = h("input", { type: "password", id: "key-input", autocomplete: "off", spellcheck: "false", placeholder: "Your DeepSeek key" });
@@ -68,7 +70,9 @@ export async function bookSettingsScreen(slug) {
   const book = await bookBySlug(slug);
   const stage = h("div", { "aria-live": "polite" });
   await drawType(book, stage);
-  return [...bookHeader(book, "settings", "Settings"), stage];
+  // A test book, for the platform maintainer (the server checks both again).
+  const remove = book.sandbox && identity()?.is_maintainer ? removeTestBook(book) : null;
+  return [...bookHeader(book, "settings", "Settings"), stage, remove];
 }
 
 async function drawType(book, stage, said = null) {
