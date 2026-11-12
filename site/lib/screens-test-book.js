@@ -2,8 +2,8 @@
 // through this site's /fn/maintainer/…). The server decides who may: these screens are
 // drawn only when /api/me says is_maintainer, which is cosmetic; every request is checked.
 //
-//   #/new-test-book   a title, optional files (the portal form's picker: .docx or .md, at
-//                     most five, 20 MB in all, each removable) and what it is. The book is
+//   #/new-test-book   a title, optional files (the portal form's picker, with .doc and .odt
+//                     too, as chapter import takes; at most five, 20 MB in all, each removable) and what it is. The book is
 //                     built like any other and appears in "Your books", badged Test.
 //   removeTestBook()  the book's Settings: "Remove test book", confirmed by typing its address.
 
@@ -13,7 +13,8 @@ import { forgetBooks, myBooks } from "./books.js";
 import { BOOK_TYPES } from "./booktype.js";
 import { PART, readBase64 } from "./upload.js";
 
-// The portal's request form, exactly (textbook-portal src/portal.js).
+// The portal's request form's limits (textbook-portal src/portal.js); .doc and .odt are
+// converted by provision with LibreOffice, as chapter import's are.
 const MAX_FILES = 5;
 const MAX_BYTES = 20 * 1024 * 1024;
 const sizeText = (n) => (n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
@@ -21,8 +22,8 @@ const sizeText = (n) => (n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} M
 /** The first thing wrong with the chosen files, or null. */
 export function filesProblem(files) {
   if (files.length > MAX_FILES) return "Please attach at most five files.";
-  const bad = files.find((f) => !/\.(docx|md|markdown)$/i.test(f.name));
-  if (bad) return `${bad.name} is not a Word (.docx) or Markdown (.md) file.`;
+  const bad = files.find((f) => !/\.(docx|doc|odt|md|markdown)$/i.test(f.name));
+  if (bad) return `${bad.name} is not a Word (.docx, .doc), OpenDocument (.odt) or Markdown (.md) file.`;
   const empty = files.find((f) => !f.size);
   if (empty) return `${empty.name} is empty.`;
   const total = files.reduce((n, f) => n + f.size, 0);
@@ -38,7 +39,10 @@ export function newTestBookScreen() {
   const stage = h("div", { "aria-live": "polite" });
   const title = h("input", { type: "text", id: "tb-title", autocomplete: "off", required: true, maxlength: "200" });
   const type = h("select", { id: "tb-type" }, ...Object.entries(BOOK_TYPES).map(([value, label]) => h("option", { value, text: label })));
-  const input = h("input", { type: "file", id: "tb-files", multiple: true, accept: ".docx,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown" });
+  // The native input stays hidden: the button opens it, and the list below is the only
+  // state shown (no "No file chosen").
+  const input = h("input", { type: "file", id: "tb-files", multiple: true, hidden: true, accept: ".docx,.doc,.odt,.md,.markdown" });
+  const choose = h("button", { type: "button", class: "btn", id: "tb-choose", text: "Choose files", onclick: () => input.click() });
   const list = h("ul", { class: "list" });
   const said = h("div");
   let picked = [];
@@ -50,7 +54,7 @@ export function newTestBookScreen() {
       h("button", { type: "button", class: "btn link", text: "Remove", "aria-label": `Remove ${file.name}`, onclick: () => {
         picked.splice(i, 1);
         draw();
-        (list.querySelector("button") ?? input).focus();
+        (list.querySelector("button") ?? choose).focus();
       } }))));
     const p = filesProblem(picked);
     clear(said, p ? note([h("p", { text: p })], "warn") : null);
@@ -64,7 +68,8 @@ export function newTestBookScreen() {
   const form = h("form", {},
     h("label", { class: "field", for: "tb-title" }, "Title", title),
     h("label", { class: "field", for: "tb-type" }, "This is a…", type),
-    h("label", { class: "field", for: "tb-files" }, "Files (optional): Word (.docx) or Markdown (.md), up to five, 20 MB in all", input),
+    h("label", { class: "field", for: "tb-choose" }, "Files (optional): Word (.docx, .doc), OpenDocument (.odt) or Markdown (.md), up to five, 20 MB in all"),
+    h("div", { class: "actions tb-choose" }, choose, input),
     list,
     said,
     h("p", { class: "muted small", text: "Without files it starts from the template's front page and one blank chapter. Its address is test- and the title; it is unlisted, kept out of search engines, and says on every page that it will be removed." }),
@@ -112,7 +117,7 @@ async function create(stage, title, contentType, files) {
   const site = `https://${made.slug}.confused4now.org/`;
   const waiting = h("p", { class: "busy", role: "status", text: "Building — usually ready in a few minutes." });
   clear(stage,
-    note([h("p", {}, "Test book ", h("strong", { text: made.slug }), files.length ? ` asked for, with ${plural(files.length, "file")}.` : " asked for."), made.userMessage ? h("p", { text: made.userMessage }) : null]),
+    note([h("p", {}, "Test book ", h("strong", { text: made.slug }), files.length ? ` requested, with ${plural(files.length, "file")}.` : " requested."), made.userMessage ? h("p", { text: made.userMessage }) : null]),
     waiting,
     h("p", { class: "muted small", text: `It will be at ${site} and in Your books, badged Test. You can leave this page: it carries on without it.` }));
   // The list says when it's there: the same list "Your books" reads.

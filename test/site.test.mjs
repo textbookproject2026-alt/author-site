@@ -153,15 +153,21 @@ test("test books: only the maintainer sees New test book; made with a file (remo
   await page.getByLabel("Title").fill("Alec check");
   await page.getByLabel("This is a…").selectOption("paper");
   const docx = { mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: Buffer.concat([Buffer.from("PK\x03\x04", "binary"), Buffer.alloc(300)]) };
-  await page.locator("#tb-files").setInputFiles([{ name: "Chapter 1.docx", ...docx }, { name: "notes.pdf", ...docx }]);
-  await page.getByText("notes.pdf is not a Word (.docx) or Markdown (.md) file.").waitFor();
+  // A styled button, not the browser's input (and no "No file chosen").
+  assert.equal(await page.locator("#tb-files").isVisible(), false);
+  await page.getByRole("button", { name: /^Files \(optional\)/ }).waitFor();
+  assert.equal(await page.getByRole("button", { name: /^Files \(optional\)/ }).textContent(), "Choose files");
+  const odt = { mimeType: "application/vnd.oasis.opendocument.text", buffer: docx.buffer };
+  await page.locator("#tb-files").setInputFiles([{ name: "Chapter 1.docx", ...docx }, { name: "Chapter 2.odt", ...odt }, { name: "notes.pdf", ...docx }]);
+  await page.getByText("notes.pdf is not a Word (.docx, .doc), OpenDocument (.odt) or Markdown (.md) file.").waitFor();
   await page.getByRole("button", { name: "Remove notes.pdf" }).click();
   assert.equal(await page.getByText("is not a Word").count(), 0);
   await page.getByRole("button", { name: "Create the test book" }).click();
   await page.getByText("Building — usually ready in a few minutes.").waitFor();
+  await page.getByText("Test book test-alec-check requested, with 2 files.").waitFor();
   await page.getByRole("link", { name: "open it" }).waitFor();
   const made = lastCall("maintainer/test-books", (r) => r.body?.title);
-  assert.deepEqual({ title: made.body.title, type: made.body.content_type, files: made.body.files.map((f) => [f.name, f.parts.length]) }, { title: "Alec check", type: "paper", files: [["Chapter 1.docx", 1]] });
+  assert.deepEqual({ title: made.body.title, type: made.body.content_type, files: made.body.files.map((f) => [f.name, f.parts.length]) }, { title: "Alec check", type: "paper", files: [["Chapter 1.docx", 1], ["Chapter 2.odt", 1]] });
   await page.goto(`${origin}/#/`);
   const row = page.locator("li", { has: page.getByRole("link", { name: "Alec check" }) });
   await row.getByText("Test", { exact: true }).waitFor();
