@@ -902,6 +902,15 @@ test("drafts: a chapter's Publish sends only that chapter, then says when it's l
   assert.deepEqual(lastCall("author-act", (r) => r.body?.action === "publish-chapter").body, { book: "a-book", action: "publish-chapter", path: "chapters/chapter-04.md" });
 });
 
+test("drafts: a chapter whose checks fail says which in plain words, never a check's name", async () => {
+  stub.s.publishChapterStates = [{ state: "failed", checks: [{ name: "lychee / lychee", done: true, ok: false }, { name: "nudge", done: true, ok: true }], sha: SENT }];
+  await openDrafts();
+  const water = row("chapters/chapter-04.md");
+  await water.getByRole("button", { name: "Publish" }).click();
+  await water.getByText("“Chapter 1” didn't go live: the link check found a problem. Nothing else changed.").waitFor({ timeout: 20000 });
+  assert.equal(await page.getByText("lychee").count(), 0);
+});
+
 test("drafts: a chapter linking to pages only in the drafts — Publish these too, or Publish without them with the broken links said plainly", async () => {
   await signIn();
   const linked = { error: "linked", userMessage: "This chapter links to pages that aren't live yet.", linked: [{ path: "concepts/soil-horizon.md", title: "Soil horizon", why: "only in the drafts" }] };
