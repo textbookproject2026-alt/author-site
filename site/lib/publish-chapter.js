@@ -15,6 +15,12 @@ import { rawText, forgetCount } from "./drafts.js";
 import { lintText } from "./lint.js";
 import { pageSlug } from "./books.js";
 
+/** Check names ("markdownlint / markdownlint", "lychee / lychee") as an author says them. */
+export function checkWords(names) {
+  const words = [...new Set(names.map((n) => (/markdownlint|lint/i.test(n) ? "the formatting check" : /lychee|link/i.test(n) ? "the link check" : "an automatic check")))];
+  return words.length > 1 ? `${words.slice(0, -1).join(", ")} and ${words.at(-1)}` : words[0] ?? "an automatic check";
+}
+
 export const timing = { pollMs: 4000, deadlineMs: 6 * 60_000 };
 
 const fixList = (book, path, problems) => h("ul", {}, problems.map((x) => h("li", {},
@@ -98,7 +104,7 @@ async function publish(book, path, title, b, out) {
           ? (await read("lint", { book: book.slug, sha: s.sha }).catch(() => null))?.lint?.problems?.filter((x) => x.path === path) ?? []
           : [];
         clear(out, note([
-          h("p", { text: s.state === "closed" ? `“${r.title}” was closed without going live.` : `“${r.title}” didn't go live: ${s.checks.filter((c) => c.done && !c.ok).map((c) => c.name).join(", ")} found a problem. Nothing else changed.` }),
+          h("p", { text: s.state === "closed" ? `“${r.title}” was closed without going live.` : `“${r.title}” didn't go live: ${checkWords(s.checks.filter((c) => c.done && !c.ok).map((c) => c.name))} found a problem. Nothing else changed.` }),
           lint.length ? fixList(book, path, lint.map((x) => ({ line: x.line, words: x.description ?? x.rule }))) : null,
           h("p", {}, h("a", { href: r.url, target: "_blank", rel: "noopener", text: "Look on GitHub" })),
         ], "warn"), broken);
