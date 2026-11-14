@@ -1581,6 +1581,27 @@ test("review: a note and its passage show each other — the quoted words for a 
   await page.locator(".rv-margin-note.rv-flash-note").waitFor();
 });
 
+test("review: an anchored note keeps its words marked, resolves from the margin; a changed one shows what it was about", async () => {
+  const v = structuredClone(REVIEW.view);
+  // Grace's note on its words (the second "soil" would be nth 1; here the only one), Lin's on words since gone.
+  v.notes[0] = { item: "i32", at: 5, nth: 0, text: "Which farmers? A source would help here.", quote: "test their soil", anchored: true };
+  v.notes[1] = { item: "i33", at: -1, text: "A diagram here?", quote: "fifty years", changed: { text: "Soil forms slowly, over fifty years.", exact: "fifty years", prefix: "slowly, over " } };
+  stub.s.review = v;
+  await openReview();
+  const hl = page.locator(".rv-text mark.rv-note-hl");
+  await hl.first().waitFor();
+  assert.equal((await hl.allTextContents()).join(""), "test their soil");
+  const box = page.locator(".rv-margin-note").first();
+  assert.equal(await box.getByRole("link", { name: "View on GitHub ↗" }).count(), 1);
+  // The changed note, first in the list above the text: its words then, in bold.
+  const changed = page.locator(".rv-chapter-notes li").first();
+  assert.match((await changed.innerText()).replace(/\n+/g, "\n"), /^Lin: A diagram here\?\nThe text has changed since this comment\. What it was about, then:\nSoil forms slowly, over fifty years\.\nResolve\nDecline…/);
+  assert.equal(await changed.locator("blockquote strong").textContent(), "fifty years");
+  await box.getByRole("button", { name: "Resolve" }).click();
+  await page.getByText("Resolved: the reader is thanked and credited.").first().waitFor();
+  assert.deepEqual(lastCall("author-act", (r) => r.body?.action === "note-resolve").body, { book: "a-book", action: "note-resolve", number: 32 });
+});
+
 test("review: the popover's title opens the proposal's own page; Back returns to the same place with the same ticks", async () => {
   stub.s.changes.push({ number: 21, who: "reader-bot", title: "Edit ¶2 of chapter-02.md: Tighten the soil chapter", when: new Date().toISOString(), url: "https://github.com/someone/a-book/pull/21", path: "chapters/chapter-02.md", choices: CHOICES });
   await page.setViewportSize({ width: 1100, height: 500 });

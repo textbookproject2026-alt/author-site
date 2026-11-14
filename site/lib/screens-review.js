@@ -405,11 +405,11 @@ const FLASH_MS = 2200;
 const squash = (t) => t.replace(/\s+/g, " ").toLowerCase();
 
 /**
- * The words `quote` in `block`, as the drafts have them (inserted words, screen-reader
- * labels and the page's own buttons aside), each text node's share of them wrapped in a
- * <mark>; the whole paragraph marked when they can't be found. Undone after FLASH_MS.
+ * The `nth` occurrence of the words `quote` in `block`, as the drafts have them (inserted
+ * words, screen-reader labels and the page's own buttons aside), each text node's share
+ * of them wrapped in a <mark class=cls>. -> the marks, or null when they can't be found.
  */
-export function flash(block, quote) {
+export function markWords(block, quote, nth = 0, cls = "rv-flash") {
   const texts = [];
   const walk = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
     acceptNode: (n) => (n.parentElement.closest("ins, .sr-only, button, .rv-old-mark") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
@@ -427,12 +427,9 @@ export function flash(block, quote) {
     }
   }
   const q = squash(quote ?? "").trim();
-  const at = q ? flat.indexOf(q) : -1;
-  if (at < 0) {
-    block.classList.add("rv-flash-block");
-    setTimeout(() => block.classList.remove("rv-flash-block"), FLASH_MS);
-    return block;
-  }
+  let at = q ? flat.indexOf(q) : -1;
+  for (let i = 0; i < nth && at >= 0; i++) at = flat.indexOf(q, at + 1);
+  if (at < 0) return null;
   // Per text node: the first and last character of the quote in it.
   const spans = new Map();
   for (let k = at; k < at + q.length; k++) {
@@ -444,10 +441,21 @@ export function flash(block, quote) {
   for (const [t, [a, b]] of spans) {
     const mid = t.splitText(a);
     mid.splitText(b - a + 1);
-    const m = h("mark", { class: "rv-flash" });
+    const m = h("mark", { class: cls });
     mid.replaceWith(m);
     m.append(mid);
     marks.push(m);
+  }
+  return marks;
+}
+
+/** The words of `markWords`, marked for FLASH_MS; the whole paragraph when they can't be found. */
+export function flash(block, quote, nth = 0) {
+  const marks = markWords(block, quote, nth);
+  if (!marks) {
+    block.classList.add("rv-flash-block");
+    setTimeout(() => block.classList.remove("rv-flash-block"), FLASH_MS);
+    return block;
   }
   setTimeout(() => {
     for (const m of marks) {
@@ -457,6 +465,14 @@ export function flash(block, quote) {
     }
   }, FLASH_MS);
   return marks[0];
+}
+
+/** A changed note's paragraph as it was, the words it was about in bold. */
+export function snapshot({ text, exact, prefix = "" }) {
+  let at = text.indexOf(prefix + exact);
+  at = at >= 0 ? at + prefix.length : text.indexOf(exact);
+  if (at < 0) return h("blockquote", { class: "said" }, text ? h("p", { text }) : null, h("p", {}, h("strong", { text: exact })));
+  return h("blockquote", { class: "said" }, h("p", {}, text.slice(0, at), h("strong", { text: exact }), text.slice(at + exact.length)));
 }
 
 /** Brings `el` into view when it isn't. */
@@ -729,7 +745,7 @@ async function draw(stage, book, v, ticked, said, restore = null) {
     clear(pop,
       h("p", { class: "rv-pop-who" }, h("strong", { text: it.who }), h("span", { class: "muted", text: " · " }), h("a", { href: pageOf(slug, it), text: "note to the authors", onclick: remember })),
       h("p", { text: n.text }),
-      links(it));
+      noteActions(n));
   };
   const aboutMine = (span) => {
     const e = mine.find((x) => keyOf(x) === span.dataset.mine);
@@ -813,7 +829,7 @@ async function draw(stage, book, v, ticked, said, restore = null) {
     const m = markOf(k);
     const block = m?.closest(BLOCK);
     if (!block) return;
-    intoView(flash(block, v.notes[k].quote));
+    intoView(flash(block, v.notes[k].quote, v.notes[k].nth ?? 0));
   };
   const noteItself = (k) => {
     // The margin note at desktop width, the marker below it.
@@ -984,26 +1000,70 @@ async function draw(stage, book, v, ticked, said, restore = null) {
   // --- the margin: each note beside its paragraph ---
   const side = h("div", { class: "rv-margin" });
   const sideNotes = new Map();
+  // Resolve, Decline… and the issue, for one note (in the margin, or in the list above
+  // the text when its words have changed). Either answer redraws the page without it.
+  const noteActions = (n) => {
+    const it = byKey.get(n.item);
+    const out = h("div", { class: "rv-note-out", "aria-live": "polite" });
+    const resolve = h("button", { type: "button", class: "btn small", text: "Resolve" });
+    resolve.addEventListener("click", async () => {
+      resolve.disabled = true;
+      clear(out, busy("Resolving…"));
+      try {
+        await act(slug, "note-resolve", { number: it.number });
+        await reload("Resolved: the reader is thanked and credited.");
+      } catch (err) {
+        resolve.disabled = false;
+        clear(out, errorNote(err));
+      }
+    });
+    const decline = declineButton(out, async (reason) => {
+      await act(slug, "suggestion-decline", { number: it.number, reason });
+      setTimeout(() => reload("Declined: your reason is posted, with a note thanking them."), 800);
+      return "Declined: your reason is posted, with a note thanking them.";
+    });
+    decline.classList.add("small");
+    const row = h("div", { class: "rv-note-acts" }, resolve, decline, h("a", { href: it.url, target: "_blank", rel: "noopener", text: "View on GitHub ↗" }));
+    const wrap = h("div", {}, row, out);
+    // A press here is about the note's answer, not its passage.
+    for (const ev of ["click", "keydown", "mouseenter"]) wrap.addEventListener(ev, (e) => e.stopPropagation());
+    return wrap;
+  };
+  // Each note's box is made once and only moved after (a Decline being written in it stays).
+  const noteBox = (k) => {
+    const n = v.notes[k];
+    const box = h("aside", { class: "rv-margin-note", tabindex: "0", "aria-label": `Note from ${byKey.get(n.item).who}: show the passage` },
+      h("p", {}, h("strong", { text: byKey.get(n.item).who }), " ", n.text), noteActions(n));
+    let hover = 0;
+    box.addEventListener("mouseenter", () => (hover = setTimeout(() => notePassage(k), 300)));
+    box.addEventListener("mouseleave", () => clearTimeout(hover));
+    box.addEventListener("click", () => notePassage(k));
+    box.addEventListener("keydown", (e) => e.target === box && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), notePassage(k)));
+    return box;
+  };
   const layout = () => {
-    clear(side);
-    sideNotes.clear();
     let below = 0;
+    const here = new Set();
     for (const m of body.querySelectorAll(".rv-note-mark")) {
       const k = Number(m.dataset.note);
       const n = v.notes[k];
       const block = m.closest(BLOCK) ?? m;
+      // An anchored note's words stay marked in the text, as its margin box stays beside them.
+      if (n.anchored && !block.querySelector(`mark.rv-note-hl[data-note="${k}"]`)) {
+        for (const x of markWords(block, n.quote, n.nth ?? 0, "rv-note-hl") ?? []) x.dataset.note = String(k);
+      }
+      let box = sideNotes.get(k);
+      if (!box) {
+        box = noteBox(k);
+        side.append(box);
+        sideNotes.set(k, box);
+      }
+      here.add(k);
       const top = Math.max(block.offsetTop, below);
-      const box = h("aside", { class: "rv-margin-note", tabindex: "0", "aria-label": `Note from ${byKey.get(n.item).who}: show the passage` }, h("strong", { text: byKey.get(n.item).who }), " ", n.text);
       box.style.top = `${top}px`; // the CSSOM, which the site's CSP allows (a style attribute isn't)
-      let hover = 0;
-      box.addEventListener("mouseenter", () => (hover = setTimeout(() => notePassage(k), 300)));
-      box.addEventListener("mouseleave", () => clearTimeout(hover));
-      box.addEventListener("click", () => notePassage(k));
-      box.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), notePassage(k)));
-      side.append(box);
-      sideNotes.set(k, box);
       below = top + box.offsetHeight + 8;
     }
+    for (const [k, box] of sideNotes) if (!here.has(k)) (box.remove(), sideNotes.delete(k));
   };
 
   // --- what can't be ticked inline: Still to decide, before any accept ---
@@ -1118,7 +1178,15 @@ async function draw(stage, book, v, ticked, said, restore = null) {
   drawLeft();
   const toDecide = Number(left.querySelector("[data-count]")?.dataset.count ?? 0);
   const top = v.notes.filter((n) => n.at < 0);
-  const noteLine = (n) => h("li", {}, h("strong", { text: `${byKey.get(n.item).who}: ` }), n.text);
+  // Changed ones first: they need a look.
+  top.sort((a, b) => Boolean(b.changed) - Boolean(a.changed));
+  const noteLine = (n) => (n.changed
+    ? h("li", { class: "rv-note-changed" },
+      h("p", {}, h("strong", { text: `${byKey.get(n.item).who}: ` }), n.text),
+      h("p", { class: "muted small", text: "The text has changed since this comment. What it was about, then:" }),
+      snapshot(n.changed),
+      noteActions(n))
+    : h("li", {}, h("strong", { text: `${byKey.get(n.item).who}: ` }), n.text));
   const more = top.length > 3 ? h("button", { type: "button", class: "btn link", text: `Show ${top.length - 3} more` }) : null;
   const chapterNotes = top.length ? h("section", { class: "rv-chapter-notes", "aria-label": "Notes on the whole chapter" },
     h("p", { class: "rv-chapter-notes-h", text: "On the whole chapter:" }),

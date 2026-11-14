@@ -430,6 +430,11 @@ mark.rv-flash { color: inherit; background: transparent; text-decoration: underl
 .rv-old-mark, .rv-alts, .rv-note-mark { display: inline; margin-left: 0.25em; padding: 0 0.3em; font: 600 0.7rem/1.4 var(--portal-font-ui); letter-spacing: 0.02em; text-transform: uppercase; vertical-align: 0.15em; border: 1px solid var(--portal-border); border-radius: 3px; background: var(--portal-bg); color: var(--portal-muted); white-space: nowrap; }
 .rv-alts, .rv-note-mark { cursor: pointer; color: var(--portal-accent); border-color: var(--portal-accent-soft); }
 .rv-margin-note { position: absolute; left: 0; right: 0; padding: 0.4rem 0.6rem; border-left: 2px solid var(--portal-accent-soft); background: var(--portal-wash); font-size: 0.875rem; line-height: 1.45; overflow-wrap: anywhere; }
+mark.rv-note-hl { color: inherit; background: var(--portal-mark); border-bottom: 2px solid var(--portal-accent-soft); }
+.rv-note-acts { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; align-items: center; margin-top: 0.35rem; font-size: 0.8125rem; }
+.rv-margin-note p { margin: 0; }
+.rv-note-changed { margin-bottom: 0.75rem; }
+.rv-note-changed blockquote { margin: 0.25rem 0; }
 .rv-pop { position: absolute; z-index: 30; width: max-content; max-width: min(22rem, calc(100vw - 32px)); padding: 0.6rem 0.75rem; border: 1px solid var(--portal-border); border-radius: 8px; background: var(--portal-bg); box-shadow: 0 4px 16px rgb(0 0 0 / 0.14); font-size: 0.925rem; overflow-wrap: anywhere; }
 .rv-pop p { margin: 0 0 0.35rem; }
 .rv-pop .rv-pop-title { font-weight: 600; }
