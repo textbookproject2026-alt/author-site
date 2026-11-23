@@ -39,7 +39,7 @@ import { read, act } from "./api.js";
 import { bookBySlug, bookHeader, rawUrl } from "./books.js";
 import { rawText, titlesFrom, forgetCount } from "./drafts.js";
 import { bookPath, forPreview, sanitise } from "./preview.js";
-import { words, threeWay, openedKey } from "./suggestions.js";
+import { words, threeWay, openedKey, ACCEPT_WORDS, DECLINE_WORDS, OUTDATED } from "./suggestions.js";
 import { declineButton } from "./decline.js";
 import { diff, tokens } from "./diff.js";
 import { lintText } from "./lint.js";
@@ -494,7 +494,8 @@ export const waitingWords = (items) => {
 
 // --- the screen --------------------------------------------------------------------------------
 
-export async function reviewScreen(slug, path) {
+/** The review of `path`; `focus`: a suggestion's number, shown at its place in the text (or in Still to decide). */
+export async function reviewScreen(slug, path, focus = null) {
   const book = await bookBySlug(slug);
   const [v, index] = await Promise.all([loadView(slug, path), rawText(book.repo, book.drafts_branch, "index.md").catch(() => null)]);
   titlesNow = titlesFrom(index);
@@ -511,9 +512,13 @@ export async function reviewScreen(slug, path) {
   edState = { slug, path, edits: placed.kept, lost: [...(kept.lost ?? []), ...placed.lost], open: kept.open ?? null };
   saveEdits(slug, path, edState);
   guardLeaving(stage);
+  focusNow = restore ? null : focus;
   await draw(stage, book, v, new Set([...(restore?.ticked ?? []), ...edState.edits.flatMap((e) => e.took ?? [])]), null, restore);
   return [...bookHeader(book, "drafts", `Review: ${title}`), stage];
 }
+
+// A suggestion to show once the review is on screen (#/<book>/review/<path>/change/<n>).
+let focusNow = null;
 
 // The author's paragraph edits on the page being reviewed (review-edits.js), kept in this
 // browser as they change: { slug, path, edits, lost, open }.
@@ -737,8 +742,59 @@ async function draw(stage, book, v, ticked, said, restore = null) {
         h("ul", {}, g.hunks.map((y, k) => h("li", {}, y === x
           ? h("span", { text: `${byKey.get(y.item).who} (shown)` })
           : h("button", { type: "button", class: "btn link", text: `Show ${byKey.get(y.item).who}'s instead`, onclick: () => switchTo(groupOf.get(x.id), k) }))))) : null,
-      h("div", { class: "rv-pop-actions" }, toggle),
+      h("div", { class: "rv-pop-actions row" }, toggle,
+        h("button", { type: "button", class: "btn small", text: "Accept and edit", onclick: () => acceptAndEdit(span, x) }),
+        editDecline(it, x)),
       links(it));
+  };
+  // Accept and edit: ticked (accepted, credited when saved) and its paragraph opened with
+  // it in, the caret on the words it changed, to correct before saving to the drafts.
+  const acceptAndEdit = (span, x) => {
+    ticked.add(x.id);
+    refresh();
+    close();
+    const b = span.closest(".rv-block");
+    if (x.end <= x.at && !b) return;
+    openEditor(b ? Math.min(Number(b.dataset.lo), x.at) : x.at, b ? Math.max(Number(b.dataset.hi), x.end) : x.end);
+    const ta = stage.querySelector(".rv-editor textarea");
+    const to = (x.to ?? "").replace(/\s+$/, "");
+    const at = ta && to ? ta.value.indexOf(to) : -1;
+    if (at < 0) return;
+    const from = (x.from ?? "").replace(/\s+$/, "");
+    let a = 0;
+    while (a < from.length && a < to.length && from[a] === to[a]) a++;
+    let z = 0;
+    while (z < from.length - a && z < to.length - a && from[from.length - 1 - z] === to[to.length - 1 - z]) z++;
+    ta.focus();
+    ta.setSelectionRange(at + a, at + Math.max(a, to.length - z));
+  };
+  // Decline from the text itself: the whole suggestion, with a reason (one made on an
+  // older version may be declined as outdated in one press).
+  const editDecline = (it, x) => {
+    const out = h("div", { class: "rv-note-out", "aria-live": "polite" });
+    const done = (said) => {
+      setTimeout(() => reload(said), 800);
+      return said;
+    };
+    const decline = declineButton(out, async (reason) => {
+      await act(slug, it.kind === "edit" ? "change-decline" : "suggestion-decline", { number: it.number, reason });
+      return done("Declined: your reason is posted, with a note thanking them. It shows as Declined in the book's history.");
+    }, it.hunks.length > 1 ? "Decline the whole proposal…" : "Decline…");
+    decline.classList.add("small");
+    const outdated = x.stale ? h("button", { type: "button", class: "btn small", text: "Decline as outdated", onclick: async (e) => {
+      e.currentTarget.disabled = true;
+      clear(out, busy("Declining it…"));
+      try {
+        await act(slug, it.kind === "edit" ? "change-decline" : "suggestion-decline", { number: it.number, reason: OUTDATED });
+        clear(out, note([h("p", { text: done("Declined as outdated: the reader is thanked. It shows as Declined in the book's history.") })]));
+      } catch (err) {
+        e.currentTarget.disabled = false;
+        clear(out, errorNote(err));
+      }
+    } }) : null;
+    const wrap = h("div", { class: "rv-pop-decline" }, h("div", { class: "row" }, decline, outdated), out);
+    for (const ev of ["click", "keydown"]) wrap.addEventListener(ev, (e) => e.stopPropagation());
+    return wrap;
   };
   const aboutNote = (b) => {
     const n = v.notes[Number(b.dataset.note)];
@@ -1025,7 +1081,32 @@ async function draw(stage, book, v, ticked, said, restore = null) {
       return "Declined: your reason is posted, with a note thanking them.";
     });
     decline.classList.add("small");
-    const row = h("div", { class: "rv-note-acts" }, resolve, decline, h("a", { href: it.url, target: "_blank", rel: "noopener", text: "View on GitHub ↗" }));
+    // A reader who wrote an exact replacement ("X" should be "Y"): worked out on the page as
+    // it is, and if the old words are there exactly once, their paragraph opens with it made.
+    const exact = n.at >= 0 && /["“'][^"”']{2,}["”']/.test(n.text) ? h("button", { type: "button", class: "btn small", text: "Make the exact change", onclick: async (e) => {
+      e.currentTarget.disabled = true;
+      clear(out, busy("Getting the checker ready. The first time takes a little while…"));
+      try {
+        const { planSuggestion } = await import("./python.js");
+        const plan = await planSuggestion(P.join(""), v.path, n.text, (t) => clear(out, busy(t)));
+        const li = (plan.line_no ?? 0) - 1;
+        const b = [...body.querySelectorAll(".rv-block")].find((x) => Number(x.dataset.lo) <= li && li < Number(x.dataset.hi));
+        if (!plan.can_apply || !plan.new_text || !b) {
+          clear(out, note([h("p", { text: plan.why || plan.reason || "The words to replace aren't in this paragraph exactly once." }), h("p", { class: "muted small", text: "Make it by hand with Edit this paragraph, then Resolve." })], "warn"));
+          e.currentTarget.disabled = false;
+          return;
+        }
+        clear(out, note([h("p", { text: "Their change is in the paragraph's editor: Save it, then Save to drafts, then Resolve to thank them." })]));
+        const [lo, hi] = [Number(b.dataset.lo), Number(b.dataset.hi)];
+        const now = plan.new_text.split("\n");
+        close();
+        openEditor(lo, hi, { text: P.slice(lo, hi).map((l, k) => (lo + k === li ? `${now[li]}${/\n*$/.exec(l)[0]}` : l)).join("").replace(/\s+$/, "") });
+      } catch (err) {
+        e.currentTarget.disabled = false;
+        clear(out, errorNote(err));
+      }
+    } }) : null;
+    const row = h("div", { class: "rv-note-acts" }, resolve, decline, exact, h("a", { href: it.url, target: "_blank", rel: "noopener", text: "View on GitHub ↗" }));
     const wrap = h("div", {}, row, out);
     // A press here is about the note's answer, not its passage.
     for (const ev of ["click", "keydown", "mouseenter"]) wrap.addEventListener(ev, (e) => e.stopPropagation());
@@ -1202,6 +1283,7 @@ async function draw(stage, book, v, ticked, said, restore = null) {
     !groups.length && !toDecide ? h("p", { class: "rv-summary", text: "Nothing is waiting on this chapter." })
       : h("p", { class: "rv-summary" }, waitingWords(v.items),
         toDecide ? h("span", { class: "muted", text: ` · ${toDecide} to decide below` }) : null),
+    v.items.length ? h("div", { class: "rv-what muted small" }, h("p", { text: ACCEPT_WORDS }), h("p", { text: DECLINE_WORDS })) : null,
     // Nothing to tick: one plain line, and no bar.
     !groups.length && toDecide ? h("p", { class: "rv-quiet", text: `Nothing to tick here; ${plural(toDecide, "item")} to decide below.` }) : null,
     chapterNotes,
@@ -1221,6 +1303,25 @@ async function draw(stage, book, v, ticked, said, restore = null) {
     openEditor(o.lo, o.hi, { insert: o.insert, own: o.own ? mine.find((e) => keyOf(e) === o.own) : null, text: o.text });
   }
   if (restore?.y != null) requestAnimationFrame(() => window.scrollTo(0, restore.y));
+  // Opened at one suggestion (from a list elsewhere): its place in the text, its popover
+  // open, or its entry under Still to decide. Once the page is on screen.
+  const focus = focusNow;
+  focusNow = null;
+  const it = focus != null ? v.items.find((i) => i.number === focus) : null;
+  if (it) {
+    let frames = 0;
+    const at = () => {
+      if (!stage.isConnected) return void (++frames < 120 && requestAnimationFrame(at));
+      const mark = it.hunks.map((id) => body.querySelector(`.rv-edit[data-id="${CSS.escape(id)}"]`)).find(Boolean)
+        ?? body.querySelector(`.rv-note-mark[data-note="${v.notes.findIndex((n) => n.item === it.key)}"]`);
+      const target = mark ?? left.querySelector(`li[data-item="${CSS.escape(it.key)}"]`) ?? stage;
+      target.scrollIntoView({ block: "center" });
+      target.classList.add("rv-target");
+      setTimeout(() => target.classList.remove("rv-target"), 4000);
+      if (mark) show(mark, true);
+    };
+    requestAnimationFrame(at);
+  }
   // Notes follow their paragraph when the width (and so the wrapping) changes.
   if (typeof ResizeObserver === "function") new ResizeObserver(() => body.isConnected && layout()).observe(body);
 }
@@ -1312,7 +1413,7 @@ function stillToDecide(book, v, ticked, byId, byKey, before, edited = () => fals
         }
       });
       const editor = h("button", { type: "button", class: "btn link", text: "Open in editor", onclick: () => openInEditor(slug, v, e) });
-      return h("li", {},
+      return h("li", { "data-item": e.it.key },
         h("div", { class: "row" }, h("div", { class: "grow" }, h("strong", { text: what }), ` — ${e.it.who}`, h("span", { class: "muted small", text: ` (${e.why})` })),
           h("div", { class: "row" }, decline, keep, editor)),
         e.x && !e.x.stale ? h("blockquote", { class: "said rv-words" }, words(shown(e.x.from), shown(e.x.to))) : null,

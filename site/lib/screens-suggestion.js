@@ -1,15 +1,12 @@
-// A reader's written suggestion (an issue from the book's site): accept it and make
-// the change by hand, decline it, or, where the reader wrote an exact replacement,
-// have it made. The desktop app's console, with its wording and its rules: a reply
-// says the chapter changed only when a commit holds the change.
+// A reader's written suggestion or note (an issue from the book's site): what they wrote,
+// and Review it, which opens its page's review at it: suggestions are accepted or declined
+// there (an exact replacement is made there too). One accepted the old way, "I'll make the
+// change" (taken on by hand), is closed here once the change is made: I've made the change.
 
 import { h, clear, busy, note, errorNote, when } from "./dom.js";
-import { read, act, send } from "./api.js";
+import { read, act } from "./api.js";
 import { bookBySlug, bookHeader, pageSlug } from "./books.js";
-import { sentView } from "./screens-shared.js";
-import { declineButton } from "./decline.js";
-import { renderOps } from "./diff.js";
-import { suggested } from "./suggestions.js";
+import { suggested, reviewHref, ACCEPT_WORDS, DECLINE_WORDS } from "./suggestions.js";
 import { reviewBackLink } from "./screens-review.js";
 
 /** A button that runs `fn`, showing progress and then what happened in `out`. */
@@ -43,25 +40,10 @@ export async function suggestionScreen(slug, number) {
   const out = h("div", { "aria-live": "polite" });
   const onSite = book.domain && s.path ? `https://${book.domain}/${pageSlug(s.path)}` : null;
 
-  // A reader who wrote an exact replacement ("X" should be "Y") may have it made for
-  // them, as in the app: console.py decides, on the chapter as drafts holds it, and
-  // only if the old wording is there exactly once. Worth asking only when there are quotes.
-  const exact = !s.accepted && /\.md$/i.test(s.path) && /["“'][^"”']{2,}["”']/.test(s.suggestion)
-    ? exactReplacement(book, s, out, () => actions.remove()) : null;
-
   let actions;
   if (!s.accepted) {
     actions = h("div", { class: "actions" },
-      doButton("Accept: I'll make the change", "primary", out, async () => {
-        clear(out, ...done(await act(slug, "suggestion-accept", { number }), back));
-        actions.remove();
-      }),
-      declineButton(out, async (reason) => {
-        const r = await act(slug, "suggestion-decline", { number, reason });
-        actions.remove();
-        return done(r, back);
-      }),
-      s.path ? h("a", { class: "btn", href: `#/${slug}/edit/${encodeURIComponent(s.path)}`, text: "Edit the page" }) : null,
+      s.path ? h("a", { class: "btn primary", href: reviewHref(slug, s.path, number), text: "Review it in the page" }) : null,
       h("a", { class: "btn link", href: s.url, target: "_blank", rel: "noopener", text: "Open on GitHub" }));
   } else {
     actions = h("div", { class: "actions" },
@@ -97,47 +79,8 @@ export async function suggestionScreen(slug, number) {
     s.reasoning ? [h("h3", { text: "Why" }), h("blockquote", { class: "said", text: s.reasoning })] : null,
     s.accepted
       ? note([h("p", { text: "You've taken this on, and the reader has been thanked. Once the change is in the drafts area (made with Edit on the page, say), press “I've made the change”." })])
-      : note([h("p", { text: "Accepting means you're taking it on: the reader is thanked and told you'll make the change, and the suggestion stays here, marked Accepted, until you have. Declining sends a courteous reply saying the text is staying as it is." })]),
-    exact,
+      : note([h("p", { text: `Accept or decline it in the page's review, where it shows in place. ${ACCEPT_WORDS}` }), h("p", { text: DECLINE_WORDS })]),
     actions,
     out,
   ];
 }
-
-/** "Can it be made for you?": the exact replacement, worked out and shown before it is made. */
-function exactReplacement(book, s, out, onMade) {
-  const box = h("div", { class: "card" }, h("p", {}, h("strong", { text: "This reader wrote an exact replacement." }), " The author site can look for it in the chapter and, if the wording is there exactly once, make the change for you: only that one line changes."));
-  const look = doButton("Look for it", "", out, async () => {
-    clear(out, busy("Getting the checker ready. The first time takes a little while…"));
-    const tree = await read("tree", { book: book.slug });
-    if (!tree.files.some((f) => f.path === s.path)) {
-      clear(out);
-      box.append(note([h("p", { text: "The page is not in the drafts, so it can't be looked at." })], "warn"));
-      look.remove();
-      return;
-    }
-    const file = await read("file", { book: book.slug, path: s.path, ref: tree.head });
-    const { planSuggestion } = await import("./python.js");
-    const plan = await planSuggestion(file.text, s.path, s.suggestion, (t) => clear(out, busy(t)));
-    clear(out);
-    look.remove();
-    if (!plan.can_apply || !plan.new_text) {
-      box.append(note([h("p", { text: plan.why || plan.reason })], "warn"), h("p", { class: "muted", text: "It's yours to make by hand, then: accept it below." }));
-      return;
-    }
-    const make = doButton("Make this change and thank the reader", "primary", out, async () => {
-      const sent = await send({ book: book.slug, base: tree.head, suggestion: s.number, files: [{ path: s.path, text: plan.new_text }] });
-      box.replaceWith(h("div", {}, ...sentView(book, sent, "Changed, and the reader thanked")));
-      clear(out);
-      onMade();
-    });
-    box.append(
-      h("p", { class: "muted small", text: `Line ${plan.line_no}` }),
-      renderOps([{ t: "-", v: plan.before }, { t: "+", v: plan.after }]),
-      h("p", { class: "muted small", text: "It goes to the drafts area as one change made by you; the reader is sent a link to it and the suggestion is closed. If the drafts area changed meanwhile, nothing is sent." }),
-      h("div", { class: "actions" }, make));
-  });
-  box.append(h("div", { class: "actions" }, look));
-  return box;
-}
-

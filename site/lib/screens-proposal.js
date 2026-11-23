@@ -1,15 +1,15 @@
 // One reader's proposed edit (#/<book>/proposal/<n>): who proposed it, their summary, every
 // change it makes to the page as the drafts are now (word by word, the function's review
-// of that one proposal; an older-version part with old / suggested / now), and Accept and
-// Decline as everywhere else (suggestions.js answers). Opened from the review's popover,
-// with Back to the chapter review at the same place.
+// of that one proposal; an older-version part with old / suggested / now). Read-only: it is
+// accepted or declined in its page's review, which Review it opens at this proposal.
+// Opened from the review's popover, with Back to the chapter review at the same place.
 
 import { h, clear, busy, note, errorNote, when } from "./dom.js";
 import { read } from "./api.js";
 import { bookBySlug, bookHeader } from "./books.js";
 import { rawText, titlesFrom } from "./drafts.js";
 import { renderOps } from "./diff.js";
-import { answers, words, threeWay } from "./suggestions.js";
+import { words, threeWay, reviewHref, ACCEPT_WORDS, DECLINE_WORDS } from "./suggestions.js";
 import { reviewBackLink, shown, withTitles } from "./screens-review.js";
 
 export async function proposalScreen(slug, number) {
@@ -26,7 +26,6 @@ export async function proposalScreen(slug, number) {
   const page = c.path ? titles.get(c.path) : null;
   const title = withTitles(c.title, titles, c.path ?? "");
   const changesBox = h("div", {}, busy("Reading the changes…"));
-  const out = h("div", { "aria-live": "polite" });
   let who = c.who;
   let summary = "";
   // Its changes against the drafts as they are now: the review's read of this one proposal.
@@ -67,8 +66,10 @@ export async function proposalScreen(slug, number) {
     byline,
     h("h3", { text: "What it changes" }),
     changesBox,
-    h("div", { class: "row actions" }, answers(slug, c, c.choices ?? {}, c.needsLook, out, () => {})),
-    out,
+    c.path ? [
+      h("div", { class: "row actions" }, h("a", { class: "btn primary", href: reviewHref(slug, c.path, number), text: "Review it in the page" })),
+      h("p", { class: "muted small", text: `Accept or decline it there, in place. ${ACCEPT_WORDS} ${DECLINE_WORDS}` }),
+    ] : null,
     c.url ? h("p", { class: "small" }, h("a", { href: c.url, target: "_blank", rel: "noopener", text: "View on GitHub" })) : null,
   ];
 }

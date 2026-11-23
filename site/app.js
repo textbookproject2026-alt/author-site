@@ -10,7 +10,8 @@
 //   #/<book>/import             bring in a document
 //   #/<book>/new/<chapter|concept>  a new chapter or concept page, written here
 //   #/<book>/drafts             Drafts: reader suggestions, what's changed, Publish
-//   #/<book>/review/<path>      Review all in chapter: every pending suggestion in place, ticked and accepted at once
+//   #/<book>/review/<path>[/change/<n>]  Review all in chapter: every pending suggestion in place, ticked and
+//                               accepted at once (opened at suggestion n): the one place suggestions are accepted or declined
 //   #/<book>/review-rest        Review the rest of the book: what readers sent on anything but a chapter, as a list
 //   #/<book>/proposal/<n>       one reader's proposed edit: its changes, Accept and Decline
 //   #/<book>/suggestion/<n>     one written reader suggestion
@@ -296,7 +297,7 @@ const ROUTES = [
   [/^([a-z0-9-]+)\/new\/concept$/, (book) => newConceptScreen(book)],
   [/^([a-z0-9-]+)\/(?:drafts|waiting|publish|change\/\d+)$/, (book) => draftsScreen(book)],
   [/^([a-z0-9-]+)\/review-rest$/, (book) => reviewRestScreen(book)],
-  [/^([a-z0-9-]+)\/review\/(.+)$/, (book, path) => reviewScreen(book, decodeURIComponent(path))],
+  [/^([a-z0-9-]+)\/review\/(.+?)(?:\/change\/(\d+))?$/, (book, path, n) => reviewScreen(book, decodeURIComponent(path), n ? Number(n) : null)],
   [/^([a-z0-9-]+)\/proposal\/(\d+)$/, (book, n) => proposalScreen(book, Number(n))],
   [/^([a-z0-9-]+)\/suggestion\/(\d+)$/, (book, n) => suggestionScreen(book, Number(n))],
   [/^([a-z0-9-]+)\/people$/, (book) => peopleScreen(book)],
