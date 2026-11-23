@@ -568,6 +568,37 @@ test("editor: Go to line and Drafts' Fix land on the words at fault, front matte
   assert.equal((await where(box)).selected, "![](after.png)");
 });
 
+test("editor: lists — type into an item, Enter adds one, Tab indents it, Backspace takes a marker off; every other list saved exactly as it was", async () => {
+  const lists = "- first\n- second\n  - nested\n- third\n\n1. one\n2. two\n   1. two a\n3. three\n";
+  const text = `---\ntitle: "Chapter 1"\n---\n\n# Chapter 1\n\nIntro.\n\n${lists}\nAfter.\n`;
+  stub.s.bookFiles.set(CH1_PATH, Buffer.from(text));
+  await signIn();
+  const box = await openEditor();
+  const caretAfter = (words) => box.evaluate((t, w) => {
+    const i = t.value.indexOf(w) + w.length;
+    t.focus();
+    t.setSelectionRange(i, i);
+  }, words);
+  await caretAfter("- second");
+  await page.keyboard.type(" edited");
+  await caretAfter("- third");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("fourth");
+  await page.keyboard.press("Tab");
+  assert.ok(await box.evaluate((t) => document.activeElement === t), "Tab stays in the box on a list item");
+  await caretAfter("2. ");
+  await page.keyboard.press("Backspace");
+  const want = text.replace("- second\n", "- second edited\n").replace("- third\n", "- third\n  - fourth\n")
+    .replace("2. two\n   1. two a\n3. three", "two\n   1. two a\n2. three");
+  await page.waitForFunction((w) => document.querySelector("#editor-text").value === w, want);
+  await page.getByText(/^Draft saved/).waitFor();
+  assert.equal(sends().at(-1).files[0].text, want);
+  // Off a list, Tab moves on from the box as always.
+  await caretAfter("Intro");
+  await page.keyboard.press("Tab");
+  assert.ok(await box.evaluate((t) => document.activeElement !== t));
+});
+
 test("editor: a save that fails goes to the fallback (Saving… this can take up to a minute); failing there too says so with Try again; the drafts moved elsewhere — saved on the new commit by itself", async () => {
   await signIn();
   // The Worker answers 5xx; the page queues the same save (same key) and waits for the job.

@@ -45,6 +45,7 @@ import { diff, tokens } from "./diff.js";
 import { lintText } from "./lint.js";
 import { covers, keyOf, loadEdits, prefill, rangeFor, reanchor, resultOf, saveEdits } from "./review-edits.js";
 import { publishChapterButton } from "./publish-chapter.js";
+import { listKeys } from "./list-keys.js";
 
 /** lib/review.mjs clash: ranges sharing a paragraph, or an insertion at the other's edge. */
 export const clash = (a, b) => (a.at < b.end && b.at < a.end) || ((a.at === a.end || b.at === b.end) && a.at <= b.end && b.at <= a.end);
@@ -895,6 +896,7 @@ async function draw(stage, book, v, ticked, said, restore = null) {
     const el = own ? blockAt(own.lo, own.hi) : insert ? body.querySelector(`.rv-block[data-hi="${lo}"]`) : blockAt(lo, hi);
     const ta = h("textarea", { class: "rv-editor-text", "aria-label": insert ? "A new paragraph" : "This paragraph, as Markdown", spellcheck: "true" });
     ta.value = given ?? start;
+    listKeys(ta);
     const why = h("p", { class: "publish-reason", role: "alert", hidden: true });
     const fit = () => {
       ta.style.height = "auto";

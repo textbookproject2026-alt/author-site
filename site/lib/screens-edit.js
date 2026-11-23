@@ -27,6 +27,7 @@ import { fixedWords, lintLive } from "./lint.js";
 import { forgetCount, rawText, titlesFrom } from "./drafts.js";
 import { draftsPreview, registryBook } from "./public.js";
 import { withGlossaryTerm } from "./contents.js";
+import { listKeys } from "./list-keys.js";
 
 const IDLE_MS = 1500;
 const MIN_GAP_MS = 20_000;
@@ -108,6 +109,7 @@ export async function editScreen(slug, path, line = null) {
 
   const textarea = h("textarea", { class: "editor-text", id: "editor-text", spellcheck: "true", "aria-label": `${title}, as Markdown` });
   textarea.value = restored?.text ?? unsaved ?? original;
+  listKeys(textarea);
   let base = tree.head;
   let lastSaved = original;
   let lastSaveAt = 0;
