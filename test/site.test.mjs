@@ -505,40 +505,67 @@ test("editor: the book's lint as you type — fixes what it can away from the ca
   assert.equal(await box.evaluate((t) => t.value.slice(t.selectionStart, t.selectionEnd)), "![](x.png)");
 });
 
-test("editor: Go to line and Drafts' Fix land on the line itself, front matter counted and long paragraphs wrapped", async () => {
+test("editor: Go to line and Drafts' Fix land on the words at fault, front matter counted, long paragraphs wrapped, after pictures and tables", async () => {
   // A page as books have them: front matter, then paragraphs that are one line each and
   // wrap over many rows, each ending in a space the editor takes off on opening (which
-  // moves every line below it). Problems near the top (line 12) and the bottom (line 64).
+  // moves every line below it), a table, and problems near the top (line 12), after a
+  // picture (line 64) and after the table, near the end.
   const long = (i) => `Paragraph ${i}. ${"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor. ".repeat(8)}`;
   const paras = Array.from({ length: 30 }, (_, i) => long(i + 1));
   paras[1] = `TOP ![](top.png) ${paras[1]}`;
   paras[27] = `BOTTOM ![](bottom.png) ${paras[27]}`;
+  paras[28] = `![A picture](fine.png)\n\n| A | B |\n| --- | --- |\n| 1 | 2 |`;
+  paras[29] = `${long(30)}AFTER ![](after.png) and more.`;
   const text = `---\ntitle: "Chapter 1"\nauthors:\n  - Someone\ndate: 2026-10-01\n---\n\n# Chapter 1\n\n${paras.join("\n\n")}\n\nEnd\n`;
-  const bottomLine = text.split("\n").findIndex((l) => l.startsWith("BOTTOM")) + 1;
+  const lineOf = (start) => text.split("\n").findIndex((l) => l.startsWith(start)) + 1;
+  const [bottomLine, afterLine] = [lineOf("BOTTOM"), lineOf("Paragraph 30.")];
   assert.equal(bottomLine, 64);
   stub.s.bookFiles.set(CH1_PATH, Buffer.from(text));
   await signIn();
   const where = (box) => box.evaluate((t) => ({
-    selected: t.value.slice(t.selectionStart, t.selectionStart + 6),
+    selected: t.value.slice(t.selectionStart, t.selectionEnd),
     // How far down the box is scrolled, as a share of how far it can go.
     down: t.scrollTop / (t.scrollHeight - t.clientHeight),
+    // The selection's row is inside the box's visible rows.
+    visible: (() => {
+      const copy = document.createElement("div");
+      const cs = getComputedStyle(t);
+      for (const p of ["fontFamily", "fontSize", "lineHeight", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "tabSize"]) copy.style[p] = cs[p];
+      Object.assign(copy.style, { position: "absolute", visibility: "hidden", boxSizing: "border-box", width: `${t.clientWidth}px`, whiteSpace: "pre-wrap", overflowWrap: "break-word" });
+      copy.textContent = t.value.slice(0, t.selectionStart);
+      const m = copy.appendChild(document.createElement("span"));
+      m.textContent = "x";
+      document.body.append(copy);
+      const y = m.offsetTop;
+      copy.remove();
+      return y >= t.scrollTop && y < t.scrollTop + t.clientHeight;
+    })(),
   }));
-  // Drafts' Fix link opens the editor at the line.
+  // Drafts' Fix link opens the editor at the line, on the words at fault.
   await page.goto(`${origin}/#/a-book/edit/${encodeURIComponent(CH1_PATH)}/line/${bottomLine}`);
   const box = page.locator("#editor-text");
   await page.getByRole("button", { name: `Go to line ${bottomLine}` }).waitFor();
   let w = await where(box);
-  assert.equal(w.selected, "BOTTOM");
-  assert.ok(w.down > 0.85, `scrolled to the bottom paragraph (${w.down.toFixed(2)} of the way down), not to row ${bottomLine}`);
+  assert.equal(w.selected, "![](bottom.png)");
+  assert.ok(w.visible && w.down > 0.8, `scrolled to the bottom paragraph (${w.down.toFixed(2)} of the way down), not to row ${bottomLine}`);
   // Go to line, from the list under the editor.
   await page.getByRole("button", { name: "Go to line 12" }).click();
   w = await where(box);
-  assert.equal(w.selected, "TOP ![");
-  assert.ok(w.down < 0.1);
-  await page.getByRole("button", { name: `Go to line ${bottomLine}` }).click();
+  assert.equal(w.selected, "![](top.png)");
+  assert.ok(w.visible && w.down < 0.1);
+  await page.getByRole("button", { name: `Go to line ${afterLine}` }).click();
   w = await where(box);
-  assert.equal(w.selected, "BOTTOM");
-  assert.ok(w.down > 0.85);
+  assert.equal(w.selected, "![](after.png)");
+  assert.ok(w.visible);
+  // Typing makes the list's numbers old: it waits, then comes back with the new ones.
+  await box.evaluate((t) => {
+    const at = t.value.indexOf("# Chapter 1\n\nParagraph 1.") + "# Chapter 1\n\n".length;
+    t.setSelectionRange(at, at);
+  });
+  await page.keyboard.type("A new line above.\n\n");
+  assert.ok(await page.getByRole("button", { name: `Go to line ${afterLine}` }).isDisabled());
+  await page.getByRole("button", { name: `Go to line ${afterLine + 2}` }).click();
+  assert.equal((await where(box)).selected, "![](after.png)");
 });
 
 test("editor: a save that fails goes to the fallback (Saving… this can take up to a minute); failing there too says so with Try again; the drafts moved elsewhere — saved on the new commit by itself", async () => {
@@ -900,6 +927,20 @@ test("drafts: a chapter's Publish sends only that chapter, then says when it's l
   await water.getByRole("button", { name: "Publish" }).click();
   await water.getByText("Published “Chapter 1”.", { exact: false }).waitFor({ timeout: 20000 });
   assert.deepEqual(lastCall("author-act", (r) => r.body?.action === "publish-chapter").body, { book: "a-book", action: "publish-chapter", path: "chapters/chapter-04.md" });
+});
+
+test("drafts: a chapter's Publish checks the formatting of the drafts as just saved, so Fix opens the right line", async () => {
+  const path = "chapters/chapter-04.md";
+  stub.s.bookFiles.set(path, Buffer.from("# Water\n\nNew first paragraph.\n\nSecond.\n\n![](w.png)\n"));
+  // raw.githubusercontent.com's copy of the branch, minutes old: the picture two lines higher.
+  stub.s.rawBranch = new Map([[path, "# Water\n\n![](w.png)\n"]]);
+  await openDrafts();
+  const water = row(path);
+  await water.getByRole("button", { name: "Publish" }).click();
+  const fix = water.getByRole("link", { name: "Fix" });
+  await fix.waitFor();
+  assert.equal(await fix.getAttribute("href"), `#/a-book/edit/${encodeURIComponent(path)}/line/7`);
+  assert.equal(lastCall("author-act", (r) => r.body?.action === "publish-chapter"), undefined, "not sent");
 });
 
 test("drafts: a chapter whose checks fail says which in plain words, never a check's name", async () => {

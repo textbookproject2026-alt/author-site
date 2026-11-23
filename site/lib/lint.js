@@ -104,6 +104,8 @@ const describe = (e) => ({
   rule: e.ruleNames[0],
   words: WORDS[e.ruleNames[0]] ?? `${e.ruleDescription}.`,
   context: e.errorContext ?? "",
+  // [column (1-based), length] of the words at fault, when markdownlint knows them.
+  range: e.errorRange ?? null,
 });
 
 /**
