@@ -190,26 +190,29 @@ test("book-wide: glossary terms in every chapter, chapter by chapter, each saved
   await page.getByText("Done: every chapter has been through.", { exact: false }).waitFor();
 });
 
-test("a reader's exact replacement, found exactly once, made and thanked in one send", { skip, timeout: 240_000 }, async () => {
-  stub.s.suggestions[0] = { ...stub.s.suggestions[0], path: CHAPTER, suggestion: '"The the domains" should be "The three domains"' };
-  await page.goto(`${server.origin}/#/a-book/suggestion/7`);
-  await page.getByRole("button", { name: "Look for it" }).click();
-  await page.getByRole("button", { name: "Make this change and thank the reader" }).waitFor({ timeout: PYODIDE_TIMEOUT });
-  await page.locator(".diff .add", { hasText: "The three domains of reality are layered." }).waitFor();
-  await page.getByRole("button", { name: "Make this change and thank the reader" }).click();
-  await page.getByRole("heading", { name: "Changed, and the reader thanked" }).waitFor();
-  const sent = lastSend();
-  assert.equal(sent.suggestion, 7);
-  const before = stub.s.bookFiles.get(CHAPTER).toString("utf8");
-  assert.equal(sent.files[0].text, before.replace("The the domains", "The three domains"));
+// A reader's exact replacement is made in the review (the one place suggestions are answered):
+// Make the exact change on their note opens its paragraph with the words replaced.
+const reviewNote = (text) => {
+  stub.s.review = { ...stub.s.review, notes: stub.s.review.notes.map((n, k) => (k === 0 ? { ...n, text } : n)) };
+  return page.goto(`${server.origin}/#/a-book/review/${encodeURIComponent(stub.s.review.path)}/change/32`);
+};
+
+test("a reader's exact replacement, found exactly once, opens its paragraph in the review with the change made", { skip, timeout: 240_000 }, async () => {
+  await reviewNote('"test their soil every few years" should be "test their soil every two or three years"');
+  await page.locator(".rv-pop").getByRole("button", { name: "Make the exact change" }).click();
+  const ta = page.locator(".rv-editor-text");
+  await ta.waitFor({ timeout: PYODIDE_TIMEOUT });
+  assert.equal(await ta.inputValue(), "Farmers test their soil every two or three years.");
+  await page.locator(".rv-editor").getByText("Their change is made here: Save it, then Save to drafts, then Resolve their note to thank them.").waitFor();
+  assert.equal(stub.s.requests.filter((r) => r.endpoint === "author-send" || r.endpoint === "author-act").length, 0, "nothing written until Save");
 });
 
 test("a suggestion that isn't an exact replacement found once says why, and is left to the author", { skip, timeout: 240_000 }, async () => {
-  stub.s.suggestions[0] = { ...stub.s.suggestions[0], path: CHAPTER, suggestion: '"Ontology" should be "Social ontology"' };
-  await page.goto(`${server.origin}/#/a-book/suggestion/7`);
-  await page.getByRole("button", { name: "Look for it" }).click();
-  await page.getByText("appears twice in that chapter").waitFor({ timeout: PYODIDE_TIMEOUT });
-  assert.equal(stub.s.requests.filter((r) => r.endpoint === "author-send").length, 0);
+  await reviewNote('"soil" should be "earth"');
+  await page.locator(".rv-pop").getByRole("button", { name: "Make the exact change" }).click();
+  await page.getByText("Make it by hand with Edit this paragraph, then Resolve.").waitFor({ timeout: PYODIDE_TIMEOUT });
+  assert.equal(await page.locator(".rv-editor-text").count(), 0);
+  assert.equal(stub.s.requests.filter((r) => r.endpoint === "author-send" || r.endpoint === "author-act").length, 0);
 });
 
 const KEY = "sk-test-key-1234";

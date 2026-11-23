@@ -402,37 +402,21 @@ test("chapters: Rename changes the heading and the reading order's label; Remove
 
 // --- the editor -------------------------------------------------------------------------------------
 
-test("editor: the page's open reader suggestions, with Accept and Decline", async () => {
+test("editor: the page's reader suggestions are a read-only list, each linking into the review at it", async () => {
   await signIn();
   await openEditor();
   const box = page.getByRole("region", { name: "Reader suggestions on this page" });
   await box.getByRole("heading", { name: "Reader suggestions on this page (2)" }).waitFor();
   await box.getByText('"recieve" should be "receive"').waitFor();
-  // The accepted one waits for the change; the other can be answered here.
-  assert.equal(await box.getByText("Accepted").count(), 1);
-  // Declining needs a reason (batch 2c): the button stays off until it has 10 characters.
-  await box.getByRole("button", { name: "Decline…" }).click();
-  const why = box.getByLabel("Why is this being declined?");
-  await why.fill("too short");
-  assert.equal(await box.getByRole("button", { name: "Decline", exact: true }).isDisabled(), true);
-  await box.getByText("At least 10 characters (9 so far).").waitFor();
-  await why.fill("The chapter already says this in ¶4.");
-  await Promise.all([page.waitForResponse((r) => r.url().includes("author-act")), box.getByRole("button", { name: "Decline", exact: true }).click()]);
-  await box.getByText(/^Declined: your reason is posted, with a courteous reply\./).waitFor();
-  const done = lastCall("author-act").body;
-  assert.equal(done.action, "suggestion-decline");
-  assert.equal(done.number, 7);
-  assert.equal(done.reason, "The chapter already says this in ¶4.");
-});
-
-test("editor: a proposed edit to the page, accepted from the editor", async () => {
-  await signIn();
-  await openEditor("chapters/chapter-02.md");
-  const box = page.getByRole("region", { name: "Reader suggestions on this page" });
-  await box.getByText("Fix a typo").waitFor();
-  await Promise.all([page.waitForResponse((r) => r.url().includes("author-act")), box.getByRole("button", { name: "Accept" }).click()]);
-  await box.getByText("Accepted: it is in the drafts.").waitFor();
-  assert.deepEqual([lastCall("author-act").body.action, lastCall("author-act").body.number], ["change-accept", 12]);
+  assert.equal(await box.getByText("Accepted", { exact: true }).count(), 1);
+  // Nothing is accepted or declined here: no such buttons, and the words say where and what.
+  assert.equal(await box.getByRole("button", { name: /^(Accept|Decline|Use the)/ }).count(), 0);
+  const said = await box.innerText();
+  assert.match(said, /Accept puts the change into this chapter's draft \(not yet published\) and thanks the reader\./);
+  assert.match(said, /Decline leaves the text as it is and replies to the reader; a reader who wasn't signed in finds the reply on the suggestion's entry in the book's history\./);
+  const links = await box.getByRole("link", { name: "Review it" }).evaluateAll((as) => as.map((a) => a.getAttribute("href")));
+  assert.ok(links.length >= 1);
+  for (const href of links) assert.match(href, new RegExp(`^#/a-book/review/${encodeURIComponent(CH1_PATH)}/change/\\d+$`));
 });
 
 test("editor: suggestions that couldn't be loaded say so on the page, never as no suggestions", async () => {
@@ -1126,97 +1110,6 @@ test("settings: \"This is a…\" shows the book's type (the registry's when inde
   await page.getByText("Saved to the drafts. Readers see it when you publish.").waitFor();
 });
 
-test("proposals in the editor: Accept folds one into the drafts, Decline closes it", async () => {
-  await signIn();
-  await page.goto(`${origin}/#/a-book/edit/${encodeURIComponent("chapters/chapter-02.md")}`);
-  await page.getByRole("heading", { name: /Reader suggestions on this page/ }).waitFor();
-  const row = page.locator("li", { hasText: "Fix a typo" });
-  await row.getByRole("button", { name: "View changes" }).click();
-  await page.getByText("The three domains.").waitFor();
-  await row.getByRole("button", { name: "Accept" }).click();
-  await page.getByText("Accepted: it is in the drafts.").waitFor();
-  assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "change-accept", number: 12, title: "Fix a typo" });
-  await page.reload();
-  const typo = page.locator("li", { hasText: "Fix a typo" });
-  await typo.getByRole("button", { name: "Decline…" }).click();
-  await typo.getByLabel("Why is this being declined?").fill("We keep the original wording here.");
-  await typo.getByRole("button", { name: "Decline", exact: true }).click();
-  await page.getByText(/^Declined: your reason is posted, with a note thanking them\./).waitFor();
-  assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "change-decline", number: 12, reason: "We keep the original wording here." });
-});
-
-test("proposals in the editor: a suggestion whose paragraph changed: Use the suggestion, Edit before accepting, Decline as outdated, all sent as the function listed them", async () => {
-  await signIn();
-  stub.s.changes[0].needsLook = true;
-  await page.goto(`${origin}/#/a-book/edit/${encodeURIComponent("chapters/chapter-02.md")}`);
-  const row = page.locator("li", { hasText: "Fix a typo" });
-  await row.getByText("needs a look — paragraph changed").waitFor();
-  assert.equal(await row.getByRole("button", { name: "Accept", exact: true }).count(), 0);
-  // Use the suggestion: their change, word by word onto the paragraph as it is now.
-  await row.getByRole("button", { name: "Use the suggestion" }).click();
-  await row.getByText("Accepted: the reader's change is in the drafts, put into the paragraph as it is now.").waitFor();
-  assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: CHOICES.use.action, number: 12, resolve: CHOICES.use.resolve, title: "Fix a typo" });
-
-  // Decline as outdated: the fixed public reason.
-  await page.reload();
-  await page.locator("li", { hasText: "Fix a typo" }).getByRole("button", { name: "Decline as outdated" }).click();
-  await page.getByText(/^Declined as outdated: the reader is thanked\./).waitFor();
-  assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "change-decline", number: 12, reason: "The paragraph has changed since this suggestion was made, so it no longer applies as written." });
-});
-
-test("proposals in the editor: Use the suggestion on clashing words writes nothing; Edit before accepting puts in the rest and opens the editor beside what was kept", async () => {
-  await signIn();
-  stub.s.changes[0].needsLook = true;
-  const p = { path: "chapters/chapter-02.md", line: 2, base: "Converted from Word.", current: "Converted from Word, then edited.", suggested: "Converted from a Word file.", merged: "Converted from a Word, then edited." };
-  stub.s.acceptAnswers.push([409, { error: "overlap", userMessage: "This suggestion was made on an older version of this paragraph.", overlap: { number: 12, paragraphs: [p] }, choices: CHOICES }]);
-  await page.goto(`${origin}/#/a-book/edit/${encodeURIComponent("chapters/chapter-02.md")}`);
-  const row = page.locator("li", { hasText: "Fix a typo" });
-  await row.getByRole("button", { name: "Use the suggestion" }).click();
-  await row.getByText("Their change couldn't be put in by itself: you and the reader changed the same words. Nothing was changed.").waitFor();
-  const cols = row.locator(".three-way .col");
-  assert.deepEqual(await cols.locator("p").allInnerTexts(), ["When it was suggested", "Suggested", "In the drafts now"]);
-  assert.deepEqual(await cols.nth(1).locator("ins").allTextContents(), ["[added: a Word file.]"]);
-  assert.equal(await cols.nth(1).locator("del").evaluate((e) => getComputedStyle(e).textDecorationLine), "line-through");
-  // What Edit before accepting starts from, against the drafts now.
-  await row.getByText("Edit before accepting puts in the rest of their change", { exact: false }).waitFor();
-  assert.equal(await row.getByRole("button", { name: "Use the suggestion" }).isDisabled(), true);
-
-  stub.s.acceptAnswers.push([200, { done: true, steps: ["The reader's change was folded into the drafts area, except where you had both changed the same words: there your wording was kept."], publish: null, edit: { path: p.path, line: 2, paragraphs: [p] } }]);
-  await row.getByRole("button", { name: "Edit before accepting" }).last().click();
-  await page.waitForURL(/#\/a-book\/edit\/chapters%2Fchapter-02\.md\/line\/3$/);
-  assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "change-accept", number: 12, resolve: "edit", title: "Fix a typo" });
-  const beside = page.getByRole("region", { name: "The reader's suggestion" });
-  await beside.getByText("Accepted, with their credit", { exact: false }).waitFor();
-  assert.equal(await beside.locator(".three-way").count(), 1);
-  assert.equal(await page.locator("#editor-text").inputValue(), stub.s.bookFiles.get("chapters/chapter-02.md").toString());
-});
-
-test("proposals in the editor at phone width: the outdated suggestion's buttons and the clash view fit, nothing scrolls sideways", async () => {
-  await page.setViewportSize({ width: 375, height: 800 });
-  await signIn();
-  stub.s.changes[0].needsLook = true;
-  stub.s.acceptAnswers.push([409, { error: "overlap", userMessage: "This suggestion was made on an older version of this paragraph.", choices: CHOICES,
-    overlap: { number: 12, paragraphs: [{ path: "chapters/chapter-02.md", line: 2, base: "Converted from Word.", current: "Converted from Word, then edited.", suggested: "Converted from a Word file.", merged: "Converted from a Word, then edited." }] } }]);
-  await page.goto(`${origin}/#/a-book/edit/${encodeURIComponent("chapters/chapter-02.md")}`);
-  const row = page.locator("li", { hasText: "Fix a typo" });
-  await row.getByText("needs a look — paragraph changed").waitFor();
-  for (const name of ["Use the suggestion", "Edit before accepting", "Decline as outdated"]) assert.ok(await row.getByRole("button", { name }).isVisible(), name);
-  const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  assert.ok(await overflow() <= 0, `row overflows by ${await overflow()}px`);
-  await row.getByRole("button", { name: "Use the suggestion" }).click();
-  await row.locator(".three-way").waitFor();
-  assert.ok(await overflow() <= 0, `clash view overflows by ${await overflow()}px`);
-});
-
-test("errors on accept say why in plain words, never a bare 'Something went wrong'", async () => {
-  await signIn();
-  stub.s.acceptAnswers.push([409, { error: "github: PUT merge failed (status 405)" }]);
-  await page.goto(`${origin}/#/a-book/edit/${encodeURIComponent("chapters/chapter-02.md")}`);
-  const row = page.locator("li", { hasText: "Fix a typo" });
-  await row.getByRole("button", { name: "Accept" }).click();
-  await row.getByText(/This changed since the page was loaded\. Nothing was changed\./).waitFor();
-});
-
 test("old links land: Waiting for you and the publish screen open Drafts; a chapter opens in the editor", async () => {
   await signIn();
   for (const hash of ["waiting", "publish", "change/12"]) {
@@ -1694,12 +1587,79 @@ test("review: the popover's title opens the proposal's own page; Back returns to
   assert.match(await page.locator("main").innerText(), /Small fixes to wording through the chapter\./);
   assert.equal(await page.locator(".proposal-change").count(), 3);
   assert.equal(await page.locator(".proposal-change .three-way").count(), 1);
-  assert.ok(await page.getByRole("button", { name: "Use the suggestion" }).or(page.getByRole("button", { name: "Accept" })).first().isVisible());
+  // Read-only: it is accepted or declined in the review, at this proposal.
+  assert.equal(await page.getByRole("link", { name: "Review it in the page" }).getAttribute("href"), `#/a-book/review/${encodeURIComponent("chapters/chapter-02.md")}/change/21`);
+  assert.equal(await page.getByRole("button", { name: /^(Accept|Decline|Use the)/ }).count(), 0);
   assert.doesNotMatch(await page.locator("main").innerText(), /\.md\b/);
   await page.getByRole("link", { name: "← Back to the chapter review" }).click();
   await edit("p23-20vndj").waitFor();
   assert.ok(await edit("p23-20vndj").locator(".rv-tick").isChecked(), "the tick kept");
   await page.waitForFunction((y0) => Math.abs(window.scrollY - y0) < 40, y);
+});
+
+const REVIEW_AT = (n) => `${origin}/#/a-book/review/${encodeURIComponent("chapters/chapter-02.md")}/change/${n}`;
+
+test("review: opened at one suggestion from a list elsewhere — its words in view, its popover open with Accept and edit and Decline", async () => {
+  await signIn();
+  await page.goto(REVIEW_AT(23));
+  const pop = page.locator(".rv-pop");
+  await pop.getByRole("button", { name: "Accept and edit" }).waitFor();
+  await pop.getByRole("button", { name: "Decline…" }).waitFor();
+  assert.ok(await edit("p23-20vndj").evaluate((e) => e.classList.contains("rv-target")));
+  assert.ok(await edit("p23-20vndj").isVisible());
+  assert.match(await page.locator(".rv-what").innerText(), /Accept puts the change into this chapter's draft \(not yet published\) and thanks the reader\.\n+Decline leaves the text as it is/);
+  // A note opens at its place in the text too.
+  await page.goto(REVIEW_AT(32));
+  await page.locator(".rv-pop").getByRole("button", { name: "Resolve" }).waitFor();
+});
+
+test("review: Accept and edit ticks a suggestion and opens its paragraph with the caret on its words; the corrected text is saved with it, credited, in one write", async () => {
+  try {
+    await signIn();
+    await page.goto(REVIEW_AT(21));
+    await page.locator(".rv-pop").getByRole("button", { name: "Accept and edit" }).click();
+    const ta = page.locator(".rv-editor-text");
+    await ta.waitFor();
+    // The caret on the words the suggestion changed: correct them in place.
+    assert.equal(await ta.evaluate((t) => t.value.slice(t.selectionStart, t.selectionEnd)), "very ");
+    await page.keyboard.type("really ");
+    await page.locator(".rv-editor").getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Save to drafts: 1 accepted, 1 paragraph edited" }).click();
+    await page.getByRole("heading", { name: "Accepted" }).waitFor();
+    const call = lastCall("author-act", (r) => r.body?.action === "review-accept").body;
+    assert.deepEqual(call.hunks, ["p21-t26svd"], "accepted (the reader credited)");
+    assert.equal(call.edits.length, 1);
+    assert.match(call.edits[0].text, /^Soil forms really slowly from weathered rock/);
+  } finally {
+    await forgetEdits();
+  }
+});
+
+test("review: Decline from the popover needs a reason; one made on an older version can be declined as outdated", async () => {
+  await signIn();
+  await page.goto(REVIEW_AT(23));
+  const pop = page.locator(".rv-pop");
+  await pop.getByRole("button", { name: "Decline…" }).click();
+  await pop.getByLabel("Why is this being declined?").fill("The chapter already says this in ¶4.");
+  await pop.getByRole("button", { name: "Decline", exact: true }).click();
+  await pop.getByText(/^Declined: your reason is posted/).waitFor();
+  assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "change-decline", number: 23, reason: "The chapter already says this in ¶4." });
+  await page.goto(REVIEW_AT(21));
+  await edit("p21-wyy2li-old").locator("del").first().click({ position: { x: 3, y: 6 } });
+  await page.locator(".rv-pop").getByRole("button", { name: "Decline as outdated" }).click();
+  await page.waitForFunction(() => document.querySelector(".rv-pop")?.textContent.includes("Declined as outdated"));
+  assert.deepEqual(lastCall("author-act").body, { book: "a-book", action: "change-decline", number: 21, reason: "The paragraph has changed since this suggestion was made, so it no longer applies as written." });
+});
+
+test("review at phone width: a suggestion's popover with Accept and edit and Decline fits, nothing scrolls sideways", async () => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await signIn();
+  await page.goto(REVIEW_AT(21));
+  const pop = page.locator(".rv-pop");
+  await pop.getByRole("button", { name: "Accept and edit" }).waitFor();
+  const box = await pop.boundingBox();
+  assert.ok(box.x >= 0 && box.x + box.width <= 390, `popover inside the screen (${Math.round(box.x)}–${Math.round(box.x + box.width)})`);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 390));
 });
 
 test("review typography is the book site's (remark-smartypants): curly quotes, -- as an em dash, ... as an ellipsis; code left alone", async () => {

@@ -1,13 +1,14 @@
 // Review: Rest of the book (#/<book>/review-rest): what readers sent on anything but a
-// chapter (the front page, the glossary, concept pages, the book as a whole), as a list,
-// each with the same answers as in a chapter's review: Accept where there is something to
-// accept, Decline (with a reason) and Keep open. Counted as Drafts counts its row.
+// chapter (the front page, the glossary, concept pages, the book as a whole), as a list.
+// What is on a page is accepted or declined in that page's review (Review it opens it
+// there); a note on the book as a whole has no page to show, so it is answered here:
+// Decline (with a reason) and Keep open. Counted as Drafts counts its row.
 
 import { h, clear, note, when, plural } from "./dom.js";
 import { act } from "./api.js";
 import { bookBySlug, bookHeader } from "./books.js";
 import { REST, draftItems, forgetCount, readerItems, rowsOf } from "./drafts.js";
-import { changeRow, suggested, writtenRow } from "./suggestions.js";
+import { changeRow, suggested, writtenRow, ACCEPT_WORDS, DECLINE_WORDS } from "./suggestions.js";
 import { declineButton } from "./decline.js";
 
 export async function reviewRestScreen(slug) {
@@ -25,16 +26,12 @@ export async function reviewRestScreen(slug) {
   const entry = (it) => {
     if (it.kind === "proposal") {
       // A proposal's title names its file ("Edit ¶3 of glossary.md"): said with the page's title.
-      const li = changeRow(slug, { ...it, title: String(it.title ?? "").replace(/\S+\.md\b/g, `“${state.titles.get(it.path, null)}”`) }, state.titles, after);
-      const out = li.lastElementChild;
-      li.querySelector(".row .row")?.append(keepOpen(out));
+      const li = changeRow(slug, { ...it, title: String(it.title ?? "").replace(/\S+\.md\b/g, `“${state.titles.get(it.path, null)}”`) }, state.titles);
       li.prepend(h("p", { class: "muted small", text: where(it.path) }));
       return li;
     }
-    if (it.kind === "suggestion") {
-      const li = writtenRow(slug, it, after);
-      const out = li.lastElementChild;
-      li.querySelector(".row .row")?.append(keepOpen(out));
+    if (it.kind === "suggestion" || it.path) {
+      const li = writtenRow(slug, it);
       li.prepend(h("p", { class: "muted small", text: where(it.path) }));
       return li;
     }
@@ -57,7 +54,9 @@ export async function reviewRestScreen(slug) {
     ...bookHeader(book, "drafts", "Review: Rest of the book"),
     h("p", { class: "rv-back" }, h("a", { href: `#/${slug}/drafts`, text: "← Drafts" })),
     items.length
-      ? [h("p", { class: "rv-summary", text: said }), h("ul", { class: "list review-rest" }, items.map(entry))]
+      ? [h("p", { class: "rv-summary", text: said }),
+        h("div", { class: "rv-what muted small" }, h("p", { text: `Each on a page is accepted or declined in that page's review: Review it opens it there. ${ACCEPT_WORDS}` }), h("p", { text: DECLINE_WORDS })),
+        h("ul", { class: "list review-rest" }, items.map(entry))]
       : h("p", { class: "muted", text: "Nothing from readers is waiting on the rest of the book." }),
   ];
 }

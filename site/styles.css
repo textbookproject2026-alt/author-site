@@ -466,6 +466,9 @@ mark.rv-note-hl { color: inherit; background: var(--portal-mark); border-bottom:
 /* In a drafts line: what it says takes the line's whole width. */
 .publish-chapter:has(> div:not(:empty)) { flex-basis: 100%; }
 .rv-left { margin-top: 1.5rem; }
+.rv-target { outline: 2px solid var(--portal-accent); outline-offset: 2px; border-radius: 2px; }
+.rv-what p { margin: 0.15rem 0; }
+.rv-pop-decline { margin-top: 0.4rem; }
 .rv-words { font-family: var(--portal-font-text); white-space: pre-line; overflow-wrap: anywhere; margin: 0.4rem 0 0.25rem; }
 .rv-words del { text-decoration: line-through; background: var(--portal-del-strong); color: inherit; border-radius: 2px; }
 .rv-words ins { text-decoration: underline; text-underline-offset: 0.15em; background: var(--portal-add-strong); color: inherit; border-radius: 2px; }
