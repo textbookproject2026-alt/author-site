@@ -35,9 +35,8 @@ const SCREENS = [
     await row.getByRole("menuitem", { name: "View changes" }).click();
     await row.locator(".diff").first().waitFor();
   } }],
-  ["editor, declining a reader's proposal", `#/a-book/edit/${encodeURIComponent("chapters/chapter-02.md")}`, { setup: async (page) => {
-    await page.locator("li", { hasText: "Fix a typo" }).getByRole("button", { name: "Decline…" }).click();
-    await page.getByLabel("Why is this being declined?").fill("x");
+  ["editor, the page's suggestions (read-only, each linking into the review)", `#/a-book/edit/${encodeURIComponent("chapters/chapter-02.md")}`, { setup: async (page) => {
+    await page.locator("li", { hasText: "Fix a typo" }).getByRole("link", { name: "Review it" }).waitFor();
   } }],
   ["review: rest of the book", "#/a-book/review-rest"],
   ["where you're signed in", "#/signed-in"],

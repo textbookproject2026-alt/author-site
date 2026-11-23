@@ -782,13 +782,14 @@ async function draw(stage, book, v, ticked, said, restore = null) {
     }, it.hunks.length > 1 ? "Decline the whole proposal…" : "Decline…");
     decline.classList.add("small");
     const outdated = x.stale ? h("button", { type: "button", class: "btn small", text: "Decline as outdated", onclick: async (e) => {
-      e.currentTarget.disabled = true;
+      const btn = e.currentTarget;
+      btn.disabled = true;
       clear(out, busy("Declining it…"));
       try {
         await act(slug, it.kind === "edit" ? "change-decline" : "suggestion-decline", { number: it.number, reason: OUTDATED });
         clear(out, note([h("p", { text: done("Declined as outdated: the reader is thanked. It shows as Declined in the book's history.") })]));
       } catch (err) {
-        e.currentTarget.disabled = false;
+        btn.disabled = false;
         clear(out, errorNote(err));
       }
     } }) : null;
@@ -941,7 +942,7 @@ async function draw(stage, book, v, ticked, said, restore = null) {
    * width, starting from its Markdown with the ticked edits in it; `insert`: a new paragraph
    * after the block ending at line lo - 1. Save, Cancel, Esc. One at a time.
    */
-  function openEditor(lo, hi, { insert = false, own = null, text: given = null } = {}) {
+  function openEditor(lo, hi, { insert = false, own = null, text: given = null, hint = null } = {}) {
     if (body.inert) return;
     close();
     pencilHide();
@@ -959,7 +960,7 @@ async function draw(stage, book, v, ticked, said, restore = null) {
       ta.style.height = `${ta.scrollHeight + 2}px`;
     };
     const box = h("div", { class: "rv-editor" },
-      h("p", { class: "muted small", text: insert ? "A new paragraph after this one" : "Editing this paragraph (Markdown). Esc cancels." }),
+      h("p", { class: "muted small", text: hint ?? (insert ? "A new paragraph after this one" : "Editing this paragraph (Markdown). Esc cancels.") }),
       ta, why,
       h("div", { class: "row" },
         h("button", { type: "button", class: "btn primary small", text: "Save", onclick: () => save() }),
@@ -1084,25 +1085,27 @@ async function draw(stage, book, v, ticked, said, restore = null) {
     // A reader who wrote an exact replacement ("X" should be "Y"): worked out on the page as
     // it is, and if the old words are there exactly once, their paragraph opens with it made.
     const exact = n.at >= 0 && /["“'][^"”']{2,}["”']/.test(n.text) ? h("button", { type: "button", class: "btn small", text: "Make the exact change", onclick: async (e) => {
-      e.currentTarget.disabled = true;
+      const btn = e.currentTarget; // gone from the event once it has awaited
+      btn.disabled = true;
       clear(out, busy("Getting the checker ready. The first time takes a little while…"));
       try {
         const { planSuggestion } = await import("./python.js");
         const plan = await planSuggestion(P.join(""), v.path, n.text, (t) => clear(out, busy(t)));
-        const li = (plan.line_no ?? 0) - 1;
+        // plan.line_no counts the file's lines; P holds paragraphs, each with its own breaks.
+        let li = -1;
+        for (let k = 0, n = 0; k < P.length && li < 0; n += (P[k].match(/\n/g) ?? []).length, k++) if ((plan.line_no ?? 0) - 1 < n + Math.max(1, (P[k].match(/\n/g) ?? []).length)) li = k;
         const b = [...body.querySelectorAll(".rv-block")].find((x) => Number(x.dataset.lo) <= li && li < Number(x.dataset.hi));
-        if (!plan.can_apply || !plan.new_text || !b) {
+        if (!plan.can_apply || !plan.before || !b || !P[li].includes(plan.before)) {
           clear(out, note([h("p", { text: plan.why || plan.reason || "The words to replace aren't in this paragraph exactly once." }), h("p", { class: "muted small", text: "Make it by hand with Edit this paragraph, then Resolve." })], "warn"));
-          e.currentTarget.disabled = false;
+          btn.disabled = false;
           return;
         }
-        clear(out, note([h("p", { text: "Their change is in the paragraph's editor: Save it, then Save to drafts, then Resolve to thank them." })]));
         const [lo, hi] = [Number(b.dataset.lo), Number(b.dataset.hi)];
-        const now = plan.new_text.split("\n");
         close();
-        openEditor(lo, hi, { text: P.slice(lo, hi).map((l, k) => (lo + k === li ? `${now[li]}${/\n*$/.exec(l)[0]}` : l)).join("").replace(/\s+$/, "") });
+        openEditor(lo, hi, { text: P.slice(lo, hi).map((l, k) => (lo + k === li ? l.replace(plan.before, plan.after) : l)).join("").replace(/\s+$/, ""),
+          hint: "Their change is made here: Save it, then Save to drafts, then Resolve their note to thank them." });
       } catch (err) {
-        e.currentTarget.disabled = false;
+        btn.disabled = false;
         clear(out, errorNote(err));
       }
     } }) : null;
