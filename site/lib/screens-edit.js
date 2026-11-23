@@ -162,9 +162,15 @@ export async function editScreen(slug, path, line = null) {
 
   // --- the live check ---
   const lintBox = h("section", { class: "lint-live", "aria-label": "Formatting", "aria-live": "polite" });
-  const toLine = (n) => {
+  const toLine = (n, range) => {
     select(0);
-    goToLine(textarea, n);
+    goToLine(textarea, n, range);
+  };
+  // Typed since the last check: its line numbers are the old text's, so the list waits
+  // (greyed, Go to line off) until the check after this typing redraws it.
+  const stale = () => {
+    lintBox.classList.add("stale");
+    lintBox.querySelectorAll("button").forEach((b) => { b.disabled = true; });
   };
   // Opened at a line (Drafts' Fix): that line, also once the first check has put right
   // what it can above it, which moves the line's place in the box.
@@ -186,10 +192,15 @@ export async function editScreen(slug, path, line = null) {
       textarea.value = r.text;
       if (focused) textarea.setSelectionRange(r.caret, r.caret);
       textarea.scrollTop = scroll;
-      if (jumpTo) goToLine(textarea, r.text.slice(0, r.caret).split("\n").length);
+    }
+    if (jumpTo) {
+      // The line, now that the fixes above it moved it, and on it the words at fault.
+      const n = r.text.slice(0, r.caret).split("\n").length;
+      goToLine(textarea, n, r.problems.find((p) => p.line === n)?.range);
     }
     jumpTo = null;
     const fixed = fixedWords(r.fixed);
+    lintBox.classList.remove("stale");
     clear(lintBox,
       r.problems.length
         ? [h("h2", { class: "small-heading", text: `Formatting: ${r.problems.length === 1 ? "1 thing" : `${r.problems.length} things`} to put right before you publish` }), lintView(r.problems, { go: toLine })]
@@ -243,6 +254,7 @@ export async function editScreen(slug, path, line = null) {
   };
   textarea.addEventListener("input", () => {
     jumpTo = null;
+    stale();
     guard(true);
     store.set(key, { base, text: textarea.value });
     clearTimeout(timer);

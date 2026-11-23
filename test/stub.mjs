@@ -455,6 +455,8 @@ export function createStub({ siteOrigin }) {
     const m = new RegExp(`^/${REPO}/([^/]+)/(.+)$`).exec(url.pathname);
     if (m && !url.pathname.endsWith(".png")) {
       const [ref, path] = [m[1], decodeURIComponent(m[2])];
+      // rawBranch: what raw.githubusercontent.com still serves for the drafts branch by name (its cache).
+      if (ref === "drafts" && s.rawBranch?.has(path)) return route.fulfill({ status: 200, contentType: "text/plain", headers: cors, body: s.rawBranch.get(path) });
       const files = ref === LIVE || ref === "main" ? s.liveFiles : s.bookFiles;
       return files.has(path) ? route.fulfill({ status: 200, contentType: "text/plain", headers: cors, body: files.get(path) })
         : route.fulfill({ status: 404, headers: cors, body: "" });

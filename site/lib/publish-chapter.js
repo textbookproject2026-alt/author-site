@@ -42,7 +42,11 @@ async function publish(book, path, title, b, out) {
   if (!path) return send();
   clear(out, busy("Checking the chapter's formatting…"));
   try {
-    const problems = await lintText(book, book.drafts_branch, path, await rawText(book.repo, book.drafts_branch, path));
+    // At the drafts' head commit, never the branch name: raw.githubusercontent.com keeps a
+    // branch's file for up to five minutes, so just after a save it would lint the old text
+    // and every Fix would open the editor at the old text's line numbers.
+    const { head } = await read("tree", { book: book.slug });
+    const problems = await lintText(book, head, path, await rawText(book.repo, head, path));
     if (problems.length) {
       clear(out, note([
         h("p", { text: `“${title}” can't go to readers yet: ${plural(problems.length, "formatting problem")} to fix first. Other chapters aren't held up by it.` }),

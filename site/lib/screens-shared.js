@@ -80,7 +80,7 @@ export function lintView(problems, { go, href, title = () => "" } = {}) {
     h("span", {}, p.path ? [h("strong", { text: title(p.path) }), ", "] : null, `line ${p.line}: `, p.words,
       p.context ? [" ", h("span", { class: "muted small", text: `(“${p.context.slice(0, 80)}”)` })] : null),
     " ",
-    go ? h("button", { type: "button", class: "btn link", text: `Go to line ${p.line}`, onclick: () => go(p.line) })
+    go ? h("button", { type: "button", class: "btn link", text: `Go to line ${p.line}`, onclick: () => go(p.line, p.range) })
       : href ? h("a", { class: "btn link", href: href(p.path, p.line), text: "Fix" }) : null)));
 }
 
@@ -97,12 +97,14 @@ export function lineSpan(text, n) {
 }
 
 /**
- * Selects line `n` (1-based) of a textarea and scrolls it into view. A paragraph is one
+ * Selects line `n` (1-based) of a textarea, or `range` ([column, length]) on it, and scrolls it into view. A paragraph is one
  * line that wraps over several rows, so where the line is gets measured on a hidden copy
  * of the box (same width, padding and font), never worked out by counting lines.
  */
-export function goToLine(textarea, n) {
-  const [start, end] = lineSpan(textarea.value, n);
+export function goToLine(textarea, n, range = null) {
+  let [start, end] = lineSpan(textarea.value, n);
+  // Only the words at fault, when the lint says which (column 1-based, and a length).
+  if (range && range[0] >= 1 && start + range[0] - 1 + range[1] <= end) [start, end] = [start + range[0] - 1, start + range[0] - 1 + range[1]];
   const cs = getComputedStyle(textarea);
   const copy = document.createElement("div");
   for (const p of ["fontFamily", "fontSize", "fontWeight", "fontStyle", "lineHeight", "letterSpacing", "wordSpacing", "tabSize", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "textIndent"]) copy.style[p] = cs[p];
