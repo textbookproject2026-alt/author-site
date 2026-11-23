@@ -244,7 +244,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
  */
 export function mailBody({ lines, button, url, footer }) {
   const text = [...lines, "", `${button}: ${url}`, "", footer].join("\n");
-  const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0;padding:24px 16px;background:#ffffff;color:#2b2b2b;font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:16px;line-height:1.5">
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Confused for Now</title></head><body style="margin:0;padding:24px 16px;background:#ffffff;color:#2b2b2b;font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:16px;line-height:1.5">
 <div style="max-width:480px;margin:0 auto">
 ${lines.map((l) => `<p style="margin:0 0 12px">${esc(l)}</p>`).join("\n")}
 <p style="margin:20px 0"><a href="${esc(url)}" style="display:inline-block;padding:12px 20px;border-radius:8px;background:#52562f;color:#ffffff;text-decoration:none;font-weight:600">${esc(button)}</a></p>
