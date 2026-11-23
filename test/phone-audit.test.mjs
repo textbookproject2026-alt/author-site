@@ -27,7 +27,7 @@ const SCREENS = [
     const d = page.locator("li.declined").first();
     await d.getByRole("button", { name: "Show changes" }).click();
     await d.getByRole("button", { name: "Add a comment" }).click();
-    await page.getByText("The proposed opening.").waitFor();
+    await d.locator(".diff ins", { hasText: "proposed" }).waitFor();
   } }],
   ["drafts, a row's ⋯ and its changes open", "#/a-book/drafts", { setup: async (page) => {
     const row = page.locator('.drafts-row[data-row="chapters/chapter-01.md"]');

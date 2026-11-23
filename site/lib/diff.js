@@ -53,6 +53,34 @@ export const diff = (a, b) => {
 export const tokens = (line) => line.split(/(\s+)/).filter((t) => t !== "");
 
 /**
+ * One edit's words as runs: { eq } unchanged, { del, ins } changed. Changes with only one
+ * unchanged word between them are one change, as track changes reads ("struck the lot,
+ * then the new lot"), not a word-by-word patchwork.
+ */
+export function editRuns(from, to) {
+  const segs = [];
+  for (const op of diff(tokens(from), tokens(to))) {
+    const last = segs.at(-1);
+    if (op.t === "=") {
+      if (last && "eq" in last) last.eq += op.v;
+      else segs.push({ eq: op.v });
+    } else {
+      const s = last && !("eq" in last) ? last : (segs.push({ del: "", ins: "" }), segs.at(-1));
+      s[op.t === "-" ? "del" : "ins"] += op.v;
+    }
+  }
+  for (let i = 1; i < segs.length - 1; i++) {
+    const s = segs[i];
+    if (!("eq" in s) || "eq" in segs[i - 1] || "eq" in segs[i + 1] || s.eq.trim().split(/\s+/).length > 1) continue;
+    const [a, b] = [segs[i - 1], segs[i + 1]];
+    segs.splice(i - 1, 3, { del: a.del + s.eq + b.del, ins: a.ins + s.eq + b.ins });
+    i -= 1;
+  }
+  return segs;
+}
+
+
+/**
  * A line diff in runs: `same` holds unchanged paragraphs, shown collapsed as
  * "N unchanged paragraphs"; `ops` holds a run of changed lines, word-diffed. Blank
  * lines are dropped: they only separate paragraphs.
@@ -72,6 +100,35 @@ export const blocks = (before, after) => {
 };
 
 export const unchangedLabel = (n) => `${n} unchanged paragraph${n === 1 ? "" : "s"}`;
+const showUnchanged = (n) => `Show ${unchangedLabel(n)}`;
+
+/** Words two paragraphs share, as a share of the longer: how alike they are. */
+const alike = (x, y) => {
+  const a = x.split(/\s+/).filter(Boolean);
+  const b = new Set(y.split(/\s+/).filter(Boolean));
+  return a.length || b.size ? a.filter((w) => b.has(w)).length / Math.max(a.length, b.size) : 1;
+};
+
+/**
+ * Which removed paragraph became which added one, in order: each removed one with the
+ * first added one after the last pair that is at least half the same words. An added
+ * paragraph between (a new one) or a removed one with no match stays alone, so one
+ * paragraph inserted above an edited one doesn't pair the wrong two.
+ */
+export function pairs(dels, adds) {
+  const out = [];
+  let from = 0;
+  for (let i = 0; i < dels.length; i++) {
+    for (let j = from; j < adds.length; j++) {
+      if (alike(dels[i], adds[j]) >= 0.5) {
+        out.push([i, j]);
+        from = j + 1;
+        break;
+      }
+    }
+  }
+  return out;
+}
 
 /**
  * Runs of removed lines then added ones, paired line by line and word-diffed: each
@@ -88,10 +145,11 @@ export const pairRuns = (ops) => {
     while (ops[k]?.t === "+") adds.push(ops[k++].v);
     const d = dels.map((v) => ({ t: "-", words: [{ v, changed: true }] }));
     const a = adds.map((v) => ({ t: "+", words: [{ v, changed: true }] }));
-    for (let i = 0; i < Math.min(dels.length, adds.length); i++) {
-      const w = diff(tokens(dels[i]), tokens(adds[i]));
+    for (const [i, j] of pairs(dels, adds)) {
+      const w = diff(tokens(dels[i]), tokens(adds[j]));
       d[i].words = w.filter((o) => o.t !== "+").map((o) => ({ v: o.v, changed: o.t === "-" }));
-      a[i].words = w.filter((o) => o.t !== "-").map((o) => ({ v: o.v, changed: o.t === "+" }));
+      a[j].words = w.filter((o) => o.t !== "-").map((o) => ({ v: o.v, changed: o.t === "+" }));
+      d[i].pair = a[j];
     }
     for (const r of [...d, ...a])
       r.words = r.words.reduce((ws, w) => {
@@ -105,19 +163,48 @@ export const pairRuns = (ops) => {
   return out;
 };
 
-const line = (kind, content) =>
-  h("div", { class: `line${kind === "-" ? " del" : kind === "+" ? " add" : ""}` },
-    h("span", { "aria-hidden": "true", text: kind === "=" ? " " : kind === "-" ? "−" : "+" }),
-    typeof content === "string" ? h("span", { text: content || " " }) : h("span", {}, content));
+/** An unchanged paragraph. */
+const line = (v) => h("p", { class: "line", text: v || " " });
 
-/** One changed line's words: the changed ones in <del> or <ins>. */
-export const marked = (r) => r.words.map((w) => (w.changed ? h(r.t === "-" ? "del" : "ins", { text: w.v }) : document.createTextNode(w.v)));
+/**
+ * A changed paragraph as track changes, the review's way (editRuns): one paragraph, its
+ * removed words struck through in red and its added words in green, the rest as it was.
+ * A paragraph only removed, or only added, is all struck, or all added.
+ */
+const tracked = (from, to) => h("p", { class: "line rv-words" }, editRuns(from, to).map((s) => ("eq" in s ? s.eq
+  : [s.del ? h("del", { text: s.del }) : null, s.ins ? h("ins", { text: s.ins }) : null])));
 
-/** Changed lines word-diffed, and each run of unchanged ones collapsed: into `out`. */
+/** Changed paragraphs as track changes, and each run of unchanged ones folded away behind Show: into `out`. */
 function render(bs, out) {
   for (const b of bs) {
-    if (b.same) out.append(h("details", { class: "same" }, h("summary", { text: unchangedLabel(b.same.length) }), b.same.map((v) => line("=", v))));
-    else out.append(h("div", { class: "hunk" }, pairRuns(b.ops).map((r) => line(r.t, marked(r)))));
+    if (b.same) {
+      out.append(h("details", { class: "same" }, h("summary", { text: showUnchanged(b.same.length) }), b.same.map(line)));
+      continue;
+    }
+    const hunk = h("div", { class: "hunk" });
+    const join = (r) => r.words.map((w) => w.v).join("");
+    // In reading order: each added paragraph, with the removed one it came from (and any
+    // removed ones before that, struck), new ones alone; removed ones left over at the end.
+    const rows = pairRuns(b.ops);
+    for (let k = 0; k < rows.length;) {
+      const dels = [];
+      const adds = [];
+      while (rows[k]?.t === "-") dels.push(rows[k++]);
+      while (rows[k]?.t === "+") adds.push(rows[k++]);
+      let i = 0;
+      for (const a of adds) {
+        const at = dels.findIndex((d) => d.pair === a);
+        if (at < 0) {
+          hunk.append(tracked("", join(a)));
+          continue;
+        }
+        for (; i < at; i++) hunk.append(tracked(join(dels[i]), ""));
+        hunk.append(tracked(join(dels[at]), join(a)));
+        i = at + 1;
+      }
+      for (; i < dels.length; i++) hunk.append(tracked(join(dels[i]), ""));
+    }
+    out.append(hunk);
   }
 }
 

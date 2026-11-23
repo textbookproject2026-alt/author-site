@@ -41,7 +41,9 @@ import { rawText, titlesFrom, forgetCount } from "./drafts.js";
 import { bookPath, forPreview, sanitise } from "./preview.js";
 import { words, threeWay, openedKey, ACCEPT_WORDS, DECLINE_WORDS, OUTDATED } from "./suggestions.js";
 import { declineButton } from "./decline.js";
-import { diff, tokens } from "./diff.js";
+import { diff, tokens, editRuns } from "./diff.js";
+
+export { editRuns };
 import { lintText } from "./lint.js";
 import { covers, keyOf, loadEdits, prefill, rangeFor, reanchor, resultOf, saveEdits } from "./review-edits.js";
 import { publishChapterButton } from "./publish-chapter.js";
@@ -158,33 +160,6 @@ export function blocksOf(P) {
     }
   });
   return { start, end };
-}
-
-/**
- * One edit's words as runs: { eq } unchanged, { del, ins } changed. Changes with only one
- * unchanged word between them are one change, as track changes reads ("struck the lot,
- * then the new lot"), not a word-by-word patchwork.
- */
-export function editRuns(from, to) {
-  const segs = [];
-  for (const op of diff(tokens(from), tokens(to))) {
-    const last = segs.at(-1);
-    if (op.t === "=") {
-      if (last && "eq" in last) last.eq += op.v;
-      else segs.push({ eq: op.v });
-    } else {
-      const s = last && !("eq" in last) ? last : (segs.push({ del: "", ins: "" }), segs.at(-1));
-      s[op.t === "-" ? "del" : "ins"] += op.v;
-    }
-  }
-  for (let i = 1; i < segs.length - 1; i++) {
-    const s = segs[i];
-    if (!("eq" in s) || "eq" in segs[i - 1] || "eq" in segs[i + 1] || s.eq.trim().split(/\s+/).length > 1) continue;
-    const [a, b] = [segs[i - 1], segs[i + 1]];
-    segs.splice(i - 1, 3, { del: a.del + s.eq + b.del, ins: a.ins + s.eq + b.ins });
-    i -= 1;
-  }
-  return segs;
 }
 
 /**
