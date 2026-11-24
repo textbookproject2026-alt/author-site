@@ -2,7 +2,7 @@
 // paragraphs collapse, changed lines are paired and word-diffed.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { blocks, pairRuns, unchangedLabel } from "../site/lib/diff.js";
+import { blocks, pairRuns, pairs, unchangedLabel, editRuns } from "../site/lib/diff.js";
 
 test("a diff in unchanged paragraphs and changed runs, blank lines dropped", () => {
   const a = "One.\n\nTwo.\n\nThree here.\n\nFour.";
@@ -21,6 +21,22 @@ test("removed and added lines paired, only the changed words marked, neighbours 
   assert.deepEqual(del.words, [{ v: "a ", changed: false }, { v: "b", changed: true }, { v: " c", changed: false }]);
   assert.deepEqual(add.words, [{ v: "a ", changed: false }, { v: "x y", changed: true }, { v: " c", changed: false }]);
   assert.deepEqual(extra, { t: "+", words: [{ v: "New.", changed: true }] });
+});
+
+test("a new paragraph above an edited one: the edited one is paired with what it became, the new one stands alone", () => {
+  const was = "Soil forms slowly from weathered rock over many years.";
+  const now = "Soil forms very slowly from weathered rock over many years.";
+  assert.deepEqual(pairs([was], ["A whole new paragraph about something else.", now]), [[0, 1]]);
+  const rows = pairRuns([{ t: "-", v: was }, { t: "+", v: "A whole new paragraph about something else." }, { t: "+", v: now }]);
+  assert.equal(rows[0].pair, rows[2], "the removed paragraph is paired with the edited one, not the new one");
+  assert.deepEqual(rows[0].words.filter((w) => w.changed), []);
+  assert.deepEqual(rows[2].words.filter((w) => w.changed).map((w) => w.v), ["very "]);
+  // Nothing alike: nothing paired (a paragraph replaced by a different one is struck, then added).
+  assert.deepEqual(pairs(["One two three four."], ["Entirely other words here."]), []);
+});
+
+test("the comparison's words are the review's (editRuns): one struck run, one added run", () => {
+  assert.deepEqual(editRuns("Soil forms slowly.", "Soil forms very slowly."), [{ eq: "Soil forms " }, { del: "", ins: "very " }, { eq: "slowly." }]);
 });
 
 test("review edits read as track changes: changes one word apart are one struck run and one inserted run", async () => {

@@ -243,11 +243,8 @@ blockquote.said { margin: 0 0 0.75rem; padding: 0.6rem 0.9rem; border-left: 3px 
 .diff :is(.hunk, .patch-hunk, .same) + :is(.hunk, .patch-hunk, .same) { border-top: 1px solid var(--portal-border); }
 .diff .same > summary { padding: 0.25rem 0.75rem; color: var(--portal-muted); font-family: var(--portal-font-ui); font-size: 0.85rem; cursor: pointer; }
 .diff .hh { padding: 0.2rem 0.75rem; color: var(--portal-muted); background: var(--portal-bg); }
-.diff .line { display: grid; grid-template-columns: 1.5rem 1fr; white-space: pre-wrap; overflow-wrap: anywhere; }
-.diff .line > span:first-child { text-align: center; color: var(--portal-muted); user-select: none; }
-.diff .line > span:last-child { padding-right: 0.75rem; }
-.diff .del { background: var(--portal-del); }
-.diff .add { background: var(--portal-add); }
+/* Old and new as track changes (the review's styling): one paragraph, removed words struck in red, added in green. */
+.diff .line { margin: 0; padding: 0.3rem 0.75rem; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--portal-font-text); }
 /* Not colour alone: removed words struck, added words underlined, and named for screen readers. */
 .diff del { background: var(--portal-del-strong); text-decoration: line-through; border-radius: 2px; }
 .diff ins { background: var(--portal-add-strong); text-decoration: underline; text-underline-offset: 0.15em; border-radius: 2px; }

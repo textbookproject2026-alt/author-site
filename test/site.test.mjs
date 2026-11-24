@@ -1207,6 +1207,13 @@ test("history: a page's, from the editor; Restore opens the old text in the edit
   await page.locator("ul.history:not(.proposed) > li a").nth(1).click();
   await page.getByRole("heading", { name: "What this change did to the page" }).waitFor();
   assert.equal(await page.locator(".diff del").first().textContent(), "first");
+  // As track changes (the review's styling): struck red for removed, green for added, inside
+  // the paragraph; unchanged paragraphs folded behind Show.
+  const del = await page.locator(".diff del").first().evaluate((e) => [getComputedStyle(e).textDecorationLine, getComputedStyle(e).backgroundColor]);
+  assert.equal(del[0], "line-through");
+  assert.equal(await page.locator(".diff .line").filter({ has: page.locator("del") }).first().evaluate((p) => p.tagName), "P");
+  const folds = await page.locator(".diff details.same > summary").allTextContents();
+  for (const f of folds) assert.match(f, /^Show \d+ unchanged paragraphs?$/);
   await noFileNames();
   await page.getByRole("button", { name: "Restore this version" }).click();
   await page.getByText("from its history").waitFor();
@@ -1388,7 +1395,9 @@ test("history: Declined, with who proposed and declined it, the reason (or none 
   await page.locator("li.declined", { hasText: "Make it weirder" }).getByText("No reason was recorded.").waitFor();
   // Show changes: the proposal's change, from the function's public history.
   await first.getByRole("button", { name: "Show changes" }).click();
-  await first.getByText("The proposed opening.").waitFor();
+  // As track changes: one paragraph, only the changed word marked.
+  await first.locator(".diff .line", { hasText: "opening." }).waitFor();
+  assert.deepEqual([await first.locator(".diff del").allTextContents(), await first.locator(".diff ins").allTextContents()], [["old"], ["proposed"]]);
   // Someone else's comment: no Delete. Add one: it shows, with Delete; delete it: gone.
   await first.getByText("Thanks, though.").waitFor();
   assert.equal(await first.getByRole("button", { name: "Delete" }).count(), 0);
